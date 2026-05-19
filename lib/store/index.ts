@@ -8,9 +8,8 @@ import { createMediaSlice } from './media-slice';
 export const useAppStore = create<AppState>()(
   persist(
     (set, get, store) => ({
-      ui: { zoom: 1, inspectorOpen: true },
+      ui: { zoom: 1 },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
-      setInspectorOpen: (open) => set((s) => ({ ui: { ...s.ui, inspectorOpen: open } })),
       ...createTimelineSlice(set, get, store),
       ...createAudioSlice(set, get, store),
       ...createMediaSlice(set, get, store)

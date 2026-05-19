@@ -4,7 +4,6 @@ import type { MediaRef } from '@/lib/storage/types';
 
 export interface UIState {
   zoom: number;
-  inspectorOpen: boolean;
 }
 
 export interface TimelineActions {
@@ -40,7 +39,6 @@ export interface MediaActions {
 export interface AppState {
   ui: UIState;
   setZoom(zoom: number): void;
-  setInspectorOpen(open: boolean): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;
   audio: AudioState;
