@@ -136,7 +136,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
           imageBitmap
         };
 
-        const rawParams = clip.params ?? plugin.getDefaultParams();
+        const rawParams = (clip.params ?? plugin.getDefaultParams()) as Record<string, unknown>;
         plugin.render(rc, resolveClipParams(rawParams, beats));
       }
     }

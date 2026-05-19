@@ -27,7 +27,7 @@ function makeCanvas(): HTMLCanvasElement {
   return c;
 }
 
-const grid: BeatGrid = { bpm: 60, offsetMs: 0, source: 'manual' };
+const grid: BeatGrid = { bpm: 60, offsetMs: 0, beatsPerBar: 4, source: 'manual' };
 
 describe('renderer — automation curve in clip.params', () => {
   let captured: Record<string, unknown> | null;
