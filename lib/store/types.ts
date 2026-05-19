@@ -1,5 +1,6 @@
 import type { TimelineState, Clip } from '@/lib/timeline/types';
 import type { BeatGrid } from '@/lib/audio/types';
+import type { MediaRef } from '@/lib/storage/types';
 
 export interface UIState {
   zoom: number;
@@ -26,6 +27,16 @@ export interface AudioActions {
   resetGrid(): void;
 }
 
+export interface MediaState {
+  mediaRefs: MediaRef[];
+}
+
+export interface MediaActions {
+  addMediaRef(ref: MediaRef): void;
+  removeMediaRef(id: string): void;
+  getMediaRef(id: string): MediaRef | undefined;
+}
+
 export interface AppState {
   ui: UIState;
   setZoom(zoom: number): void;
@@ -34,4 +45,6 @@ export interface AppState {
   timelineActions: TimelineActions;
   audio: AudioState;
   audioActions: AudioActions;
+  media: MediaState;
+  mediaActions: MediaActions;
 }
