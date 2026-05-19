@@ -72,35 +72,40 @@ globalThis.AudioContext = MockAudioContext;
 // @ts-expect-error — Webkit alias used by some libs; keep for parity.
 globalThis.webkitAudioContext = MockAudioContext;
 
-/**
- * Silence jsdom's "Not implemented: HTMLMediaElement.prototype.play" stderr noise.
- * jsdom ships no media stack, so calling these methods logs an error that masks
- * real failures in later tests (especially Plan 3 renderer + canvas tests).
- * Tests that need spy behavior override these via vi.spyOn.
- */
-window.HTMLMediaElement.prototype.play = async () => {};
-window.HTMLMediaElement.prototype.pause = () => {};
-window.HTMLMediaElement.prototype.load = () => {};
+// The remaining shims are jsdom-only — server-route integration tests run under
+// the `node` environment (via `// @vitest-environment node`) and have no
+// `window` / `HTMLMediaElement` / `ImageBitmap` to patch.
+if (typeof window !== 'undefined') {
+  /**
+   * Silence jsdom's "Not implemented: HTMLMediaElement.prototype.play" stderr noise.
+   * jsdom ships no media stack, so calling these methods logs an error that masks
+   * real failures in later tests (especially Plan 3 renderer + canvas tests).
+   * Tests that need spy behavior override these via vi.spyOn.
+   */
+  window.HTMLMediaElement.prototype.play = async () => {};
+  window.HTMLMediaElement.prototype.pause = () => {};
+  window.HTMLMediaElement.prototype.load = () => {};
 
-class MockResizeObserver {
-  callback: ResizeObserverCallback;
-  constructor(cb: ResizeObserverCallback) {
-    this.callback = cb;
+  class MockResizeObserver {
+    callback: ResizeObserverCallback;
+    constructor(cb: ResizeObserverCallback) {
+      this.callback = cb;
+    }
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
   }
-  observe = vi.fn();
-  unobserve = vi.fn();
-  disconnect = vi.fn();
-}
-globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-// jsdom has no createImageBitmap. Return a minimal object — tests that need
-// pixel data override per-test.
-globalThis.createImageBitmap = (async (
-  _source: ImageBitmapSource
-): Promise<ImageBitmap> => {
-  return {
-    width: 100,
-    height: 100,
-    close: vi.fn()
-  } as unknown as ImageBitmap;
-}) as typeof createImageBitmap;
+  // jsdom has no createImageBitmap. Return a minimal object — tests that need
+  // pixel data override per-test.
+  globalThis.createImageBitmap = (async (
+    _source: ImageBitmapSource
+  ): Promise<ImageBitmap> => {
+    return {
+      width: 100,
+      height: 100,
+      close: vi.fn()
+    } as unknown as ImageBitmap;
+  }) as typeof createImageBitmap;
+}
