@@ -671,11 +671,17 @@ git commit -m "feat(fx): sweep plugin (3 radial-gradient orbs, time-driven drift
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { particlesPlugin } from '@/lib/fx/particles';
 import { makeRenderContext } from './_helpers';
 
 describe('particlesPlugin', () => {
+  // particlesPlugin holds module-level pool + lastSpawnBeat state (v0.1 limit).
+  // Reset between tests so spawn-guard assertions are deterministic.
+  afterEach(() => {
+    particlesPlugin.dispose?.();
+  });
+
   it('has the correct shape', () => {
     expect(particlesPlugin.id).toBe('particles');
     expect(particlesPlugin.kind).toBe('Particle');
@@ -754,7 +760,11 @@ function makePool(): Particle[] {
   }));
 }
 
-// Module-level state — single emitter for v0.1. Re-init on dispose.
+// v0.1: module-level state — single particles track expected.
+// Two simultaneous particles clips would share `lastSpawnBeat` and `pool`.
+// v0.2: move pool + lastSpawnBeat into a per-instance closure if multi-track
+// support is needed. Tests must call `particlesPlugin.dispose()` in afterEach
+// to keep the spawn-guard deterministic.
 let pool: Particle[] = makePool();
 let lastSpawnBeat: number | null = null;
 
@@ -1092,6 +1102,7 @@ describe('contourPlugin', () => {
 
 ```ts
 import type { FxPlugin } from '@/lib/renderer/types';
+import { isClient } from '@/lib/utils/is-client';
 import { extractContours, type ContourPath } from './preload';
 
 interface ContourParams {
@@ -1130,6 +1141,8 @@ export const contourPlugin: FxPlugin<ContourParams> = {
   },
   getDefaultParams: () => ({ color: '#a86bff', threshold: 0.3, dashLength: 12 }),
   async preload(imageBitmap, signal) {
+    // SSR / Capacitor guard — OffscreenCanvas is browser-only (CLAUDE.md rule #1).
+    if (!isClient()) return;
     contourPlugin.preloadState = 'loading';
     try {
       const off = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
@@ -1392,6 +1405,10 @@ describe('imageBitmapCache', () => {
 - [ ] **Step 3: Implement**
 
 ```ts
+// TODO v0.2: add LRU eviction (cap: 8 bitmaps).
+// v0.1 ships an unbounded cache — typical session loads 3-5 images,
+// so unbounded growth is acceptable. Multi-image sessions in v0.2 need a cap.
+
 export interface ImageBitmapCache {
   get(mediaId: string): ImageBitmap | undefined;
   load(mediaId: string, url: string): Promise<ImageBitmap>;
@@ -1725,6 +1742,38 @@ describe('renderer loop tick', () => {
     const calls = (ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
     expect(calls.find((c) => c.method === 'fillRect')).toBeUndefined();
   });
+
+  it('dispatches to Particles plugin (Particle ≠ particles guard)', () => {
+    // Regression guard: kind.toLowerCase() would map 'Particle' → 'particle',
+    // but the timeline slice key is 'particles'. Without KIND_TO_TRACK_KIND,
+    // particles clips would silently never render.
+    const { ctx, deps } = makeDeps({
+      getCurrentTime: () => 0,
+      getTimelineState: () => ({
+        tracks: [{ id: 'tpa', kind: 'particles', name: 'pa', muted: false, order: 0 }],
+        clips: [
+          {
+            id: 'pa1',
+            trackId: 'tpa',
+            kind: 'particles',
+            fxId: 'particles',
+            startBeat: 0,
+            lengthBeats: 8,
+            label: 'pa1'
+          }
+        ],
+        playhead: { beats: 0, playing: false },
+        zoom: 1,
+        snap: 'beat'
+      })
+    });
+    const renderer = createRenderer(deps);
+    renderer.tick();
+    const calls = (ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
+    // Particles plugin calls arc() per particle. At least one arc should appear
+    // on the spawn frame (time=0, isOnBeat).
+    expect(calls.some((c) => c.method === 'arc')).toBe(true);
+  });
 });
 ```
 
@@ -1741,9 +1790,21 @@ import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeImageClip, activeFxClipsByKind } from '@/lib/timeline/selectors';
 import { getPlugin, listPluginsByKind } from './registry';
 import { registerBuiltInPlugins } from '@/lib/fx';
-import type { TimelineState } from '@/lib/timeline/types';
+import type { FxKind as TrackFxKind, TimelineState } from '@/lib/timeline/types';
 import type { BeatGrid } from '@/lib/audio/types';
 import type { FxKind, FxPlugin, RenderContext } from './types';
+
+/**
+ * Map FX plugin `kind` (PascalCase) to the corresponding key in `activeFxClipsByKind`'s
+ * Record (lowercase, sometimes pluralized). Cannot rely on `kind.toLowerCase()` —
+ * 'Particle'.toLowerCase() === 'particle' but the timeline slice key is 'particles'.
+ */
+const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
+  Contour: 'contour',
+  Pulse: 'pulse',
+  Sweep: 'sweep',
+  Particle: 'particles'
+};
 
 export interface RendererDeps {
   canvas: HTMLCanvasElement;
@@ -1813,7 +1874,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const trackMuteMap = new Map(timeline.tracks.map((t) => [t.id, t.muted]));
 
     for (const kind of RENDER_ORDER) {
-      const sliceKind = kind.toLowerCase() as keyof typeof fxByKind;
+      const sliceKind = KIND_TO_TRACK_KIND[kind];
       const clips = fxByKind[sliceKind] ?? [];
       for (const clip of clips) {
         if (trackMuteMap.get(clip.trackId)) continue;
@@ -1964,12 +2025,18 @@ Expected: PASS. The renderer + FX modules are tree-shakable until Plan 5 imports
 
 All 13 tasks committed, all six verification steps green. The canvas renderer + 4 FX plugins are reachable via `getPlugin(id)`, ImageBitmaps cache + evict cleanly, the loop honors the negative-beats guard, the lastFiredBeatGuard prevents double-fire per clip, and muted tracks are skipped at render time. **Plan 4 (Storage & API Layer) can start.**
 
-## Open questions for review
+## Decisions resolved during review (2026-05-19)
 
-1. **Contour algorithm — simplified Canny.** Plan ships Sobel + 8-connected flood instead of full Canny (no NMS, no hysteresis). Path counts may be higher and edges thicker than the spec's ideal. Confirm or upgrade scope: full Canny adds ~80 lines and substantial test work.
-2. **`RENDER_ORDER`**: contour → sweep → particles → pulse. Particles arguably belong on top of everything (above pulse glow) — confirm or flip the last two.
-3. **Pulse fade math** — `decay = max(0, 1 - beatPhase * 4)` (fades over the first quarter of the beat). Make it a param?
-4. **Sweep gradient drawing** — currently uses `fillRect` over a bounding box of `2 × radius` and stretches the gradient inside. Alternatively `ctx.arc()` + `fill()` is cleaner but does not respect the gradient as nicely with the current `createRadialGradient` call. Confirm visual approach.
-5. **ImageBitmap cache eviction policy** — none yet. The cache grows unbounded as users upload images in one session. v0.1 acceptable, or add an LRU cap (e.g. last-8)?
-6. **Particles spawn-on-beat is global, not per-clip.** Two simultaneous particle clips would share `lastSpawnBeat`. Acceptable for v0.1 (single particles track expected), upgrade if multi-instance needed.
-7. **DPR test** — only asserts wiring, not auto-firing (jsdom ResizeObserver does not fire). Real DPR behavior is covered in Plan 5 manual smoke + Plan 6 e2e. Confirm.
+1. **Contour algorithm** — simplified Canny (Sobel + 8-connected flood) accepted for v0.1. NMS + hysteresis documented as v0.2 upgrade.
+2. **`RENDER_ORDER`** — confirmed: `Contour → Sweep → Particle → Pulse`. Pulse is a full-frame overlay and must sit on top of everything, including particles.
+3. **Pulse fade math** — kept as implementation detail, NOT a user-facing param. `intensity` slider is enough control; fewer params = simpler Inspector.
+4. **Sweep gradient drawing** — `fillRect` with bounding box kept. `ctx.arc()` + `fill()` would clip the gradient at the circle edge and look worse for soft orbs.
+5. **ImageBitmap cache eviction** — unbounded for v0.1. `TODO v0.2: add LRU eviction (cap: 8 bitmaps)` comment baked into `image-cache.ts`.
+6. **Particles spawn state** — global module-level state accepted for v0.1. `// v0.1: module-level state — single particles track expected` comment in `particles.ts`. Tests call `dispose()` in `afterEach` for isolation.
+7. **DPR test** — wiring-only test accepted. Real DPR behavior covered by Plan 5 manual smoke + Plan 6 e2e.
+
+## Additional fixes baked in from review (2026-05-19)
+
+8. **`KIND_TO_TRACK_KIND` mapping** in `loop.ts` — replaces the broken `kind.toLowerCase()` shortcut. `'Particle'.toLowerCase()` is `'particle'`, but the timeline slice key is `'particles'`. Without the explicit map, particles clips would silently never render. Regression test added to `loop.test.ts`.
+9. **`isClient()` guard in `contourPlugin.preload`** — `OffscreenCanvas` is browser-only; the guard keeps the SSR build clean (CLAUDE.md rule #1).
+10. **`particlesPlugin.dispose()` in `afterEach`** — required because of the module-level pool. Documented inline in the particles test.
