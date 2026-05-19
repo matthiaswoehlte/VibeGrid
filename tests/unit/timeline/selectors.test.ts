@@ -4,7 +4,9 @@ import {
   hasOverlap,
   activeClipsAt,
   activeImageClip,
-  activeFxClipsByKind
+  activeFxClipsByKind,
+  totalBeats,
+  beatsToTimecode
 } from '@/lib/timeline/selectors';
 import { makeClip, makeState } from './_helpers';
 
@@ -173,5 +175,47 @@ describe('activeFxClipsByKind', () => {
     expect(r.sweep).toEqual([]);
     expect(r.pulse).toEqual([]);
     expect(r.particles).toEqual([]);
+  });
+});
+
+describe('totalBeats', () => {
+  it('returns 0 on empty timeline', () => {
+    expect(totalBeats(makeState())).toBe(0);
+  });
+
+  it('returns max(startBeat + lengthBeats) across all clips', () => {
+    const s = makeState({
+      clips: [
+        makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 16 }),
+        makeClip({ id: 'b', trackId: 't1', kind: 'contour', startBeat: 20, lengthBeats: 4 }),
+        makeClip({ id: 'c', trackId: 't2', kind: 'pulse', startBeat: 8, lengthBeats: 8 })
+      ]
+    });
+    expect(totalBeats(s)).toBe(24);
+  });
+});
+
+describe('beatsToTimecode', () => {
+  it('formats whole minutes at 120 BPM', () => {
+    expect(beatsToTimecode(480, 120)).toBe('4:00');
+  });
+
+  it('formats sub-minute durations', () => {
+    expect(beatsToTimecode(0, 120)).toBe('0:00');
+    expect(beatsToTimecode(60, 120)).toBe('0:30');
+    expect(beatsToTimecode(119, 120)).toBe('0:59');
+  });
+
+  it('formats h:mm:ss for durations >= 1 hour', () => {
+    expect(beatsToTimecode(7200, 120)).toBe('1:00:00');
+    expect(beatsToTimecode(7320, 120)).toBe('1:01:00');
+  });
+
+  it('clamps negative input to 0:00', () => {
+    expect(beatsToTimecode(-5, 120)).toBe('0:00');
+  });
+
+  it('handles non-default BPMs', () => {
+    expect(beatsToTimecode(60, 60)).toBe('1:00');
   });
 });
