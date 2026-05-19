@@ -1,6 +1,6 @@
 import { isClient } from '@/lib/utils/is-client';
 import type { AudioEngineState, AudioStatus, BeatGrid } from './types';
-import { DEFAULT_BEAT_GRID } from './types';
+import { BPM_MAX, BPM_MIN, DEFAULT_BEAT_GRID } from './types';
 import type { BeatWorkerOutbound } from './beat-detector.worker';
 import { createBeatWorker as defaultCreateBeatWorker } from './worker-factory';
 
@@ -16,9 +16,6 @@ export interface AudioEngine {
   onStateChange(cb: (s: AudioEngineState) => void): () => void;
   destroy(): void;
 }
-
-const BPM_MIN = 60;
-const BPM_MAX = 200;
 
 interface EngineDeps {
   /** Override the worker constructor in tests. Defaults to the Webpack-compatible factory. */

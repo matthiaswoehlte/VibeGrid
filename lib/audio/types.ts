@@ -36,3 +36,7 @@ export const DEFAULT_BEAT_GRID: BeatGrid = {
   beatsPerBar: 4,
   offsetMs: 0
 };
+
+/** BPM clamp range. Single source of truth — imported by engine and store slice. */
+export const BPM_MIN = 60;
+export const BPM_MAX = 200;

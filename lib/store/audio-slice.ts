@@ -1,9 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { AppState } from './types';
-import { DEFAULT_BEAT_GRID, type BeatGrid } from '@/lib/audio/types';
-
-const BPM_MIN = 60;
-const BPM_MAX = 200;
+import { BPM_MAX, BPM_MIN, DEFAULT_BEAT_GRID, type BeatGrid } from '@/lib/audio/types';
 
 export const initialAudioGrid: BeatGrid = { ...DEFAULT_BEAT_GRID };
 
