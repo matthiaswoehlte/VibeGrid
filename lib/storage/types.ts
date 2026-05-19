@@ -23,12 +23,20 @@ export const SIZE_LIMITS = {
 } as const satisfies Record<MediaKind, number>;
 
 /** Whitelisted MIME types per kind (spec §7.1).
- *  WAV ships with three historical MIME aliases — `audio/wav` is the de-facto
- *  browser-shipped value, `audio/vnd.wave` is the IANA-registered value that
- *  `file-type@^19` returns, and `audio/x-wav` is the legacy Microsoft alias.
- *  All three map to the same RIFF/WAVE payload — accept all so the whitelist
- *  is not coupled to a single library version. */
+ *  Defensive widening — file-type's exact MIME string for the same payload
+ *  varies across versions:
+ *    - WAV: `audio/wav` (file-type@19.6 + most browsers), `audio/vnd.wave`
+ *      (IANA), `audio/x-wav` (legacy Microsoft) — all RIFF/WAVE.
+ *    - M4A: `audio/x-m4a` (file-type's Apple-specific) vs `audio/mp4` (generic
+ *      MP4 container) — same `ftyp` box. */
 export const MIME_WHITELIST = {
   image: ['image/jpeg', 'image/png', 'image/webp'] as const,
-  audio: ['audio/mpeg', 'audio/wav', 'audio/vnd.wave', 'audio/x-wav', 'audio/mp4'] as const
+  audio: [
+    'audio/mpeg',
+    'audio/wav',
+    'audio/vnd.wave',
+    'audio/x-wav',
+    'audio/mp4',
+    'audio/x-m4a'
+  ] as const
 } as const satisfies Record<MediaKind, readonly string[]>;

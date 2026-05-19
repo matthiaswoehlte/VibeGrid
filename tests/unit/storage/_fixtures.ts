@@ -29,11 +29,19 @@ export function webpBytes(): Uint8Array {
   return buf;
 }
 
-// MP3 (with ID3v2 tag): 'ID3' .. 03 00 00 ..
+// MP3: MPEG-1 Layer III frame sync (FF FB) + bitrate/sample bits.
+// `file-type@19` requires either a real MPEG frame sync or `ID3` header
+// FOLLOWED BY a frame — a bare `ID3` tag with no audio data is rejected.
 export function mp3Bytes(): Uint8Array {
   const buf = new Uint8Array(64);
-  buf.set([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0);
+  buf.set([0xff, 0xfb, 0x90, 0x64], 0);
   return buf;
+}
+
+// GIF89a — detected by file-type but NOT in the image whitelist.
+// Useful for proving the UNSUPPORTED_MIME branch (vs UNDETECTABLE_TYPE for bogus).
+export function gifBytes(): Uint8Array {
+  return pad([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
 }
 
 // WAV: 'RIFF' .... 'WAVE'
