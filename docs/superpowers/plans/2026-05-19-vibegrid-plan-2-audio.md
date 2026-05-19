@@ -34,7 +34,8 @@ npm run build                # clean (catches worker-bundling errors)
 | `lib/audio/clip-utils.ts` | Pure: `lastFiredBeatGuard(currentBeatIndex, lastFiredBeatIndex)` returning `{ shouldFire, nextLastFired }` |
 | `lib/audio/beat-detector.worker.ts` | Worker wrapping `detectBeats`, posts `{type:'progress', value}` and `{type:'result', payload}` |
 | `lib/audio/waveform-worker.ts` | Worker: downsample channel data to min/max peaks per pixel column |
-| `lib/audio/engine.ts` | `createAudioEngine()` factory + `getAudioEngine()` singleton. Owns AudioContext + audio element. |
+| `lib/audio/worker-factory.ts` | `createBeatWorker()` + `createWaveformWorker()` — Next.js Webpack-compatible worker instantiation. Injectable into engine for tests. |
+| `lib/audio/engine.ts` | `createAudioEngine()` factory + `getAudioEngine()` singleton. Owns AudioContext + audio element + cached decoded AudioBuffer. |
 | `lib/store/audio-slice.ts` | Zustand slice exposing `audio.grid` + actions |
 | `lib/store/types.ts` (modify) | Compose `AudioState` + `AudioActions` into `AppState` |
 | `lib/store/index.ts` (modify) | Add slice; extend `partialize` with `audio.grid` |
@@ -167,6 +168,21 @@ class MockAudioContext {
       connect: vi.fn(),
       disconnect: vi.fn()
     };
+  }
+
+  /**
+   * Real WebAudio decodeAudioData accepts an ArrayBuffer. The mock returns a
+   * minimal AudioBuffer-like object — tests that care about decoded content
+   * override this via vi.spyOn(ctxProto, 'decodeAudioData').
+   */
+  async decodeAudioData(_buf: ArrayBuffer): Promise<AudioBuffer> {
+    return {
+      sampleRate: 44100,
+      length: 0,
+      duration: 0,
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array(0)
+    } as unknown as AudioBuffer;
   }
 }
 
@@ -499,9 +515,25 @@ export interface BeatFireDecision {
 }
 
 /**
- * Combined with beatPhase().isOnBeat, this prevents an FX from firing on every
- * frame inside the 40 ms beat window. Pass the result.nextLastFired back into
- * the renderer's state on every frame.
+ * Combined with `beatPhase().isOnBeat`, this prevents an FX from firing on every
+ * frame inside the 40 ms beat window. Pass `result.nextLastFired` back into the
+ * renderer's state on every frame.
+ *
+ * **Deriving `nearestBeatIndex` (renderer responsibility):** `beatPhase()` returns
+ * `beatIndex = Math.floor(beats)` — i.e. the beat the playhead has just passed.
+ * The *nearest* beat is either `beatIndex` or `beatIndex + 1` depending on which
+ * is closer in time. The renderer must compute it explicitly before calling this
+ * guard:
+ *
+ * ```ts
+ * const { beatIndex, phase, isOnBeat } = beatPhase(currentTime, grid);
+ * if (!isOnBeat) continue;
+ * const nearestBeatIndex = phase > 0.5 ? beatIndex + 1 : beatIndex;
+ * const { shouldFire, nextLastFired } = lastFiredBeatGuard(nearestBeatIndex, lastFired);
+ * ```
+ *
+ * Using `beatIndex` directly would mis-fire when the playhead approaches a beat
+ * from below — Plan 3 will land this glue in `lib/renderer/loop.ts`.
  *
  * @param nearestBeatIndex   the beat index closest to `currentTime`
  *                           (= beatIndex or beatIndex+1 from beatPhase)
@@ -868,21 +900,49 @@ git commit -m "feat(audio): waveform downsampling worker (min/max peaks per colu
 
 ---
 
-## Task 8: AudioEngine factory + singleton
+## Task 8: Worker factory + AudioEngine + singleton
 
 **Files:**
 
+- Create: `lib/audio/worker-factory.ts`
 - Create: `lib/audio/engine.ts`
 
-> `createAudioEngine()` returns a fresh engine (used by tests). `getAudioEngine()` lazily produces one singleton for the app. The engine owns the AudioContext, an internal `HTMLAudioElement`, and the WebAudio graph. State changes are published via `onStateChange`. **No React, no Zustand** — Plan 5 wires it up via a `useAudioEngine` hook.
+> `createAudioEngine()` returns a fresh engine (used by tests). `getAudioEngine()` lazily produces one singleton for the app. The engine owns the AudioContext, an internal `HTMLAudioElement`, the WebAudio graph, AND a cached decoded `AudioBuffer` reused across `detectBPM` calls. State changes are published via `onStateChange`. **No React, no Zustand** — Plan 5 wires it up via a `useAudioEngine` hook.
+>
+> **Worker instantiation under Next.js 14 (Webpack, NOT Vite):** Workers are created via `new Worker(new URL('./x.worker.ts', import.meta.url))` **without** `{ type: 'module' }` — Next.js Webpack bundles workers as classic scripts. The two factory functions live in `worker-factory.ts` so:
+> - The engine consumes them via dependency injection (`deps.createBeatWorker`), keeping the engine pure-TS and trivially mockable in tests.
+> - The Webpack bundler sees a literal `new URL(...)` at the call site, which is what triggers worker-chunk emission.
 
-- [ ] **Step 1: Write `lib/audio/engine.ts`**
+- [ ] **Step 1: Write `lib/audio/worker-factory.ts`**
+
+```ts
+/**
+ * Worker constructors isolated from the engine so:
+ *   1. Engine code stays mockable (engine takes the constructors via deps).
+ *   2. Next.js Webpack sees `new URL(...)` at the call site — required for
+ *      worker chunk emission to fire.
+ *
+ * IMPORTANT: do NOT add `{ type: 'module' }` here. Next.js Webpack bundles
+ * workers as classic scripts. The Vite-style `{ type: 'module' }` breaks the
+ * build under Next.js's webpack worker loader.
+ */
+export function createBeatWorker(): Worker {
+  return new Worker(new URL('./beat-detector.worker.ts', import.meta.url));
+}
+
+export function createWaveformWorker(): Worker {
+  return new Worker(new URL('./waveform-worker.ts', import.meta.url));
+}
+```
+
+- [ ] **Step 2: Write `lib/audio/engine.ts`**
 
 ```ts
 import { isClient } from '@/lib/utils/is-client';
 import type { AudioEngineState, AudioStatus, BeatGrid } from './types';
 import { DEFAULT_BEAT_GRID } from './types';
 import type { BeatWorkerOutbound } from './beat-detector.worker';
+import { createBeatWorker as defaultCreateBeatWorker } from './worker-factory';
 
 export interface AudioEngine {
   load(file: File | string): Promise<void>;
@@ -901,7 +961,7 @@ const BPM_MIN = 60;
 const BPM_MAX = 200;
 
 interface EngineDeps {
-  /** Override the worker constructor in tests. */
+  /** Override the worker constructor in tests. Defaults to the Webpack-compatible factory. */
   createBeatWorker?: () => Worker;
 }
 
@@ -910,11 +970,28 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     throw new Error('AudioEngine cannot be created outside the browser');
   }
 
+  const createBeatWorker = deps.createBeatWorker ?? defaultCreateBeatWorker;
+
   let audioContext: AudioContext | null = null;
   let audioEl: HTMLAudioElement | null = null;
   let analyser: AnalyserNode | null = null;
   let sourceNode: MediaElementAudioSourceNode | null = null;
   let streamDest: MediaStreamAudioDestinationNode | null = null;
+
+  /**
+   * Cache of the decoded audio buffer from the most recent successful load.
+   * Reused across detectBPM calls so we don't re-fetch + re-decode on every
+   * "Detect BPM" click. Cleared in destroy().
+   */
+  let cachedDecodedBuffer: AudioBuffer | null = null;
+
+  /**
+   * AbortController for the currently running detectBPM call. The next call
+   * aborts the previous one before starting — this avoids a DataCloneError
+   * when the previous postMessage transferred the channelData ArrayBuffer
+   * (which would otherwise stay detached on the main thread).
+   */
+  let activeDetectionAbort: AbortController | null = null;
 
   const listeners = new Set<(s: AudioEngineState) => void>();
   let state: AudioEngineState = {
@@ -972,8 +1049,18 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
           if (audioEl) setState({ currentTime: audioEl.currentTime });
         });
         audioEl.addEventListener('ended', () => setStatus('ready'));
+
+        // Decode once, cache for detectBPM. Re-fetching from the same URL is
+        // either cached by the browser or a network round-trip — both wasteful
+        // when the user clicks "Detect BPM" multiple times.
+        const res = await fetch(url);
+        const arrayBuffer = await res.arrayBuffer();
+        const ctx = ensureContext();
+        cachedDecodedBuffer = await ctx.decodeAudioData(arrayBuffer);
+
         setState({ duration: audioEl.duration, status: 'ready' });
       } catch (err) {
+        cachedDecodedBuffer = null;
         setStatus('error');
         throw err;
       }
@@ -1006,32 +1093,51 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     },
 
     async detectBPM(signal, onProgress): Promise<BeatGrid> {
-      if (!audioEl) throw new Error('Audio not loaded');
-      const worker =
-        deps.createBeatWorker?.() ??
-        new Worker(new URL('./beat-detector.worker.ts', import.meta.url), { type: 'module' });
+      if (!audioEl || !cachedDecodedBuffer) {
+        throw new Error('Audio not loaded');
+      }
 
-      // Fetch the source and decode in the main thread (we already have an AudioContext).
-      const res = await fetch(audioEl.src);
-      const arrayBuffer = await res.arrayBuffer();
-      const ctx = ensureContext();
-      const decoded = await ctx.decodeAudioData(arrayBuffer);
-      const channelData = decoded.getChannelData(0).slice(); // copy out of AudioBuffer
+      // Cancel any in-flight detection so we don't transfer a buffer twice.
+      if (activeDetectionAbort) {
+        activeDetectionAbort.abort();
+      }
+      const myAbort = new AbortController();
+      activeDetectionAbort = myAbort;
+
+      // Forward the external signal into our internal one — abort() bubbles either way.
+      const onExternalAbort = () => myAbort.abort();
+      if (signal.aborted) myAbort.abort();
+      else signal.addEventListener('abort', onExternalAbort, { once: true });
+
+      // Always work on a fresh copy of the channel data — the ArrayBuffer is
+      // transferred to the worker and would otherwise be detached on the main thread.
+      const channelData = cachedDecodedBuffer.getChannelData(0).slice();
+      const sampleRate = cachedDecodedBuffer.sampleRate;
+
+      const worker = createBeatWorker();
 
       return new Promise<BeatGrid>((resolve, reject) => {
-        const onAbort = () => {
+        const cleanup = () => {
+          signal.removeEventListener('abort', onExternalAbort);
+          if (activeDetectionAbort === myAbort) activeDetectionAbort = null;
           worker.terminate();
-          reject(new DOMException('Beat detection aborted', 'AbortError'));
         };
-        signal.addEventListener('abort', onAbort, { once: true });
+
+        myAbort.signal.addEventListener(
+          'abort',
+          () => {
+            cleanup();
+            reject(new DOMException('Beat detection aborted', 'AbortError'));
+          },
+          { once: true }
+        );
 
         worker.onmessage = (e: MessageEvent<BeatWorkerOutbound>) => {
           const msg = e.data;
           if (msg.type === 'progress') {
             onProgress?.(msg.value);
           } else if (msg.type === 'result') {
-            signal.removeEventListener('abort', onAbort);
-            worker.terminate();
+            cleanup();
             const bpm = Math.max(BPM_MIN, Math.min(BPM_MAX, msg.payload.bpm));
             const grid: BeatGrid = {
               bpm,
@@ -1043,14 +1149,13 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
             setState({ beatGrid: grid });
             resolve(grid);
           } else if (msg.type === 'error') {
-            signal.removeEventListener('abort', onAbort);
-            worker.terminate();
+            cleanup();
             reject(new Error(msg.message));
           }
         };
 
         worker.postMessage(
-          { type: 'detect', data: channelData, sampleRate: decoded.sampleRate },
+          { type: 'detect', data: channelData, sampleRate },
           [channelData.buffer] // transferable
         );
       });
@@ -1077,6 +1182,8 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     },
 
     destroy(): void {
+      activeDetectionAbort?.abort();
+      activeDetectionAbort = null;
       audioEl?.pause();
       audioEl?.removeAttribute('src');
       sourceNode?.disconnect();
@@ -1088,6 +1195,7 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
       analyser = null;
       sourceNode = null;
       streamDest = null;
+      cachedDecodedBuffer = null;
       listeners.clear();
       state = { status: 'idle', duration: 0, currentTime: 0, beatGrid: { ...DEFAULT_BEAT_GRID } };
     }
@@ -1109,7 +1217,7 @@ export function _resetAudioEngineForTests(): void {
 }
 ```
 
-- [ ] **Step 2: Verify typecheck**
+- [ ] **Step 3: Verify typecheck**
 
 ```
 npm run typecheck
@@ -1117,11 +1225,19 @@ npm run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Verify build (catches Webpack worker-bundling errors)**
+
+```
+npm run build
+```
+
+Expected: PASS. Output should list `beat-detector.worker.*.js` and `waveform-worker.*.js` as separate chunks. **If the build fails on worker resolution**: the `import.meta.url` literal in `worker-factory.ts` may need a `/* webpackChunkName: "beat-detector-worker" */` magic comment — surface to Matthias rather than guess.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add lib/audio/engine.ts
-git commit -m "feat(audio): AudioEngine factory + singleton (lazy AudioContext, WebAudio graph)"
+git add lib/audio/worker-factory.ts lib/audio/engine.ts
+git commit -m "feat(audio): worker factory + AudioEngine (cached AudioBuffer, double-call guarded)"
 ```
 
 ---
@@ -1163,15 +1279,47 @@ function patchAudio() {
   };
 }
 
+/**
+ * Stub global.fetch + AudioContext.decodeAudioData. After the corrections to
+ * engine.load() (it now caches a decoded AudioBuffer), the test fixtures must
+ * supply both, or load() throws and every downstream test fails.
+ */
+function patchFetchAndDecode() {
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+    arrayBuffer: async () => new ArrayBuffer(8)
+  } as Response);
+
+  const ctxProto = (
+    globalThis as unknown as { AudioContext: { prototype: AudioContext } }
+  ).AudioContext.prototype;
+  const decodeSpy = vi
+    .spyOn(ctxProto, 'decodeAudioData')
+    .mockResolvedValue({
+      sampleRate: 44100,
+      length: 1,
+      duration: 0,
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array(1)
+    } as unknown as AudioBuffer);
+
+  return () => {
+    fetchSpy.mockRestore();
+    decodeSpy.mockRestore();
+  };
+}
+
 describe('AudioEngine lifecycle', () => {
-  let restore: () => void;
+  let restoreAudio: () => void;
+  let restoreFetchDecode: () => void;
 
   beforeEach(() => {
-    restore = patchAudio();
+    restoreAudio = patchAudio();
+    restoreFetchDecode = patchFetchAndDecode();
   });
 
   afterEach(() => {
-    restore();
+    restoreAudio();
+    restoreFetchDecode();
   });
 
   it('starts in status=idle with default BeatGrid (120 BPM, manual)', () => {
@@ -1552,10 +1700,12 @@ Expected: PASS. Workers compiled separately and listed in the output bundle.
 
 All 11 tasks committed, all six verification steps green. The audio subsystem is a pure functional core (grid + detector + guard) with two thin Web Workers and an AudioEngine factory. The store gets a persisted `audio.grid` slice. **Plan 3 (Renderer + FX) can start.**
 
-## Open questions for review
+## Decisions resolved during review (2026-05-19)
 
-1. **Detector heuristics** — `ENERGY_THRESHOLD = 1.3`, `LOCAL_WINDOW_S = 1`, `FRAME_MS = 10`. These are common defaults but might miss soft kicks. If a test fails, do you want the algorithm tuned (lower threshold) or the test relaxed (larger tolerance)? Default: tune.
-2. **Worker creation in production** — `new Worker(new URL('./beat-detector.worker.ts', import.meta.url), { type: 'module' })`. This is Vite's documented pattern but requires `experimental.esmExternals` to NOT be `'loose'`. Confirm Next.js 14's default webpack/turbopack handles `module: true` workers under App Router.
-3. **`detectBPM` re-fetches the audio source** to decode it. The browser cache covers the second fetch in practice, but an alternative is to keep the decoded `AudioBuffer` in the engine after the first `decodeAudioData`. That keeps memory high (~10 MB per minute at 44.1 kHz mono). Default: re-fetch (lower memory, slight CPU cost).
-4. **Audio currentTime in store** — deliberately NOT persisted and not even held in the store. The UI reads from `engine.getState()` via a `useSyncExternalStore` hook in Plan 5. Confirm.
-5. **`setDetectedGrid` forces `source: 'detected'`** regardless of caller input. Alternative: trust caller. Default keeps the slice opinionated.
+1. **Detector heuristics** — defaults kept (`ENERGY_THRESHOLD = 1.3`, `LOCAL_WINDOW_S = 1`, `FRAME_MS = 10`). If a synthetic-click test fails by 1–2 BPM, **tune the algorithm** (lower threshold to 1.2, or widen window to 1.5 s). Do **not** relax test tolerance.
+2. **Worker creation** — Next.js 14 App Router uses **Webpack**, not Vite. Workers are created via `new Worker(new URL('./x.worker.ts', import.meta.url))` **without** `{ type: 'module' }`. The two factory functions live in `lib/audio/worker-factory.ts` so the engine can inject them in tests and Webpack sees the literal `new URL(...)` at the call site (required for chunk emission). Documented in Task 8.
+3. **Decoded `AudioBuffer` is cached** in the engine after `load()` and reused across `detectBPM` calls. Re-fetching on slow connections (1–3 s) is unacceptable UX; ~25 MB memory for a typical ≤5-minute stereo song at 44.1 kHz is acceptable. Buffer is nulled in `destroy()`.
+4. **`currentTime` is NOT in the Zustand store.** The UI reads it from `engine.getState()` via a `useSyncExternalStore` hook in Plan 5.
+5. **`setDetectedGrid` is opinionated** — it forces `source: 'detected'` regardless of caller input. Prevents accidental mislabeling.
+6. **Double-call guard for `detectBPM`** — `activeDetectionAbort` AbortController cancels the previous in-flight detection before transferring the channel-data ArrayBuffer to a new worker. Avoids `DataCloneError` when the user double-clicks "Detect". Documented in Task 8.
+7. **`nearestBeatIndex` derivation** — `lastFiredBeatGuard` documents that the renderer (Plan 3) computes `nearestBeatIndex = phase > 0.5 ? beatIndex + 1 : beatIndex` before calling the guard. Falling back to `beatIndex` directly would mis-fire when approaching a beat from below.
