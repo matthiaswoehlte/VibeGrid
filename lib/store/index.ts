@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { AppState } from './types';
-import { createTimelineSlice } from './timeline-slice';
+import { createTimelineSlice, initialTimelineState } from './timeline-slice';
 import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
+import type { Track } from '@/lib/timeline/types';
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -17,8 +18,25 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibegrid-store',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
+      // v1 → v2 migration: ensure all 5 default TrackKind tracks exist.
+      // Pre-Plan-5-fix the timeline was created with `tracks: []` — without
+      // tracks, the lanes don't render and drops have nowhere to land. Merge
+      // missing kinds into whatever the user already has, preserving any
+      // existing tracks and any clips referencing them.
+      migrate: (persistedState, version) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const s = persistedState as any;
+        if (version < 2 && s?.timeline) {
+          const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
+          const existingKinds = new Set(existing.map((t) => t.kind));
+          const missing = initialTimelineState.tracks.filter((t) => !existingKinds.has(t.kind));
+          s.timeline.tracks = [...existing, ...missing].sort((a, b) => a.order - b.order);
+        }
+        return s;
+      },
+
       // Persist only serializable data slices — never actions, never blobs.
       // playhead.playing is forced to false on persist: after a page reload
       // the audio element is gone and "playing" would be a lie.
