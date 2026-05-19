@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OperationError, addClip, moveClip } from '@/lib/timeline/operations';
+import { OperationError, addClip, moveClip, resizeClip } from '@/lib/timeline/operations';
 import { freezeState, makeClip, makeState } from './_helpers';
 
 describe('OperationError', () => {
@@ -111,5 +111,44 @@ describe('moveClip', () => {
     );
     const s1 = moveClip(s0, 'a', 10);
     expect(s1.clips.find((c) => c.id === 'b')).toBe(s0.clips.find((c) => c.id === 'b'));
+  });
+});
+
+describe('resizeClip', () => {
+  it('updates lengthBeats and returns a new state', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 })]
+      })
+    );
+    const s1 = resizeClip(s0, 'a', 8);
+    expect(s1.clips[0].lengthBeats).toBe(8);
+    expect(s0.clips[0].lengthBeats).toBe(4);
+  });
+
+  it('throws INVALID_LENGTH when newLengthBeats <= 0', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 })]
+      })
+    );
+    expect(() => resizeClip(s0, 'a', 0)).toThrow(OperationError);
+    expect(() => resizeClip(s0, 'a', -1)).toThrow(OperationError);
+  });
+
+  it('throws CLIP_NOT_FOUND when clipId is unknown', () => {
+    expect(() => resizeClip(makeState(), 'missing', 4)).toThrow(OperationError);
+  });
+
+  it('throws OVERLAP when the new length would extend into another clip on the same track', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [
+          makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 }),
+          makeClip({ id: 'b', trackId: 't1', kind: 'contour', startBeat: 8, lengthBeats: 4 })
+        ]
+      })
+    );
+    expect(() => resizeClip(s0, 'a', 10)).toThrow(OperationError);
   });
 });

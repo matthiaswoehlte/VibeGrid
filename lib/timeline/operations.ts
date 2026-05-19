@@ -59,3 +59,41 @@ export function moveClip(
   next[idx] = { ...clip, startBeat: newStartBeat };
   return { ...state, clips: next };
 }
+
+/**
+ * Resize a clip by changing its `lengthBeats`.
+ *
+ * The overlap check is intentional and matches the addClip/moveClip invariant —
+ * confirmed during Plan 1 review (consistency trumps strict spec literalism).
+ *
+ * @throws {OperationError} code=INVALID_LENGTH when newLengthBeats <= 0
+ * @throws {OperationError} code=CLIP_NOT_FOUND when clipId is unknown
+ * @throws {OperationError} code=OVERLAP when the new length would extend into
+ *   an existing clip on the same track.
+ */
+export function resizeClip(
+  state: TimelineState,
+  clipId: string,
+  newLengthBeats: number
+): TimelineState {
+  if (newLengthBeats <= 0) {
+    throw new OperationError(
+      'INVALID_LENGTH',
+      `Clip length must be > 0 (got ${newLengthBeats})`
+    );
+  }
+  const idx = state.clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) {
+    throw new OperationError('CLIP_NOT_FOUND', `Clip ${clipId} not found`);
+  }
+  const clip = state.clips[idx];
+  if (hasOverlap(state, clip.trackId, clip.startBeat, newLengthBeats, clipId)) {
+    throw new OperationError(
+      'OVERLAP',
+      `Resizing clip ${clipId} to ${newLengthBeats} beats would overlap an existing clip`
+    );
+  }
+  const next = state.clips.slice();
+  next[idx] = { ...clip, lengthBeats: newLengthBeats };
+  return { ...state, clips: next };
+}
