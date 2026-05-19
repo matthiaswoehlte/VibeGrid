@@ -53,7 +53,7 @@ npm run build                # clean — exercises route bundling
 
 ## Conventions
 
-- **Server-only modules** (`r2-client.ts`, `env.ts`, route handlers) MUST NOT be imported from client code. The boundary is enforced by file location — files under `app/api/` are server-only by Next.js convention; `lib/storage/r2-client.ts` and `env.ts` are also server-only but live in `lib/` for testability. The client adapter does NOT import these; the route handler does.
+- **Server-only modules** (`r2-client.ts`, `env.ts`, route handlers) MUST NOT be imported from client code. Files under `app/api/` are server-only by Next.js convention; `lib/storage/r2-client.ts` and `env.ts` live in `lib/` for testability but are hard-locked to the server by `import 'server-only';` at the top of each file. An accidental client-side import fails `next build` immediately with a clear error (vs. silently bundling the ~600 KB AWS SDK into the browser). The client adapter does NOT import these; the route handler does.
 - **MediaRef.id is generated client-side** via `crypto.randomUUID()` before posting. The server validates the format (UUID v4 regex) but does not regenerate. Rationale: keeps optimistic UI updates simple — the client can insert the `MediaRef` into the store before the upload completes (status flag in Plan 5).
 - **MIME validation is magic-byte ONLY.** The `Content-Type` header from the browser is never trusted. `file-type` reads the first ~256 bytes of the buffer and returns `{ mime, ext }`. The server then matches against the kind-specific whitelist.
 - **Size limits enforced at the route boundary**, before reading the full body when possible. v0.1 uses `request.formData()` which buffers the whole body — size check happens AFTER parse. Note in `KNOWN_LIMITATIONS.md`: Vercel hobby tier caps payloads at 4.5 MB; the 50 MB audio cap requires Pro. Documented, not blocked.
@@ -73,10 +73,10 @@ npm run build                # clean — exercises route bundling
 - [ ] **Step 1: Install deps**
 
 ```bash
-npm install @aws-sdk/client-s3@^3.658.0 file-type@^19.5.0
+npm install @aws-sdk/client-s3@^3.658.0 file-type@^19.5.0 server-only
 ```
 
-Expected: both packages added to `dependencies`. `file-type` is ESM-only — Next.js 14 App Router routes are ESM, so this works under both `next build` and vitest.
+Expected: three packages added to `dependencies`. `server-only` is Next.js's official build-time guard — it has zero runtime overhead and makes a server-import-from-client crash `next build` with a readable error. `file-type` is ESM-only — `next build` handles this natively; for the vitest interaction see the ESM-fallback note in Task 2 Step 4.
 
 - [ ] **Step 2: Write `tests/unit/storage/_fixtures.ts`**
 
@@ -197,10 +197,15 @@ export const SIZE_LIMITS = {
   audio: 50 * 1024 * 1024
 } as const satisfies Record<MediaKind, number>;
 
-/** Whitelisted MIME types per kind (spec §7.1). */
+/** Whitelisted MIME types per kind (spec §7.1).
+ *  WAV ships with three historical MIME aliases — `audio/wav` is the de-facto
+ *  browser-shipped value, `audio/vnd.wave` is the IANA-registered value that
+ *  `file-type@^19` returns, and `audio/x-wav` is the legacy Microsoft alias.
+ *  All three map to the same RIFF/WAVE payload — accept all so the whitelist
+ *  is not coupled to a single library version. */
 export const MIME_WHITELIST = {
   image: ['image/jpeg', 'image/png', 'image/webp'] as const,
-  audio: ['audio/mpeg', 'audio/wav', 'audio/mp4'] as const
+  audio: ['audio/mpeg', 'audio/wav', 'audio/vnd.wave', 'audio/x-wav', 'audio/mp4'] as const
 } as const satisfies Record<MediaKind, readonly string[]>;
 ```
 
@@ -269,9 +274,12 @@ describe('validateUpload — audio', () => {
     expect(r.mime).toBe('audio/mpeg');
   });
 
-  it('accepts WAV', async () => {
+  it('accepts WAV (any of audio/wav, audio/vnd.wave, audio/x-wav)', async () => {
+    // file-type@19 returns `audio/vnd.wave` for RIFF/WAVE bytes; older versions
+    // returned `audio/wav`. Assert the family, not a single string — see the
+    // MIME_WHITELIST comment in types.ts for the rationale.
     const r = await validateUpload(wavBytes(), 'audio');
-    expect(r.mime).toBe('audio/wav');
+    expect(['audio/wav', 'audio/vnd.wave', 'audio/x-wav']).toContain(r.mime);
   });
 
   it('accepts M4A as audio/mp4', async () => {
@@ -373,6 +381,24 @@ export async function validateUpload(
 ```
 
 - [ ] **Step 4: Run — expect PASS (12 tests)**
+
+```
+npm test -- mime-validator
+```
+
+**If the run aborts with `ERR_REQUIRE_ESM`** (`file-type` is ESM-only and some vitest/jsdom setups can't transpile it on the fly), patch `vitest.config.ts` with the standard one-liner:
+
+```ts
+// vitest.config.ts
+export default defineConfig({
+  // ...existing config
+  ssr: {
+    noExternal: ['file-type']
+  }
+});
+```
+
+Then re-run. This is a known interaction — do not redesign the validator.
 
 - [ ] **Step 5: Commit**
 
@@ -509,6 +535,8 @@ D1_DATABASE_ID=
 - [ ] **Step 2: Write `lib/storage/env.ts`**
 
 ```ts
+import 'server-only';
+
 export interface R2Config {
   accountId: string;
   accessKeyId: string;
@@ -520,7 +548,7 @@ export interface R2Config {
 
 let cached: R2Config | null = null;
 
-function require(name: string): string {
+function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v || v.length === 0) {
     throw new Error(`Missing required env var: ${name}`);
@@ -535,12 +563,12 @@ function require(name: string): string {
 export function getR2Config(): R2Config {
   if (cached) return cached;
   cached = {
-    accountId: require('R2_ACCOUNT_ID'),
-    accessKeyId: require('R2_ACCESS_KEY_ID'),
-    secretAccessKey: require('R2_SECRET_ACCESS_KEY'),
-    bucket: require('R2_BUCKET'),
-    endpoint: require('R2_ENDPOINT'),
-    publicUrl: require('R2_PUBLIC_URL')
+    accountId: requireEnv('R2_ACCOUNT_ID'),
+    accessKeyId: requireEnv('R2_ACCESS_KEY_ID'),
+    secretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
+    bucket: requireEnv('R2_BUCKET'),
+    endpoint: requireEnv('R2_ENDPOINT'),
+    publicUrl: requireEnv('R2_PUBLIC_URL')
   };
   return cached;
 }
@@ -576,6 +604,7 @@ git commit -m "feat(storage): R2 env config (lazy, fail-loudly)"
 - [ ] **Step 1: Write `lib/storage/r2-client.ts`**
 
 ```ts
+import 'server-only';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getR2Config } from './env';
 
@@ -754,7 +783,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the AWS SDK BEFORE importing the route — the route imports r2-client
 // which constructs an S3Client at first putToR2() call.
-const sendMock = vi.fn().mockResolvedValue({});
+// `vi.hoisted()` is required: vitest hoists `vi.mock()` factories above any
+// `const` declarations, so a plain `const sendMock` would be in the temporal
+// dead zone when the factory closure runs (ReferenceError at module init).
+const sendMock = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 vi.mock('@aws-sdk/client-s3', () => ({
   S3Client: vi.fn().mockImplementation(() => ({ send: sendMock })),
   PutObjectCommand: vi.fn().mockImplementation((args: unknown) => ({ __cmd: 'put', args }))
@@ -1068,13 +1100,22 @@ describe('R2StorageAdapter', () => {
   });
 
   it('generates a UUID v4 id per call', async () => {
+    const UUID_V4_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const adapter = createR2StorageAdapter();
     const file = new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' });
     await adapter.uploadImage(file);
     await adapter.uploadImage(file);
-    const id1 = (fetchSpy.mock.calls[0][1] as RequestInit).body as FormData;
-    const id2 = (fetchSpy.mock.calls[1][1] as RequestInit).body as FormData;
-    expect(id1.get('id')).not.toBe(id2.get('id'));
+    const fd1 = (fetchSpy.mock.calls[0][1] as RequestInit).body as FormData;
+    const fd2 = (fetchSpy.mock.calls[1][1] as RequestInit).body as FormData;
+    const id1 = fd1.get('id') as string;
+    const id2 = fd2.get('id') as string;
+    // Assert both that the id is shaped as UUID v4 AND that two calls produce
+    // distinct ids — the original test only checked uniqueness, which would
+    // pass for any random string source (incl. a buggy one).
+    expect(UUID_V4_RE.test(id1)).toBe(true);
+    expect(UUID_V4_RE.test(id2)).toBe(true);
+    expect(id1).not.toBe(id2);
   });
 });
 ```
