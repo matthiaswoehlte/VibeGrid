@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { OperationError, addClip, moveClip, resizeClip } from '@/lib/timeline/operations';
+import {
+  OperationError,
+  addClip,
+  moveClip,
+  resizeClip,
+  removeClip,
+  setClipParams,
+  setPlayhead,
+  setMuted
+} from '@/lib/timeline/operations';
 import { freezeState, makeClip, makeState } from './_helpers';
 
 describe('OperationError', () => {
@@ -150,5 +159,91 @@ describe('resizeClip', () => {
       })
     );
     expect(() => resizeClip(s0, 'a', 10)).toThrow(OperationError);
+  });
+});
+
+describe('removeClip', () => {
+  it('returns a new state without the named clip', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [
+          makeClip({ id: 'a', trackId: 't1', kind: 'contour' }),
+          makeClip({ id: 'b', trackId: 't2', kind: 'pulse' })
+        ]
+      })
+    );
+    const s1 = removeClip(s0, 'a');
+    expect(s1.clips.map((c) => c.id)).toEqual(['b']);
+    expect(s0.clips).toHaveLength(2);
+  });
+
+  it('throws CLIP_NOT_FOUND when clipId is unknown', () => {
+    expect(() => removeClip(makeState(), 'x')).toThrow(OperationError);
+  });
+});
+
+describe('setClipParams', () => {
+  it('shallow-merges params and returns a new state', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [
+          makeClip({
+            id: 'a',
+            trackId: 't1',
+            kind: 'contour',
+            params: { threshold: 0.5, color: '#fff' }
+          })
+        ]
+      })
+    );
+    const s1 = setClipParams(s0, 'a', { threshold: 0.8 });
+    expect(s1.clips[0].params).toEqual({ threshold: 0.8, color: '#fff' });
+    expect(s0.clips[0].params).toEqual({ threshold: 0.5, color: '#fff' });
+  });
+
+  it('initializes params if previously undefined', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour' })]
+      })
+    );
+    const s1 = setClipParams(s0, 'a', { x: 1 });
+    expect(s1.clips[0].params).toEqual({ x: 1 });
+  });
+
+  it('throws CLIP_NOT_FOUND when clipId is unknown', () => {
+    expect(() => setClipParams(makeState(), 'x', {})).toThrow(OperationError);
+  });
+});
+
+describe('setPlayhead', () => {
+  it('updates beats while preserving the playing flag', () => {
+    const s0 = freezeState(makeState({ playhead: { beats: 0, playing: true } }));
+    const s1 = setPlayhead(s0, 12);
+    expect(s1.playhead).toEqual({ beats: 12, playing: true });
+    expect(s0.playhead.beats).toBe(0);
+  });
+
+  it('clamps negative beats to 0', () => {
+    const s0 = freezeState(makeState());
+    const s1 = setPlayhead(s0, -5);
+    expect(s1.playhead.beats).toBe(0);
+  });
+});
+
+describe('setMuted', () => {
+  it('toggles the muted flag on the named track', () => {
+    const s0 = freezeState(
+      makeState({
+        tracks: [{ id: 't1', kind: 'contour', name: 'c', muted: false, order: 0 }]
+      })
+    );
+    const s1 = setMuted(s0, 't1', true);
+    expect(s1.tracks[0].muted).toBe(true);
+    expect(s0.tracks[0].muted).toBe(false);
+  });
+
+  it('throws TRACK_NOT_FOUND when trackId is unknown', () => {
+    expect(() => setMuted(makeState(), 'x', true)).toThrow(OperationError);
   });
 });

@@ -97,3 +97,39 @@ export function resizeClip(
   next[idx] = { ...clip, lengthBeats: newLengthBeats };
   return { ...state, clips: next };
 }
+
+export function removeClip(state: TimelineState, clipId: string): TimelineState {
+  const idx = state.clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) throw new OperationError('CLIP_NOT_FOUND', `Clip ${clipId} not found`);
+  const next = state.clips.slice();
+  next.splice(idx, 1);
+  return { ...state, clips: next };
+}
+
+export function setClipParams(
+  state: TimelineState,
+  clipId: string,
+  params: Record<string, unknown>
+): TimelineState {
+  const idx = state.clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) throw new OperationError('CLIP_NOT_FOUND', `Clip ${clipId} not found`);
+  const clip = state.clips[idx];
+  const next = state.clips.slice();
+  next[idx] = { ...clip, params: { ...clip.params, ...params } };
+  return { ...state, clips: next };
+}
+
+export function setPlayhead(state: TimelineState, beats: number): TimelineState {
+  const clamped = Math.max(0, beats);
+  if (clamped === state.playhead.beats) return state;
+  return { ...state, playhead: { ...state.playhead, beats: clamped } };
+}
+
+export function setMuted(state: TimelineState, trackId: string, muted: boolean): TimelineState {
+  const idx = state.tracks.findIndex((t) => t.id === trackId);
+  if (idx < 0) throw new OperationError('TRACK_NOT_FOUND', `Track ${trackId} not found`);
+  if (state.tracks[idx].muted === muted) return state;
+  const next = state.tracks.slice();
+  next[idx] = { ...next[idx], muted };
+  return { ...state, tracks: next };
+}
