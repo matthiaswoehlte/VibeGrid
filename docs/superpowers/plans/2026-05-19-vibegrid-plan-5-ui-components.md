@@ -1190,22 +1190,23 @@ describe('useAudioEngine', () => {
     const { result } = renderHook(() => useAudioEngine());
     const setBpmSpy = vi.spyOn(result.current.engine!, 'setBPM');
     act(() => {
+      // audio-slice's setBPM forces source: 'manual' — passes the source-guard
       useAppStore.getState().audioActions.setBPM(140);
     });
     expect(setBpmSpy).toHaveBeenCalledWith(140);
   });
 
-  it('engine-detected grid writes back to store without re-triggering setBPM', () => {
+  it('engine-detected grid (source: detected) does NOT re-trigger engine.setBPM', () => {
     const { result } = renderHook(() => useAudioEngine());
     const setBpmSpy = vi.spyOn(result.current.engine!, 'setBPM');
     act(() => {
+      // audio-slice's setDetectedGrid forces source: 'detected' — source-guard skips
       useAppStore.getState().audioActions.setDetectedGrid({
         bpm: 128,
         offsetMs: 12,
         source: 'detected'
       });
     });
-    // setDetectedGrid is a "from-engine" path — must not loop back to engine.setBPM
     expect(setBpmSpy).not.toHaveBeenCalled();
     expect(useAppStore.getState().audio.grid.bpm).toBe(128);
   });
@@ -1236,17 +1237,18 @@ export interface UseAudioEngine {
 /**
  * Single-source-of-truth bridge between the AudioEngine and the Zustand store.
  *
- * - Store BPM (user edit via setBPM) → engine.setBPM
- * - Engine detection (setDetectedGrid) → store, NO loop back to engine
+ * - User edits BPM via `setBPM` → audio-slice writes `source: 'manual'` →
+ *   subscriber sees the manual source and pushes the value to `engine.setBPM`.
+ * - Engine detection writes via `setDetectedGrid` → audio-slice writes
+ *   `source: 'detected'` → subscriber sees the detected source and SKIPS the
+ *   engine push (would otherwise loop).
  *
- * The "no loop" guarantee is held by an internal flag: when the store update
- * comes via `setDetectedGrid`, we mark the next BPM-change as a "from-engine"
- * write and skip the engine call.
+ * The source field is already part of `BeatGrid` (Plan 2), so no new actions
+ * or runtime patching are needed.
  */
 export function useAudioEngine(): UseAudioEngine {
   const [engine, setEngine] = useState<AudioEngine | null>(null);
   const lastSeenBpmRef = useRef<number | null>(null);
-  const skipNextEngineSyncRef = useRef(false);
 
   useEffect(() => {
     const e = createAudioEngine();
@@ -1261,36 +1263,15 @@ export function useAudioEngine(): UseAudioEngine {
   useEffect(() => {
     if (!engine) return;
     const unsub = useAppStore.subscribe((state) => {
-      const bpm = state.audio.grid.bpm;
-      if (bpm === lastSeenBpmRef.current) return;
-      lastSeenBpmRef.current = bpm;
-      if (skipNextEngineSyncRef.current) {
-        skipNextEngineSyncRef.current = false;
-        return;
-      }
-      engine.setBPM(bpm);
+      const grid = state.audio.grid;
+      if (grid.bpm === lastSeenBpmRef.current) return;
+      lastSeenBpmRef.current = grid.bpm;
+      // Source-guard: the BPM just changed because the ENGINE wrote it
+      // (detected grid) — do not push back to the engine.
+      if (grid.source === 'detected') return;
+      engine.setBPM(grid.bpm);
     });
     return unsub;
-  }, [engine]);
-
-  // Intercept setDetectedGrid by patching audioActions — install once per engine.
-  useEffect(() => {
-    if (!engine) return;
-    const originalSetDetected = useAppStore.getState().audioActions.setDetectedGrid;
-    useAppStore.setState((s) => ({
-      audioActions: {
-        ...s.audioActions,
-        setDetectedGrid: (grid) => {
-          skipNextEngineSyncRef.current = true;
-          originalSetDetected(grid);
-        }
-      }
-    }));
-    return () => {
-      useAppStore.setState((s) => ({
-        audioActions: { ...s.audioActions, setDetectedGrid: originalSetDetected }
-      }));
-    };
   }, [engine]);
 
   return { engine };
@@ -2393,6 +2374,22 @@ setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
 setSelectedClipId: (id) => set((s) => ({ ui: { ...s.ui, selectedClipId: id } })),
 ```
 
+**ALSO** in `lib/store/index.ts`, update `partialize` so `selectedClipId` stays
+transient (do not persist it across reloads — a stale id pointing at a deleted
+clip would silently confuse the Inspector):
+
+```ts
+partialize: (state) => ({
+  ui: { zoom: state.ui.zoom },     // selectedClipId is transient — never persist
+  timeline: {
+    ...state.timeline,
+    playhead: { ...state.timeline.playhead, playing: false }
+  },
+  audio: state.audio,
+  media: state.media
+})
+```
+
 - [ ] **Step 2: MediaLibrary**
 
 ```tsx
@@ -2806,6 +2803,10 @@ describe('validateAgainstParamSchema', () => {
 
 ```ts
 // lib/ai/schema-validator.ts
+// Pure validation — intentionally NOT marked `server-only`. Imported by
+// `lib/storage/auto-preset-adapter.ts` (client code) for defensive
+// re-validation of any /api/analyze-image response. Living under `lib/ai/`
+// because it's specific to the Auto-Preset feature; do not add `server-only`.
 import type { ParamSchema, ParamType } from '@/lib/renderer/types';
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -3199,10 +3200,41 @@ describe('POST /api/analyze-image', () => {
 npm test -- analyze-image
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Document the storage caveats in `KNOWN_LIMITATIONS.md`**
+
+Append a new section between the existing "Dev Dependencies" and "Manual
+verification checklist" blocks:
+
+```markdown
+## Storage & AI (Plans 4 + 5)
+
+### R2 public URL requirement (Plan 4 + Plan 5 Auto-Preset)
+
+`/api/upload` returns `MediaRef.url` built from `${R2_PUBLIC_URL}/{key}`.
+`/api/analyze-image` (Plan 5) re-fetches that URL server-side to send the
+image to Claude. **Both require the R2 bucket to be reachable over HTTPS
+without signed URLs.** R2 itself does not serve over public HTTPS without
+a Cloudflare-attached custom domain — set `R2_PUBLIC_URL` to that custom
+domain. v0.2 will introduce signed-URL fallbacks when buckets go private.
+
+### Vercel hobby tier payload limit (Plan 4)
+
+Vercel Hobby caps API-route payloads at 4.5 MB. Audio uploads can be up to
+50 MB (Spec §7.1). Upgrade to Vercel Pro for full audio support, or run
+the dev server locally for files > 4.5 MB.
+
+### Auto-Preset cost & rate-limiting (Plan 5)
+
+`POST /api/analyze-image` calls Claude Sonnet 4.6 once per click — no
+client-side debounce, no server-side rate-limit. Each call costs a few
+cents at current pricing. v0.2 will add a 2-second debounce on the ✨
+button and an optional per-session ceiling.
+```
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add app/api/analyze-image/route.ts tests/integration/analyze-image.api.test.ts
+git add app/api/analyze-image/route.ts tests/integration/analyze-image.api.test.ts KNOWN_LIMITATIONS.md
 git commit -m "feat(api): POST /api/analyze-image — Claude vision → validated FX params"
 ```
 
@@ -4149,3 +4181,33 @@ Issues that the reviewer flagged but were intentionally left for human/open-ques
 - **`selectedClipId` partialize concern.** Added to Open Question 10 below.
 
 10. **`selectedClipId` persistence.** Plan 5 adds it to `UIState` (Task 15) which means it survives reloads via `partialize`. A stale id pointing at a removed clip is awkward UX. Acceptable for v0.1 (the Inspector silently shows the empty state when the id doesn't resolve); v0.2 should either partialize it out or null it on rehydrate. Confirm acceptable.
+
+---
+
+## Architect-review changelog (rev 2 — external reviewer)
+
+External architect review approved the plan with 2 mandatory fixes + 1 advisory comment. Open Questions all answered.
+
+| # | Issue | Resolution |
+|---|---|---|
+| Pflicht 1 (OQ10) | `selectedClipId` would persist via `partialize` (full `state.ui`) — stale-id UX risk after reload | Task 15 now also patches `partialize` to `ui: { zoom: state.ui.zoom }` so `selectedClipId` stays transient |
+| Pflicht 2 (OQ7) | `useAudioEngine` runtime action-patching brittle under double-mount in v0.2 | Task 7 rewritten with explicit `source`-guard — subscriber reads `state.audio.grid.source` and skips the engine push when `'detected'`. No new action, no runtime mutation. Test updated to match. |
+| Advisory A2 | `lib/ai/schema-validator.ts` is intentionally client-importable but lives under `lib/ai/` (Server-only neighborhood) — future devs might add `server-only` and break the client | Header comment in Task 16 marks the file as "intentionally NOT server-only" |
+| Doc OQ5 | R2 public URL requirement was unstated | Task 18 Step 4 appends a Storage section to `KNOWN_LIMITATIONS.md` covering R2 public URL, Vercel hobby payload cap, and Auto-Preset cost |
+
+**Open Questions disposition (all answered by external reviewer):**
+
+| # | Decision |
+|---|---|
+| 1 | Single-select for v0.1 (multi-select is v0.2) |
+| 2 | ~1.4 MB Anthropic SDK in server bundle accepted, defer cold-start mitigation to v0.2 |
+| 3 | `claude-sonnet-4-6` confirmed (not Haiku 4.5) |
+| 4 | English system prompt — model returns numeric values, language-agnostic |
+| 5 | R2 public-URL assumption accepted, documented in `KNOWN_LIMITATIONS.md` (Task 18 Step 4) |
+| 6 | No rate-limit in v0.1, 2s debounce as v0.2 watchlist |
+| 7 | Source-guard (Pflicht 2) |
+| 8 | `'linear'` only in v0.1 confirmed |
+| 9 | Waveform-Worker stays placeholder for v0.1 |
+| 10 | `selectedClipId` NOT persisted (Pflicht 1) |
+
+A1 (Anthropic SDK `media_type` strict typing) and A3 (`rafCallback` optional in `RendererDeps`) are reactive — caught by the typecheck step in Task 18 / Task 8 if they manifest. No pre-emptive code change needed.
