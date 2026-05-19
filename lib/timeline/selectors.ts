@@ -34,6 +34,9 @@ export function activeClipsAt(state: TimelineState, beats: number): Clip[] {
 }
 
 export function activeImageClip(state: TimelineState, beats: number): Clip | null {
+  // Returns the FIRST matching image clip in array order.
+  // v0.1: only one image track is expected, so order is deterministic.
+  // v0.2: if multiple image tracks are allowed, sort by track.order first.
   for (const c of state.clips) {
     if (c.kind !== 'image') continue;
     if (beats >= c.startBeat && beats < c.startBeat + c.lengthBeats) return c;
