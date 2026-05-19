@@ -107,7 +107,7 @@ tests/            unit/, integration/, e2e/
 | 1 | Timeline (pure) | ✅ Done |
 | 2 | Audio Engine & Beat Detection | ✅ Done |
 | 3 | Renderer + FX Plugins | ✅ Done |
-| 4 | Storage & API Layer | 🔄 In Review |
+| 4 | Storage & API Layer | ✅ Done |
 | 5 | UI Components | ⬜ Pending |
 | 6 | Export Pipeline | ⬜ Pending |
 
