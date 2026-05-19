@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AudioEngine } from '@/lib/audio/engine';
+import { useAppStore } from '@/lib/store';
 import { LeftPanel } from './LeftPanel';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
@@ -8,6 +9,31 @@ import { Inspector } from './Inspector';
 
 export function Workspace({ engine }: { engine: AudioEngine | null }) {
   const [inspectorOpen, setInspectorOpen] = useState(true);
+
+  // Global Delete / Backspace shortcut — removes the currently selected clip.
+  // No-op when an input/textarea/contenteditable has focus (don't interfere
+  // with text editing in the BPM input or Inspector controls).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const { selectedClipId } = useAppStore.getState().ui;
+      if (!selectedClipId) return;
+      useAppStore.getState().timelineActions.removeClip(selectedClipId);
+      useAppStore.getState().setSelectedClipId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div className="flex flex-1 min-h-0">
       <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">

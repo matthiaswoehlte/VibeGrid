@@ -3,6 +3,7 @@ import { Transport } from './Transport';
 import { BPMBadge } from './BPMBadge';
 import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
+import { ClearProjectButton } from './ClearProjectButton';
 import type { AudioEngine } from '@/lib/audio/engine';
 
 export function TopBar({ engine }: { engine: AudioEngine | null }) {
@@ -14,6 +15,7 @@ export function TopBar({ engine }: { engine: AudioEngine | null }) {
       </div>
       <div className="flex items-center gap-2">
         <RecIndicator />
+        <ClearProjectButton />
         <ExportButton />
       </div>
     </header>

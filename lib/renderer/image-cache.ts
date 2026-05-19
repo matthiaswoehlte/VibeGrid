@@ -66,7 +66,13 @@ export function createImageBitmapCache(): ImageBitmapCache {
     clear() {
       for (const bitmap of cache.values()) bitmap.close();
       cache.clear();
+      // Mark inflight loads cancelled AND remove them from the map. Without
+      // the inflight.clear(), a subsequent load() for the same mediaId would
+      // re-use the cancelled promise (which rejects with "cancelled by evict")
+      // — visible in React Strict Mode where useEffect double-mounts:
+      // mount → clear() → mount → load() returns the dead promise.
       for (const entry of inflight.values()) entry.cancelled = true;
+      inflight.clear();
     }
   };
 }

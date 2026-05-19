@@ -53,25 +53,38 @@ export function MediaLibrary() {
         />
       </div>
       <ul className="space-y-1">
-        {refs.map((r) => (
-          <li
-            key={r.id}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(`application/x-vibegrid-media-${r.kind}`, r.id);
-            }}
-            className="flex items-center gap-2 p-2 rounded bg-[var(--surface-2)] text-xs"
-          >
-            <span className="flex-1 truncate" title={r.filename}>
-              {r.filename}
-              <span className="block text-[var(--text-muted)]">
-                {r.kind === 'image' && r.width && r.height ? `${r.width}×${r.height}` : null}
-                {r.kind === 'audio' && r.duration ? `${r.duration.toFixed(1)}s` : null}
+        {refs.map((r) => {
+          // Only images go on the timeline (drag into image-track). Audio is
+          // the project soundtrack — auto-loaded into the engine on upload, no
+          // drag needed. The label "soundtrack" makes that explicit.
+          const isImage = r.kind === 'image';
+          return (
+            <li
+              key={r.id}
+              draggable={isImage}
+              onDragStart={
+                isImage
+                  ? (e) => {
+                      e.dataTransfer.setData('application/x-vibegrid-media-image', r.id);
+                    }
+                  : undefined
+              }
+              className={`flex items-center gap-2 p-2 rounded bg-[var(--surface-2)] text-xs ${
+                isImage ? 'cursor-grab active:cursor-grabbing' : ''
+              }`}
+            >
+              <span className="flex-1 truncate" title={r.filename}>
+                {r.filename}
+                <span className="block text-[var(--text-muted)]">
+                  {isImage && r.width && r.height ? `${r.width}×${r.height}` : null}
+                  {r.kind === 'audio' && r.duration ? `${r.duration.toFixed(1)}s — soundtrack` : null}
+                  {r.kind === 'audio' && !r.duration ? 'soundtrack' : null}
+                </span>
               </span>
-            </span>
-            {r.kind === 'image' && <AutoPresetButton mediaRef={r} />}
-          </li>
-        ))}
+              {isImage && <AutoPresetButton mediaRef={r} />}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
