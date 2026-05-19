@@ -1,5 +1,14 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+// @testing-library/react does not auto-cleanup when vitest's `globals: false`
+// is set — `afterEach` isn't on globalThis. Wire it explicitly so multi-render
+// component tests don't leak DOM between cases (would cause "multiple elements
+// with role X" errors).
+afterEach(() => {
+  cleanup();
+});
 
 /**
  * Minimal AudioContext mock for engine tests. Real WebAudio is not available in jsdom.
