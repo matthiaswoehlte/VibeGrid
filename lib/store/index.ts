@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { AppState } from './types';
 import { createTimelineSlice } from './timeline-slice';
+import { createAudioSlice } from './audio-slice';
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -9,7 +10,8 @@ export const useAppStore = create<AppState>()(
       ui: { zoom: 1, inspectorOpen: true },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
       setInspectorOpen: (open) => set((s) => ({ ui: { ...s.ui, inspectorOpen: open } })),
-      ...createTimelineSlice(set, get, store)
+      ...createTimelineSlice(set, get, store),
+      ...createAudioSlice(set, get, store)
     }),
     {
       name: 'vibegrid-store',
@@ -26,7 +28,8 @@ export const useAppStore = create<AppState>()(
             ...state.timeline.playhead,
             playing: false
           }
-        }
+        },
+        audio: state.audio
       })
     }
   )
