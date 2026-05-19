@@ -54,3 +54,7 @@ Thumbs.db
 
 # Local design handoff (not source-of-truth; reference only)
 /_design-handoff/
+
+# Local role-launch prompts — copy/paste content, never shared
+CC1_START_PROMPT.md
+CC2_START_PROMPT.md
