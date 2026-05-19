@@ -14,6 +14,7 @@ export interface TimelineActions {
   setClipParams(clipId: string, params: Record<string, unknown>): void;
   setPlayhead(beats: number): void;
   setMuted(trackId: string, muted: boolean): void;
+  setClipParam(clipId: string, key: string, value: unknown): void;
 }
 
 export interface AudioState {
@@ -34,6 +35,7 @@ export interface MediaActions {
   addMediaRef(ref: MediaRef): void;
   removeMediaRef(id: string): void;
   getMediaRef(id: string): MediaRef | undefined;
+  addMediaRefMeta(id: string, partial: Pick<MediaRef, 'width' | 'height' | 'duration'>): void;
 }
 
 export interface AppState {

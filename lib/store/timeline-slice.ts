@@ -29,6 +29,18 @@ export const createTimelineSlice: StateCreator<
       set({ timeline: ops.setClipParams(get().timeline, clipId, params) }),
     setPlayhead: (beats) => set({ timeline: ops.setPlayhead(get().timeline, beats) }),
     setMuted: (trackId, muted) =>
-      set({ timeline: ops.setMuted(get().timeline, trackId, muted) })
+      set({ timeline: ops.setMuted(get().timeline, trackId, muted) }),
+    setClipParam: (clipId, key, value) => {
+      set((s) => ({
+        timeline: {
+          ...s.timeline,
+          clips: s.timeline.clips.map((c) =>
+            c.id === clipId
+              ? { ...c, params: { ...(c.params ?? {}), [key]: value } }
+              : c
+          )
+        }
+      }));
+    }
   }
 });
