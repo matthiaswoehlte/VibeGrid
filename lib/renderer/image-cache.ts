@@ -9,9 +9,29 @@ export interface ImageBitmapCache {
   clear(): void;
 }
 
+interface InflightEntry {
+  promise: Promise<ImageBitmap>;
+  cancelled: boolean;
+}
+
 export function createImageBitmapCache(): ImageBitmapCache {
   const cache = new Map<string, ImageBitmap>();
-  const inflight = new Map<string, Promise<ImageBitmap>>();
+  const inflight = new Map<string, InflightEntry>();
+
+  function evictById(mediaId: string): void {
+    const bitmap = cache.get(mediaId);
+    if (bitmap) {
+      bitmap.close();
+      cache.delete(mediaId);
+    }
+    const entry = inflight.get(mediaId);
+    if (entry) {
+      entry.cancelled = true;
+      // The load() chain checks `cancelled` after createImageBitmap resolves
+      // and closes the bitmap there. We do NOT delete `inflight` here — the
+      // load() finally clause handles that.
+    }
+  }
 
   return {
     get(mediaId) {
@@ -21,31 +41,32 @@ export function createImageBitmapCache(): ImageBitmapCache {
       const cached = cache.get(mediaId);
       if (cached) return cached;
       const existing = inflight.get(mediaId);
-      if (existing) return existing;
-      const promise = (async () => {
+      if (existing) return existing.promise;
+
+      const entry: InflightEntry = { promise: undefined as unknown as Promise<ImageBitmap>, cancelled: false };
+      entry.promise = (async () => {
         try {
           const res = await fetch(url);
           const blob = await res.blob();
           const bitmap = await createImageBitmap(blob);
+          if (entry.cancelled) {
+            bitmap.close();
+            throw new Error(`Load of ${mediaId} cancelled by evict`);
+          }
           cache.set(mediaId, bitmap);
           return bitmap;
         } finally {
           inflight.delete(mediaId);
         }
       })();
-      inflight.set(mediaId, promise);
-      return promise;
+      inflight.set(mediaId, entry);
+      return entry.promise;
     },
-    evict(mediaId) {
-      const bitmap = cache.get(mediaId);
-      if (bitmap) {
-        bitmap.close();
-        cache.delete(mediaId);
-      }
-    },
+    evict: evictById,
     clear() {
       for (const bitmap of cache.values()) bitmap.close();
       cache.clear();
+      for (const entry of inflight.values()) entry.cancelled = true;
     }
   };
 }

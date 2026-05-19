@@ -46,3 +46,37 @@ describe('imageBitmapCache', () => {
     expect(cache.get('m2')).toBeUndefined();
   });
 });
+
+describe('imageBitmapCache — evict-race guard', () => {
+  it('closes bitmap and skips cache if evict fires before load resolves', async () => {
+    const cache = createImageBitmapCache();
+    let resolveFetch: () => void = () => undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        new Promise<Response>((res) => {
+          resolveFetch = () =>
+            res({
+              blob: async () => new Blob(['fake'])
+            } as Response);
+        })
+    );
+    const bitmapClose = vi.fn();
+    vi.spyOn(globalThis, 'createImageBitmap').mockResolvedValue({
+      width: 1,
+      height: 1,
+      close: bitmapClose
+    } as unknown as ImageBitmap);
+
+    const loadPromise = cache.load('m1', 'https://x/a.jpg');
+    cache.evict('m1'); // race: evict before fetch resolves
+    resolveFetch();
+    await loadPromise.catch(() => undefined);
+    expect(bitmapClose).toHaveBeenCalledTimes(1);
+    expect(cache.get('m1')).toBeUndefined();
+  });
+
+  it('evict on non-existent id is a safe no-op', () => {
+    const cache = createImageBitmapCache();
+    expect(() => cache.evict('never-loaded')).not.toThrow();
+  });
+});
