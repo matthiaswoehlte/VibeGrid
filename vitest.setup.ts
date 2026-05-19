@@ -81,3 +81,26 @@ globalThis.webkitAudioContext = MockAudioContext;
 window.HTMLMediaElement.prototype.play = async () => {};
 window.HTMLMediaElement.prototype.pause = () => {};
 window.HTMLMediaElement.prototype.load = () => {};
+
+class MockResizeObserver {
+  callback: ResizeObserverCallback;
+  constructor(cb: ResizeObserverCallback) {
+    this.callback = cb;
+  }
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+
+// jsdom has no createImageBitmap. Return a minimal object — tests that need
+// pixel data override per-test.
+globalThis.createImageBitmap = (async (
+  _source: ImageBitmapSource
+): Promise<ImageBitmap> => {
+  return {
+    width: 100,
+    height: 100,
+    close: vi.fn()
+  } as unknown as ImageBitmap;
+}) as typeof createImageBitmap;
