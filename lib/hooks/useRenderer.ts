@@ -37,16 +37,21 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
 
     // Prime the cache from any mediaRefs already in the store (post-rehydrate).
     const initial = useAppStore.getState().media.mediaRefs;
+    const warnUnlessCancelled = (m: { id: string; url: string }) => (err: unknown) => {
+      // Strict Mode double-mount cancels the first inflight; the second mount
+      // re-loads cleanly. Suppress that benign warning; report everything else.
+      if (err instanceof Error && err.message.includes('cancelled by evict')) return;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[useRenderer] failed to load image ${m.id} from ${m.url}:`,
+        err
+      );
+    };
+
     initial
       .filter((m) => m.kind === 'image')
       .forEach((m) => {
-        cache.load(m.id, m.url).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[useRenderer] failed to load image ${m.id} from ${m.url}:`,
-            err
-          );
-        });
+        cache.load(m.id, m.url).catch(warnUnlessCancelled(m));
       });
 
     // Keep the cache in sync with subsequent additions / removals.
@@ -58,13 +63,7 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
         (m) => m.kind === 'image' && !state.media.mediaRefs.find((p) => p.id === m.id)
       );
       added.forEach((m) => {
-        cache.load(m.id, m.url).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[useRenderer] failed to load image ${m.id} from ${m.url}:`,
-            err
-          );
-        });
+        cache.load(m.id, m.url).catch(warnUnlessCancelled(m));
       });
       removed.forEach((m) => cache.evict(m.id));
     });
