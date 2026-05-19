@@ -106,7 +106,7 @@ tests/            unit/, integration/, e2e/
 | 0 | Scaffold & Tooling | ✅ Done |
 | 1 | Timeline (pure) | ✅ Done |
 | 2 | Audio Engine & Beat Detection | ✅ Done |
-| 3 | Renderer + FX Plugins | 🔄 In Review |
+| 3 | Renderer + FX Plugins | ✅ Done |
 | 4 | Storage & API Layer | ⬜ Pending |
 | 5 | UI Components | ⬜ Pending |
 | 6 | Export Pipeline | ⬜ Pending |
