@@ -47,5 +47,34 @@ export function useAudioEngine(): UseAudioEngine {
     return unsub;
   }, [engine]);
 
+  // Auto-load the most recently added audio MediaRef into the engine.
+  // v0.1 assumes a single soundtrack at a time — newest audio upload wins.
+  useEffect(() => {
+    if (!engine) return;
+    // Prime once on mount from current state (handles rehydrated mediaRefs).
+    const initial = useAppStore.getState().media.mediaRefs.filter((m) => m.kind === 'audio');
+    const lastInitial = initial[initial.length - 1];
+    if (lastInitial) {
+      engine.load(lastInitial.url).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[useAudioEngine] initial audio load failed:', err);
+      });
+    }
+    // Subscribe to future audio additions.
+    const unsub = useAppStore.subscribe((state, prev) => {
+      const added = state.media.mediaRefs.filter(
+        (m) => m.kind === 'audio' && !prev.media.mediaRefs.find((p) => p.id === m.id)
+      );
+      const latest = added[added.length - 1];
+      if (latest) {
+        engine.load(latest.url).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn('[useAudioEngine] audio load failed:', err);
+        });
+      }
+    });
+    return unsub;
+  }, [engine]);
+
   return { engine };
 }

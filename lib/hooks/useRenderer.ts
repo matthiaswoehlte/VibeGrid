@@ -40,7 +40,13 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
     initial
       .filter((m) => m.kind === 'image')
       .forEach((m) => {
-        cache.load(m.id, m.url).catch(() => undefined);
+        cache.load(m.id, m.url).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[useRenderer] failed to load image ${m.id} from ${m.url}:`,
+            err
+          );
+        });
       });
 
     // Keep the cache in sync with subsequent additions / removals.
@@ -52,7 +58,13 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
         (m) => m.kind === 'image' && !state.media.mediaRefs.find((p) => p.id === m.id)
       );
       added.forEach((m) => {
-        cache.load(m.id, m.url).catch(() => undefined);
+        cache.load(m.id, m.url).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[useRenderer] failed to load image ${m.id} from ${m.url}:`,
+            err
+          );
+        });
       });
       removed.forEach((m) => cache.evict(m.id));
     });
