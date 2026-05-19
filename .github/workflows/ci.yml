@@ -30,7 +30,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run test:e2e
+      - name: Check for e2e tests
+        id: check_e2e
+        run: |
+          count=$(find tests/e2e -name "*.spec.ts" | wc -l)
+          echo "count=$count" >> $GITHUB_OUTPUT
+      - if: steps.check_e2e.outputs.count > 0
+        run: npm ci
+      - if: steps.check_e2e.outputs.count > 0
+        run: npx playwright install --with-deps chromium
+      - if: steps.check_e2e.outputs.count > 0
+        run: npm run build
+      - name: Run Playwright
+        if: steps.check_e2e.outputs.count > 0
+        run: npm run test:e2e
