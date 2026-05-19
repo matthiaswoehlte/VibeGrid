@@ -41,6 +41,26 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
   Particle: 'particles'
 };
 
+/**
+ * Draw an image to the canvas with `object-fit: cover` semantics — maintains
+ * aspect ratio, crops edges so the canvas is fully covered. Without this,
+ * `drawImage(bitmap, 0, 0, w, h)` would stretch the image to fit and
+ * distort any portrait/landscape mismatch with the canvas.
+ */
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  w: number,
+  h: number
+): void {
+  const scale = Math.max(w / bitmap.width, h / bitmap.height);
+  const sw = bitmap.width * scale;
+  const sh = bitmap.height * scale;
+  const sx = (w - sw) / 2;
+  const sy = (h - sh) / 2;
+  ctx.drawImage(bitmap, sx, sy, sw, sh);
+}
+
 export function createRenderer(deps: RendererDeps): Renderer {
   if (!isClient()) {
     throw new Error('Renderer cannot be created outside the browser');
@@ -81,7 +101,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const imageBitmap = imageClip?.mediaId ? deps.getImageBitmap(imageClip.mediaId) : undefined;
 
     if (imageClip && imageBitmap) {
-      ctx!.drawImage(imageBitmap, 0, 0, w, h);
+      drawImageCover(ctx!, imageBitmap, w, h);
     }
 
     const fxByKind = activeFxClipsByKind(timeline, beats);
