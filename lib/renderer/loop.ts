@@ -2,6 +2,7 @@ import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeImageClip, activeFxClipsByKind } from '@/lib/timeline/selectors';
+import { resolveClipParams } from '@/lib/automation/resolve';
 import { getPlugin, listPluginsByKind } from './registry';
 import { registerBuiltInPlugins } from '@/lib/fx';
 import type { FxKind as TrackFxKind, TimelineState } from '@/lib/timeline/types';
@@ -135,7 +136,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
           imageBitmap
         };
 
-        plugin.render(rc, clip.params ?? plugin.getDefaultParams());
+        const rawParams = clip.params ?? plugin.getDefaultParams();
+        plugin.render(rc, resolveClipParams(rawParams, beats));
       }
     }
   }
