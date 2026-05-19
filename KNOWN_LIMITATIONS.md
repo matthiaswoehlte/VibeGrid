@@ -38,6 +38,30 @@ After `npm install`, `npm audit` initially reported **15 vulnerabilities (5 mod 
 
 **Revisit:** During v0.2 planning, re-run `npm audit` and decide whether the Next 15/16 upgrade is in scope. If not, re-confirm the risk assessment.
 
+## Storage & AI (Plans 4 + 5)
+
+### R2 public URL requirement (Plan 4 + Plan 5 Auto-Preset)
+
+`/api/upload` returns `MediaRef.url` built from `${R2_PUBLIC_URL}/{key}`.
+`/api/analyze-image` (Plan 5) re-fetches that URL server-side to send the
+image to Claude. **Both require the R2 bucket to be reachable over HTTPS
+without signed URLs.** R2 itself does not serve over public HTTPS without
+a Cloudflare-attached custom domain — set `R2_PUBLIC_URL` to that custom
+domain. v0.2 will introduce signed-URL fallbacks when buckets go private.
+
+### Vercel hobby tier payload limit (Plan 4)
+
+Vercel Hobby caps API-route payloads at 4.5 MB. Audio uploads can be up to
+50 MB (Spec §7.1). Upgrade to Vercel Pro for full audio support, or run
+the dev server locally for files > 4.5 MB.
+
+### Auto-Preset cost & rate-limiting (Plan 5)
+
+`POST /api/analyze-image` calls Claude Sonnet 4.6 once per click — no
+client-side debounce, no server-side rate-limit. Each call costs a few
+cents at current pricing. v0.2 will add a 2-second debounce on the ✨
+button and an optional per-session ceiling.
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
