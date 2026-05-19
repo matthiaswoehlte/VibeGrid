@@ -55,6 +55,6 @@ Thumbs.db
 # Local design handoff (not source-of-truth; reference only)
 /_design-handoff/
 
-# Local role-launch prompts — copy/paste content, never shared
-CC1_START_PROMPT.md
-CC2_START_PROMPT.md
+# Local CC1 launch prompt at the repo root — copy/paste content, never shared
+# (CC2 launch prompt is now repo-tracked at docs/Tests/CC2_START_PROMPT.md)
+/CC1_START_PROMPT.md
