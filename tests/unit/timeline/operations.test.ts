@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OperationError, addClip } from '@/lib/timeline/operations';
+import { OperationError, addClip, moveClip } from '@/lib/timeline/operations';
 import { freezeState, makeClip, makeState } from './_helpers';
 
 describe('OperationError', () => {
@@ -53,5 +53,63 @@ describe('addClip', () => {
     expect(() =>
       addClip(s0, makeClip({ id: 'b', trackId: 't2', kind: 'pulse', startBeat: 0, lengthBeats: 8 }))
     ).not.toThrow();
+  });
+});
+
+describe('moveClip', () => {
+  it('updates startBeat and returns a new state', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 })]
+      })
+    );
+    const s1 = moveClip(s0, 'a', 10);
+    expect(s1.clips[0].startBeat).toBe(10);
+    expect(s0.clips[0].startBeat).toBe(0);
+  });
+
+  it('throws CLIP_NOT_FOUND when clipId is unknown', () => {
+    const s0 = freezeState(makeState());
+    expect(() => moveClip(s0, 'missing', 0)).toThrow(OperationError);
+    try {
+      moveClip(s0, 'missing', 0);
+    } catch (e) {
+      expect((e as OperationError).code).toBe('CLIP_NOT_FOUND');
+    }
+  });
+
+  it('allows moving a clip within its own footprint (excludes self from overlap)', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 8 })]
+      })
+    );
+    const s1 = moveClip(s0, 'a', 2);
+    expect(s1.clips[0].startBeat).toBe(2);
+  });
+
+  it('throws OVERLAP when the moved clip would collide with another clip on the same track', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [
+          makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 }),
+          makeClip({ id: 'b', trackId: 't1', kind: 'contour', startBeat: 10, lengthBeats: 4 })
+        ]
+      })
+    );
+    expect(() => moveClip(s0, 'a', 8)).toThrow(OperationError);
+  });
+
+  it('preserves non-moved clips unchanged', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [
+          makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 }),
+          makeClip({ id: 'b', trackId: 't2', kind: 'pulse', startBeat: 0, lengthBeats: 4 })
+        ]
+      })
+    );
+    const s1 = moveClip(s0, 'a', 10);
+    expect(s1.clips.find((c) => c.id === 'b')).toBe(s0.clips.find((c) => c.id === 'b'));
   });
 });

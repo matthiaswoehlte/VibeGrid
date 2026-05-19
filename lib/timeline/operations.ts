@@ -38,3 +38,24 @@ export function addClip(state: TimelineState, clip: Clip): TimelineState {
   }
   return { ...state, clips: [...state.clips, clip] };
 }
+
+export function moveClip(
+  state: TimelineState,
+  clipId: string,
+  newStartBeat: number
+): TimelineState {
+  const idx = state.clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) {
+    throw new OperationError('CLIP_NOT_FOUND', `Clip ${clipId} not found`);
+  }
+  const clip = state.clips[idx];
+  if (hasOverlap(state, clip.trackId, newStartBeat, clip.lengthBeats, clipId)) {
+    throw new OperationError(
+      'OVERLAP',
+      `Moving clip ${clipId} to ${newStartBeat} would overlap an existing clip`
+    );
+  }
+  const next = state.clips.slice();
+  next[idx] = { ...clip, startBeat: newStartBeat };
+  return { ...state, clips: next };
+}
