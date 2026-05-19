@@ -91,7 +91,11 @@ export function makeState(overrides?: Partial<TimelineState>): TimelineState {
   };
 }
 
-/** Deep-freeze a TimelineState so accidental mutation throws under strict mode. */
+/**
+ * Deep-freeze a TimelineState so accidental mutation throws under strict mode.
+ * Works on arrays too: Object.keys on an array returns string indices ('0', '1', …),
+ * which is intentional — every element is visited and frozen recursively.
+ */
 export function freezeState<T extends object>(value: T): T {
   Object.freeze(value);
   for (const key of Object.keys(value) as (keyof T)[]) {
@@ -702,6 +706,18 @@ export function totalBeats(state: TimelineState): number {
   return max;
 }
 
+/**
+ * Format beats as a timecode string.
+ *
+ * Format rules (v0.1):
+ * - Under 1 hour: `m:ss` — minutes are NOT zero-padded. e.g. `0:30`, `4:00`, `12:05`.
+ * - 1 hour or more: `h:mm:ss` — minutes ARE zero-padded inside the hours form. e.g. `1:01:00`.
+ * - Seconds are always zero-padded to 2 digits.
+ * - Negative beats clamp to `0:00`.
+ *
+ * Fractional seconds are truncated (Math.floor), matching the Ruler's per-beat resolution
+ * for v0.1. If sub-second precision is needed later, switch to `m:ss.cc`.
+ */
 export function beatsToTimecode(beats: number, bpm: number): string {
   const safe = Math.max(0, beats);
   const totalSeconds = Math.floor((safe * 60) / bpm);
@@ -797,6 +813,17 @@ Append to `lib/timeline/operations.ts`:
 import type { Clip, TimelineState } from './types';
 import { hasOverlap } from './selectors';
 
+/**
+ * Add a clip to the timeline.
+ *
+ * ID-generation convention: the CALLER provides `clip.id`. Operations stay
+ * pure — they never call `crypto.randomUUID()` or any other non-deterministic
+ * source. UI/store callers generate the ID before invoking. This keeps the
+ * operation trivially testable with stable, hand-written IDs.
+ *
+ * @throws {OperationError} code=OVERLAP when the clip intersects an existing
+ *   clip on the same track. Half-open interval semantics — see `hasOverlap`.
+ */
 export function addClip(state: TimelineState, clip: Clip): TimelineState {
   if (hasOverlap(state, clip.trackId, clip.startBeat, clip.lengthBeats)) {
     throw new OperationError(
@@ -1422,9 +1449,10 @@ Expected: PASS.
 
 All 12 tasks committed, all five verification steps green. The timeline module is a pure, fully-tested core with a Zustand slice wrapping it. **Plan 2 (Audio) can start.**
 
-## Open questions for review
+## Decisions resolved during review (2026-05-19)
 
-1. **resizeClip overlap check** (Task 9) — spec §6.2 does not require it; I added it for invariant consistency with `addClip`/`moveClip`. Confirm or drop.
-2. **Mute filtering in selectors** (Task 5) — `activeClipsAt` and `activeFxClipsByKind` deliberately do NOT filter muted tracks. The renderer is the right place to honor mute (so a muted FX clip still shows its row on screen). Confirm.
-3. **`setClipParams` semantics** — shallow merge, not replace. Confirm; the alternative (replace) is one line of code change.
-4. **Timecode format `mm:ss`** — vs `m:ss.cc` (with centiseconds). Confirm the cruder format is enough for the Ruler in v0.1.
+1. **resizeClip overlap check** — KEEP. Invariant consistency with add/move trumps strict spec literalism.
+2. **Mute filtering in selectors** — selectors do NOT filter mute. Renderer honors `track.muted` at draw time.
+3. **`setClipParams`** — shallow merge `{ ...existing, ...incoming }`. Inspector sliders update single params.
+4. **Timecode format** — `m:ss` under 1 h, `h:mm:ss` at or above 1 h. Minutes NOT zero-padded under 1 h (`0:30`, `4:00`). Documented in `beatsToTimecode`'s JSDoc (Task 6).
+5. **`addClip` ID-generation** — Caller provides `clip.id`. Operations stay pure — no `crypto.randomUUID()` inside the operation. Documented in `addClip`'s JSDoc (Task 7).
