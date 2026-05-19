@@ -1,10 +1,16 @@
+'use client';
+import { useAudioEngine } from '@/lib/hooks/useAudioEngine';
+import { TopBar } from '@/components/TopBar';
+import { Workspace } from '@/components/Workspace';
+import { MobileTabBar } from '@/components/Mobile/MobileTabBar';
+
 export default function StudioPage() {
+  const { engine } = useAudioEngine();
   return (
-    <main className="grid min-h-screen place-items-center bg-bg text-text">
-      <div className="text-center">
-        <h1 className="font-sans text-2xl font-semibold">VibeGrid</h1>
-        <p className="mt-2 text-text-dim">Studio scaffold — modules land in Plan 1+.</p>
-      </div>
-    </main>
+    <div className="flex flex-col h-screen bg-[var(--bg)] text-[var(--text)]">
+      <TopBar engine={engine} />
+      <Workspace engine={engine} />
+      <MobileTabBar />
+    </div>
   );
 }
