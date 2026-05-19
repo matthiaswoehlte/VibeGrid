@@ -1,6 +1,12 @@
 'use client';
 import type { DragEvent as ReactDragEvent } from 'react';
-import { DndContext, type DragEndEvent } from '@dnd-kit/core';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent
+} from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import type { FxKind as PluginFxKind } from '@/lib/renderer/types';
@@ -28,6 +34,13 @@ export function Tracks() {
   const addClip = useAppStore((s) => s.timelineActions.addClip);
   const getMediaRef = useAppStore((s) => s.mediaActions.getMediaRef);
   const px = BEAT_PX_BASE * zoom;
+
+  // Require 5px of movement before a clip drag activates — without this,
+  // every pointerdown starts dnd-kit drag tracking and steals the subsequent
+  // click event, so the Inspector never sees a clip-select click.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
   const onDragEnd = (e: DragEndEvent) => {
     const data = e.active.data.current as { kind: string; clipId?: string } | undefined;
@@ -97,7 +110,7 @@ export function Tracks() {
   };
 
   return (
-    <DndContext onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
       <div
         className="relative flex-1 overflow-x-auto"
         onDragOver={onNativeDragOver}

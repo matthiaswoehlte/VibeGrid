@@ -118,7 +118,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
           (clip.fxId ? getPlugin(clip.fxId) : undefined) ?? listPluginsByKind(kind)[0];
         if (!plugin) continue;
 
-        if (plugin.kind !== 'Pulse' && !imageBitmap) continue;
+        // Only Contour actually reads rc.imageBitmap (Canny preload + draw);
+        // Pulse, Sweep, Particle paint pure overlays and work on a black canvas.
+        if (plugin.kind === 'Contour' && !imageBitmap) continue;
 
         const guard = lastFiredBeatGuard(nearestBeatIndex, lastFiredByClip.get(clip.id) ?? null);
         const shouldFire = phase.isOnBeat && guard.shouldFire;

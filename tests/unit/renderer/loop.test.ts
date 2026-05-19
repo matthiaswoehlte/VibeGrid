@@ -75,13 +75,14 @@ describe('renderer loop tick', () => {
     expect(calls.some((c) => c.method === 'fillRect')).toBe(true);
   });
 
-  it('skips non-Pulse plugins when no image bitmap is available', () => {
+  it('skips Contour (image-dependent) when no image bitmap is available, but Sweep/Pulse/Particle still render', () => {
     const { ctx, deps } = makeDeps({
       getCurrentTime: () => 0,
       getTimelineState: () => ({
         tracks: [
           { id: 'ti', kind: 'image', name: 'i', muted: false, order: 0 },
-          { id: 'ts', kind: 'sweep', name: 's', muted: false, order: 1 }
+          { id: 'tc', kind: 'contour', name: 'c', muted: false, order: 1 },
+          { id: 'ts', kind: 'sweep', name: 's', muted: false, order: 2 }
         ],
         clips: [
           {
@@ -92,6 +93,15 @@ describe('renderer loop tick', () => {
             startBeat: 0,
             lengthBeats: 8,
             label: 'img'
+          },
+          {
+            id: 'c1',
+            trackId: 'tc',
+            kind: 'contour',
+            fxId: 'contour',
+            startBeat: 0,
+            lengthBeats: 8,
+            label: 'c1'
           },
           {
             id: 's1',
@@ -110,8 +120,9 @@ describe('renderer loop tick', () => {
     });
     const renderer = createRenderer(deps);
     renderer.tick();
+    // Sweep paints a radial gradient → it ran (used to be skipped pre-fix).
     const gradSpy = ctx.createRadialGradient as unknown as { mock: { calls: unknown[] } };
-    expect(gradSpy.mock.calls.length).toBe(0);
+    expect(gradSpy.mock.calls.length).toBeGreaterThan(0);
   });
 
   it('skips muted FX tracks', () => {
