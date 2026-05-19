@@ -16,9 +16,17 @@ export const useAppStore = create<AppState>()(
       version: 1,
       storage: createJSONStorage(() => localStorage),
       // Persist only serializable data slices — never actions, never blobs.
+      // playhead.playing is forced to false on persist: after a page reload
+      // the audio element is gone and "playing" would be a lie.
       partialize: (state) => ({
         ui: state.ui,
-        timeline: state.timeline
+        timeline: {
+          ...state.timeline,
+          playhead: {
+            ...state.timeline.playhead,
+            playing: false
+          }
+        }
       })
     }
   )
