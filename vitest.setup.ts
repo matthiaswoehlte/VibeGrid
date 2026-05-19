@@ -71,3 +71,13 @@ class MockAudioContext {
 globalThis.AudioContext = MockAudioContext;
 // @ts-expect-error — Webkit alias used by some libs; keep for parity.
 globalThis.webkitAudioContext = MockAudioContext;
+
+/**
+ * Silence jsdom's "Not implemented: HTMLMediaElement.prototype.play" stderr noise.
+ * jsdom ships no media stack, so calling these methods logs an error that masks
+ * real failures in later tests (especially Plan 3 renderer + canvas tests).
+ * Tests that need spy behavior override these via vi.spyOn.
+ */
+window.HTMLMediaElement.prototype.play = async () => {};
+window.HTMLMediaElement.prototype.pause = () => {};
+window.HTMLMediaElement.prototype.load = () => {};
