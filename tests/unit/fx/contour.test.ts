@@ -45,8 +45,9 @@ describe('contourPlugin', () => {
     expect(calls.find((c) => c.method === 'stroke')).toBeUndefined();
   });
 
-  it('paramSchema has threshold + color', () => {
-    expect(contourPlugin.paramSchema.threshold.kind).toBe('slider');
+  it('paramSchema has color + dashLength (threshold is hardcoded, see preload note)', () => {
     expect(contourPlugin.paramSchema.color.kind).toBe('color');
+    expect(contourPlugin.paramSchema.dashLength.kind).toBe('slider');
+    expect(contourPlugin.paramSchema.threshold).toBeUndefined();
   });
 });

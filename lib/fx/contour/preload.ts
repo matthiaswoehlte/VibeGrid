@@ -10,6 +10,10 @@
  */
 export interface ContourPath {
   points: Array<[x: number, y: number]>;
+  /** Threshold used during extraction — kept on the path so v0.2 can key the
+   *  per-bitmap cache by (bitmap, threshold) tuple when threshold becomes
+   *  user-configurable. */
+  threshold: number;
 }
 
 function toGrayscale(img: ImageData): Float32Array {
@@ -96,7 +100,7 @@ export function extractContours(img: ImageData, threshold: number): ContourPath[
       if (visited[idx]) continue;
       if (mag[idx] < threshold) continue;
       const points = flood(mag, w, h, threshold, visited, x, y);
-      if (points.length > 4) paths.push({ points });
+      if (points.length > 4) paths.push({ points, threshold });
     }
   }
   return paths;

@@ -4,11 +4,13 @@ import { extractContours, type ContourPath } from './preload';
 
 interface ContourParams {
   color: string;
-  threshold: number;
   dashLength: number;
 }
 
 const cache = new WeakMap<ImageBitmap, ContourPath[]>();
+
+/** Edge-detection threshold for extractContours. Hardcoded — see preload() note. */
+const CONTOUR_THRESHOLD = 0.3;
 
 export const contourPlugin: FxPlugin<ContourParams> = {
   id: 'contour',
@@ -18,14 +20,6 @@ export const contourPlugin: FxPlugin<ContourParams> = {
   preloadState: 'idle',
   paramSchema: {
     color: { kind: 'color', default: '#a86bff', label: 'Stroke color' },
-    threshold: {
-      kind: 'slider',
-      min: 0.05,
-      max: 0.95,
-      step: 0.05,
-      default: 0.3,
-      label: 'Edge threshold'
-    },
     dashLength: {
       kind: 'slider',
       min: 4,
@@ -36,7 +30,7 @@ export const contourPlugin: FxPlugin<ContourParams> = {
       label: 'Dash length'
     }
   },
-  getDefaultParams: () => ({ color: '#a86bff', threshold: 0.3, dashLength: 12 }),
+  getDefaultParams: () => ({ color: '#a86bff', dashLength: 12 }),
   async preload(imageBitmap, signal) {
     // SSR / Capacitor guard — OffscreenCanvas is browser-only (CLAUDE.md rule #1).
     if (!isClient()) return;
@@ -56,7 +50,10 @@ export const contourPlugin: FxPlugin<ContourParams> = {
         contourPlugin.preloadState = 'idle';
         return;
       }
-      const paths = extractContours(img, 0.3);
+      // Threshold hardcoded at 0.3 — a good default across typical images.
+      // v0.2: make configurable via preload(bitmap, signal, params?) which
+      // requires a params-aware cache key (bitmap + threshold tuple).
+      const paths = extractContours(img, CONTOUR_THRESHOLD);
       cache.set(imageBitmap, paths);
       contourPlugin.preloadState = 'ready';
     } catch {
