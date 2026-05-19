@@ -1,5 +1,6 @@
 'use client';
 import type { DragEvent as ReactDragEvent } from 'react';
+import { toast } from 'sonner';
 import {
   DndContext,
   PointerSensor,
@@ -74,38 +75,59 @@ export function Tracks() {
     const xInContainer = e.clientX - rect.left + container.scrollLeft;
     const startBeat = Math.max(0, xInContainer / px);
 
-    if (fxId) {
-      const plugin = getPlugin(fxId);
-      if (!plugin) return;
-      const trackKind = PLUGIN_TO_TRACK_KIND[plugin.kind as PluginFxKind];
-      const targetTrack = tracks.find((t) => t.kind === trackKind);
-      if (!targetTrack) return;
-      addClip({
-        id: crypto.randomUUID(),
-        trackId: targetTrack.id,
-        kind: trackKind,
-        fxId,
-        startBeat,
-        lengthBeats: 4,
-        label: plugin.name
-      });
-      return;
-    }
+    try {
+      if (fxId) {
+        const plugin = getPlugin(fxId);
+        if (!plugin) {
+          toast.error(`FX plugin "${fxId}" not registered`);
+          return;
+        }
+        const trackKind = PLUGIN_TO_TRACK_KIND[plugin.kind as PluginFxKind];
+        const targetTrack = tracks.find((t) => t.kind === trackKind);
+        if (!targetTrack) {
+          toast.error(`No "${trackKind}" track found for ${plugin.name}`);
+          return;
+        }
+        addClip({
+          id: crypto.randomUUID(),
+          trackId: targetTrack.id,
+          kind: trackKind,
+          fxId,
+          startBeat,
+          lengthBeats: 4,
+          label: plugin.name
+        });
+        return;
+      }
 
-    if (mediaIdImage) {
-      const ref = getMediaRef(mediaIdImage);
-      if (!ref) return;
-      const imageTrack = tracks.find((t) => t.kind === 'image');
-      if (!imageTrack) return;
-      addClip({
-        id: crypto.randomUUID(),
-        trackId: imageTrack.id,
-        kind: 'image',
-        mediaId: mediaIdImage,
-        startBeat,
-        lengthBeats: 16,
-        label: ref.filename
-      });
+      if (mediaIdImage) {
+        const ref = getMediaRef(mediaIdImage);
+        if (!ref) {
+          toast.error(`Media reference ${mediaIdImage} not found`);
+          return;
+        }
+        const imageTrack = tracks.find((t) => t.kind === 'image');
+        if (!imageTrack) {
+          toast.error('No image track found');
+          return;
+        }
+        addClip({
+          id: crypto.randomUUID(),
+          trackId: imageTrack.id,
+          kind: 'image',
+          mediaId: mediaIdImage,
+          startBeat,
+          lengthBeats: 16,
+          label: ref.filename
+        });
+      }
+    } catch (err) {
+      // ops.addClip throws OperationError on OVERLAP — surface that explicitly
+      // so the user knows WHY the drop did nothing.
+      const msg = err instanceof Error ? err.message : 'unknown error';
+      toast.error(`Drop failed: ${msg}`);
+      // eslint-disable-next-line no-console
+      console.warn('[Tracks] addClip failed:', err);
     }
   };
 

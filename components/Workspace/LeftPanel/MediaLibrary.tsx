@@ -56,8 +56,15 @@ export function MediaLibrary() {
         {refs.map((r) => {
           // Only images go on the timeline (drag into image-track). Audio is
           // the project soundtrack — auto-loaded into the engine on upload, no
-          // drag needed. The label "soundtrack" makes that explicit.
+          // drag needed. We highlight the LAST-uploaded audio as the active
+          // soundtrack since useAudioEngine auto-loads the most recent.
           const isImage = r.kind === 'image';
+          const audioRefs = refs.filter((m) => m.kind === 'audio');
+          const isActiveAudio = !isImage && r.id === audioRefs[audioRefs.length - 1]?.id;
+          // Hint for non-image rows so the user understands what to do (or not).
+          const audioTitle = isActiveAudio
+            ? 'Active soundtrack — loaded into the audio engine. Press Play in the toolbar.'
+            : 'Earlier soundtrack — re-upload to re-activate.';
           return (
             <li
               key={r.id}
@@ -69,16 +76,29 @@ export function MediaLibrary() {
                     }
                   : undefined
               }
-              className={`flex items-center gap-2 p-2 rounded bg-[var(--surface-2)] text-xs ${
-                isImage ? 'cursor-grab active:cursor-grabbing' : ''
+              title={isImage ? r.filename : audioTitle}
+              className={`flex items-center gap-2 p-2 rounded text-xs ${
+                isImage
+                  ? 'bg-[var(--surface-2)] cursor-grab active:cursor-grabbing'
+                  : `cursor-default select-none ${
+                      isActiveAudio
+                        ? 'bg-[var(--surface-2)] border border-[var(--a1)]/40'
+                        : 'bg-[var(--surface-1)] opacity-60'
+                    }`
               }`}
             >
-              <span className="flex-1 truncate" title={r.filename}>
+              <span className="flex-1 truncate">
                 {r.filename}
                 <span className="block text-[var(--text-muted)]">
                   {isImage && r.width && r.height ? `${r.width}×${r.height}` : null}
-                  {r.kind === 'audio' && r.duration ? `${r.duration.toFixed(1)}s — soundtrack` : null}
-                  {r.kind === 'audio' && !r.duration ? 'soundtrack' : null}
+                  {!isImage && r.duration
+                    ? `${r.duration.toFixed(1)}s — ${isActiveAudio ? 'active soundtrack' : 'soundtrack'}`
+                    : null}
+                  {!isImage && !r.duration
+                    ? isActiveAudio
+                      ? 'active soundtrack'
+                      : 'soundtrack'
+                    : null}
                 </span>
               </span>
               {isImage && <AutoPresetButton mediaRef={r} />}
