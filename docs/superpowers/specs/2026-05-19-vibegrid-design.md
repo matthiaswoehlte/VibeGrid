@@ -179,6 +179,7 @@ export interface AudioEngine {
 - Energy-based, on-demand, runs in a Web Worker so it can be invoked at any time (initial import **or** later via Inspector / Topbar button).
 - Worker emits `progress` events 0–100% so the UI can show a determinate progress indicator (detection can take 2–3 s on >10-minute files).
 - BPM remains manually overridable at any time.
+- Detected BPM is clamped to `[60, 200]`. Octave selection picks the candidate nearest the median onset-interval BPM.
 - The algorithmic core (`lib/audio/beat-detector.ts`) is a **pure function**, exported separately from the worker wrapper for unit testing.
 
 ### 5.3 Beat-window logic
@@ -267,6 +268,8 @@ setMuted(state, trackId, muted)
 
 `OperationError` is caught by the UI layer → toast "Clip overlaps existing clip" (no silent overwrite).
 
+`Clip.mediaId` references entries in the `mediaRefs` collection of the Zustand store (see §10) — `MediaRef` itself is owned by the store, not by `TimelineState`.
+
 ## 7. Storage & API Layer
 
 ```ts
@@ -297,7 +300,7 @@ export interface StorageAdapter {
 - Server-side MIME validation via `file-type` (magic bytes, not Content-Type header). Whitelists:
   - Images: `image/jpeg`, `image/png`, `image/webp` (≤ 20 MB)
   - Audio: `audio/mpeg`, `audio/wav`, `audio/mp4` (≤ 50 MB)
-- R2 key format: `{userId}/{projectId}/{kind}/{uuid}.{ext}` — v0.1 uses `anonymous` as `userId` (no auth in v0.1).
+- R2 key format: `{userId}/{projectId}/{kind}/{uuid}.{ext}` — v0.1 uses `anonymous` as `userId` and `default` as `projectId` (no auth and no project persistence in v0.1).
 
 ### 7.2 Env vars (`.env.example`)
 
@@ -385,7 +388,7 @@ export interface VideoExporter {
    - Audio loaded, playhead at `beats === 0`, image clip active.
    - Codec support detected with `MediaRecorder.isTypeSupported(...)`; the chosen codec is shown to the user ("Export codec: VP9 + Opus" / "VP8 + Opus (Fallback)").
 2. **Start:**
-   - `canvas.captureStream(30)` → video track.
+   - `canvas.captureStream(opts.frameRate)` → video track (default 30 fps).
    - `audioContext.createMediaStreamDestination()` → audio track (the destination is already wired in `AudioEngine`).
    - `MediaRecorder` on the combined stream, `ondataavailable` every 500 ms.
 3. **REC indicator:** Topbar replaces transport with red pulsing dot + "REC ●" + `00:14 / 00:32` timecode (from `elapsedSeconds` / `totalSeconds`). Cancel button visible.
