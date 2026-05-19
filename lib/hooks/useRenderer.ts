@@ -30,6 +30,9 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // Capture the cache instance once so the cleanup closure doesn't follow
+    // a future ref reassignment (React-hooks lint rule).
+    const cache = cacheRef.current;
     const ctx = canvas.getContext('2d');
 
     // Prime the cache from any mediaRefs already in the store (post-rehydrate).
@@ -37,7 +40,7 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
     initial
       .filter((m) => m.kind === 'image')
       .forEach((m) => {
-        cacheRef.current.load(m.id, m.url).catch(() => undefined);
+        cache.load(m.id, m.url).catch(() => undefined);
       });
 
     // Keep the cache in sync with subsequent additions / removals.
@@ -49,9 +52,9 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
         (m) => m.kind === 'image' && !state.media.mediaRefs.find((p) => p.id === m.id)
       );
       added.forEach((m) => {
-        cacheRef.current.load(m.id, m.url).catch(() => undefined);
+        cache.load(m.id, m.url).catch(() => undefined);
       });
-      removed.forEach((m) => cacheRef.current.evict(m.id));
+      removed.forEach((m) => cache.evict(m.id));
     });
 
     const renderer = createRenderer({
@@ -59,7 +62,7 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
       getCurrentTime: () => getCurrentTimeRef.current(),
       getBeatGrid: () => useAppStore.getState().audio.grid,
       getTimelineState: () => useAppStore.getState().timeline,
-      getImageBitmap: (mediaId) => cacheRef.current.get(mediaId),
+      getImageBitmap: (mediaId) => cache.get(mediaId),
       getSeekCounter: () => getSeekCounterRef.current?.() ?? 0
     });
 
@@ -76,7 +79,7 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
       renderer.stop();
       stopResize();
       unsubMedia();
-      cacheRef.current.clear();
+      cache.clear();
     };
     // Intentionally empty deps — refs above carry the latest callbacks.
     // canvasRef is a stable RefObject; React guarantees its identity.

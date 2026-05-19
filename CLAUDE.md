@@ -108,7 +108,7 @@ tests/            unit/, integration/, e2e/
 | 2 | Audio Engine & Beat Detection | ✅ Done |
 | 3 | Renderer + FX Plugins | ✅ Done |
 | 4 | Storage & API Layer | ✅ Done |
-| 5 | UI Components | ⬜ Pending |
+| 5 | UI Components | ✅ Done |
 | 6 | Export Pipeline | ⬜ Pending |
 
 **Rule:** Never start Plan N+1 before Plan N passes all verification gates.
