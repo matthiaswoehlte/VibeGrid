@@ -1,0 +1,8 @@
+.next
+node_modules
+_design-handoff
+coverage
+docs
+*.lock
+package-lock.json
+*.md
