@@ -184,8 +184,13 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
         worker.onmessage = (e: MessageEvent<BeatWorkerOutbound>) => {
           const msg = e.data;
           if (msg.type === 'progress') {
+            if (myAbort.signal.aborted) return;
             onProgress?.(msg.value);
           } else if (msg.type === 'result') {
+            // Guard the race where abort() fires while the result message
+            // is already in flight from the worker — without this, a stale
+            // result would clobber the freshly started detection's state.
+            if (myAbort.signal.aborted) return;
             cleanup();
             const bpm = Math.max(BPM_MIN, Math.min(BPM_MAX, msg.payload.bpm));
             const grid: BeatGrid = {
@@ -198,6 +203,7 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
             setState({ beatGrid: grid });
             resolve(grid);
           } else if (msg.type === 'error') {
+            if (myAbort.signal.aborted) return;
             cleanup();
             reject(new Error(msg.message));
           }
