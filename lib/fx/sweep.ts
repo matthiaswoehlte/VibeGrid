@@ -47,7 +47,7 @@ export const sweepPlugin: FxPlugin<SweepParams> = {
       grad.addColorStop(0, params.color);
       grad.addColorStop(1, 'transparent');
       rc.ctx.save();
-      rc.ctx.fillStyle = grad as unknown as string;
+      rc.ctx.fillStyle = grad;
       rc.ctx.globalAlpha = 0.5;
       rc.ctx.fillRect(x - params.radius, y - params.radius, params.radius * 2, params.radius * 2);
       rc.ctx.restore();
