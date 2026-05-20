@@ -26,8 +26,7 @@ export const useAppStore = create<AppState>()(
       // missing kinds into whatever the user already has, preserving any
       // existing tracks and any clips referencing them.
       migrate: (persistedState, version) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const s = persistedState as any;
+        const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
         if (version < 2 && s?.timeline) {
           const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
           const existingKinds = new Set(existing.map((t) => t.kind));
