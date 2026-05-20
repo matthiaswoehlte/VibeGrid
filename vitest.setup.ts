@@ -181,4 +181,27 @@ if (typeof window !== 'undefined') {
   }
   // @ts-expect-error — test-only global.
   globalThis.MediaRecorder = MockMediaRecorder;
+
+  // jsdom has no MediaStream constructor. VideoExporter calls
+  // `new MediaStream([videoTrack, audioTrack])` — a minimal stub satisfies it.
+  if (typeof globalThis.MediaStream === 'undefined') {
+    class MockMediaStream {
+      private readonly tracks: MediaStreamTrack[];
+      readonly id = 'mock-combined-stream';
+      constructor(tracks: MediaStreamTrack[] = []) {
+        this.tracks = tracks;
+      }
+      getTracks(): MediaStreamTrack[] {
+        return this.tracks;
+      }
+      getVideoTracks(): MediaStreamTrack[] {
+        return this.tracks.filter((t) => t.kind === 'video');
+      }
+      getAudioTracks(): MediaStreamTrack[] {
+        return this.tracks.filter((t) => t.kind === 'audio');
+      }
+    }
+    // @ts-expect-error — test-only global.
+    globalThis.MediaStream = MockMediaStream;
+  }
 }
