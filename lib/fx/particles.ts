@@ -1,10 +1,23 @@
 import type { FxPlugin } from '@/lib/renderer/types';
 
+type ParticleDirection =
+  | 'bottom-up'
+  | 'top-down'
+  | 'left-right'
+  | 'right-left'
+  | 'center-out'
+  | 'bl-tr'
+  | 'tl-br'
+  | 'tr-bl'
+  | 'br-tl';
+
 interface ParticlesParams {
   color: string;
   spawnPerBeat: number;
   life: number;
   size: number;
+  direction: ParticleDirection;
+  speed: number;
 }
 
 interface Particle {
@@ -29,24 +42,105 @@ function makePool(): Particle[] {
   }));
 }
 
-// v0.1: module-level state — single particles track expected.
-// Two simultaneous particles clips would share `lastSpawnBeat` and `pool`.
-// v0.2: move pool + lastSpawnBeat into a per-instance closure if multi-track
-// support is needed. Tests must call `particlesPlugin.dispose()` in afterEach
-// to keep the spawn-guard deterministic.
 let pool: Particle[] = makePool();
 let lastSpawnBeat: number | null = null;
 
-function spawn(rc: { width: number; height: number; time: number }, count: number): void {
+interface SpawnRC {
+  width: number;
+  height: number;
+  time: number;
+}
+
+/** Initial (x, y) and (vx, vy) for one particle, in canvas pixel coordinates.
+ *  Per-direction spawn geometry — the renderer then advances by (vx, vy) * dt. */
+function spawnGeometry(
+  rc: SpawnRC,
+  direction: ParticleDirection,
+  speed: number
+): { x: number; y: number; vx: number; vy: number } {
+  const jitter = (range: number) => (Math.random() - 0.5) * range;
+  const speedFactor = 1 + Math.random() * 0.5; // 1..1.5x variance
+  const v = speed * speedFactor;
+  switch (direction) {
+    case 'bottom-up':
+      return {
+        x: Math.random() * rc.width,
+        y: rc.height,
+        vx: jitter(60),
+        vy: -v
+      };
+    case 'top-down':
+      return {
+        x: Math.random() * rc.width,
+        y: 0,
+        vx: jitter(60),
+        vy: v
+      };
+    case 'left-right':
+      return {
+        x: 0,
+        y: Math.random() * rc.height,
+        vx: v,
+        vy: jitter(60)
+      };
+    case 'right-left':
+      return {
+        x: rc.width,
+        y: Math.random() * rc.height,
+        vx: -v,
+        vy: jitter(60)
+      };
+    case 'center-out': {
+      const angle = Math.random() * Math.PI * 2;
+      return {
+        x: rc.width / 2,
+        y: rc.height / 2,
+        vx: Math.cos(angle) * v,
+        vy: Math.sin(angle) * v
+      };
+    }
+    case 'bl-tr':
+      return {
+        x: Math.random() * rc.width * 0.4,
+        y: rc.height - Math.random() * rc.height * 0.2,
+        vx: v * 0.7,
+        vy: -v * 0.7
+      };
+    case 'tl-br':
+      return {
+        x: Math.random() * rc.width * 0.4,
+        y: Math.random() * rc.height * 0.2,
+        vx: v * 0.7,
+        vy: v * 0.7
+      };
+    case 'tr-bl':
+      return {
+        x: rc.width - Math.random() * rc.width * 0.4,
+        y: Math.random() * rc.height * 0.2,
+        vx: -v * 0.7,
+        vy: v * 0.7
+      };
+    case 'br-tl':
+      return {
+        x: rc.width - Math.random() * rc.width * 0.4,
+        y: rc.height - Math.random() * rc.height * 0.2,
+        vx: -v * 0.7,
+        vy: -v * 0.7
+      };
+  }
+}
+
+function spawn(rc: SpawnRC, count: number, direction: ParticleDirection, speed: number): void {
   let spawned = 0;
   for (const p of pool) {
     if (spawned >= count) break;
     if (p.alive) continue;
     p.alive = true;
-    p.x = Math.random() * rc.width;
-    p.y = rc.height;
-    p.vx = (Math.random() - 0.5) * 60;
-    p.vy = -80 - Math.random() * 120;
+    const g = spawnGeometry(rc, direction, speed);
+    p.x = g.x;
+    p.y = g.y;
+    p.vx = g.vx;
+    p.vy = g.vy;
     p.bornAt = rc.time;
     spawned++;
   }
@@ -69,14 +163,46 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
       label: 'Particles per beat'
     },
     life: { kind: 'slider', min: 0.5, max: 4, step: 0.1, default: 1.6, unit: 's', label: 'Life' },
-    size: { kind: 'slider', min: 1, max: 12, step: 1, default: 3, unit: 'px', label: 'Size' }
+    size: { kind: 'slider', min: 1, max: 12, step: 1, default: 3, unit: 'px', label: 'Size' },
+    direction: {
+      kind: 'select',
+      options: [
+        { value: 'bottom-up', label: '↑ Bottom → top' },
+        { value: 'top-down', label: '↓ Top → bottom' },
+        { value: 'left-right', label: '→ Left → right' },
+        { value: 'right-left', label: '← Right → left' },
+        { value: 'center-out', label: '⊙ Center → out' },
+        { value: 'bl-tr', label: '↗ Bottom-left → top-right' },
+        { value: 'tl-br', label: '↘ Top-left → bottom-right' },
+        { value: 'tr-bl', label: '↙ Top-right → bottom-left' },
+        { value: 'br-tl', label: '↖ Bottom-right → top-left' }
+      ],
+      default: 'bottom-up',
+      label: 'Direction'
+    },
+    speed: {
+      kind: 'slider',
+      min: 20,
+      max: 400,
+      step: 10,
+      default: 140,
+      unit: 'px/s',
+      label: 'Speed'
+    }
   },
-  getDefaultParams: () => ({ color: '#2ee0d0', spawnPerBeat: 12, life: 1.6, size: 3 }),
+  getDefaultParams: () => ({
+    color: '#2ee0d0',
+    spawnPerBeat: 12,
+    life: 1.6,
+    size: 3,
+    direction: 'bottom-up',
+    speed: 140
+  }),
   async preload() {},
   render(rc, params) {
     if (rc.isOnBeat && lastSpawnBeat !== rc.beatIndex) {
       lastSpawnBeat = rc.beatIndex;
-      spawn(rc, params.spawnPerBeat);
+      spawn(rc, params.spawnPerBeat, params.direction, params.speed);
     }
 
     rc.ctx.save();
