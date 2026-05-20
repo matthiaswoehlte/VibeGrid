@@ -96,7 +96,17 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const grid = deps.getBeatGrid();
     const beats = ((time - grid.offsetMs / 1000) * grid.bpm) / 60;
 
-    ctx!.clearRect(0, 0, w, h);
+    // OPAQUE clear — paint the background color instead of clearRect. Reason:
+    // MediaRecorder captures the raw canvas buffer including alpha. With
+    // clearRect (transparent), every FX that composites via globalAlpha < 1
+    // blends against transparency in the recorded frame, so anything semi-
+    // transparent (Pulse glow, Sweep orbs, Particles, Contour stroke, blend
+    // crossfades) disappears in the export. drawImage stays visible because
+    // it's opaque. Painting the page background once per frame keeps
+    // on-screen rendering identical while giving the encoder a fully opaque
+    // RGB buffer. Color matches CLAUDE.md `--bg`.
+    ctx!.fillStyle = '#0c0d12';
+    ctx!.fillRect(0, 0, w, h);
 
     // Watchlist Punkt 5: never render with negative beats. Canvas already cleared.
     if (beats < 0) return;

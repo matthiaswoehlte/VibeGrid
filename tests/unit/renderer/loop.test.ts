@@ -36,16 +36,22 @@ describe('renderer loop tick', () => {
     registerBuiltInPlugins();
   });
 
-  it('clears the canvas and returns early when beats are negative (pre-roll)', () => {
+  it('paints background and returns early when beats are negative (pre-roll)', () => {
     const { ctx, deps } = makeDeps({
       getCurrentTime: () => 0,
       getBeatGrid: () => ({ ...grid120, offsetMs: 5000 })
     });
     const renderer = createRenderer(deps);
     renderer.tick();
-    const calls = (ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
-    expect(calls.some((c) => c.method === 'clearRect')).toBe(true);
-    expect(calls.find((c) => c.method === 'fillRect')).toBeUndefined();
+    const calls = (ctx as unknown as { __calls: Array<{ method: string; args: unknown[] }> })
+      .__calls;
+    // Plan 6: opaque background paint replaces clearRect so MediaRecorder
+    // captures a fully-opaque RGB buffer (FX with globalAlpha<1 would
+    // otherwise composite against transparent and disappear in the export).
+    const fillRects = calls.filter((c) => c.method === 'fillRect');
+    expect(fillRects).toHaveLength(1); // background only — no FX painted
+    // No image draws either (no clips active during pre-roll).
+    expect(calls.find((c) => c.method === 'drawImage')).toBeUndefined();
   });
 
   it('runs Pulse plugin even with no active image clip', () => {
@@ -147,8 +153,13 @@ describe('renderer loop tick', () => {
     });
     const renderer = createRenderer(deps);
     renderer.tick();
-    const calls = (ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
-    expect(calls.find((c) => c.method === 'fillRect')).toBeUndefined();
+    const calls = (ctx as unknown as { __calls: Array<{ method: string; args: unknown[] }> })
+      .__calls;
+    // Plan 6: there's always ONE background fillRect per tick. Pulse would
+    // add a SECOND one for the flash overlay — assert exactly the background
+    // call survives when the track is muted.
+    const fillRects = calls.filter((c) => c.method === 'fillRect');
+    expect(fillRects).toHaveLength(1);
   });
 
   it('dispatches to Particles plugin (Particle ≠ particles guard)', () => {
