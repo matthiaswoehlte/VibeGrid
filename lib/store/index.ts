@@ -60,6 +60,24 @@ export const useAppStore = create<AppState>()(
         return s;
       },
 
+      // Deep-merge `ui` so the persisted partial (`{ zoom }` only) doesn't
+      // replace the entire `ui` object on rehydrate. Without this, every
+      // new UIState field added by later plans (Plan 5.5's
+      // automationEditorClipId, Plan 5.7's automationSnap, Plan 6's
+      // exportState) ends up `undefined` for any user with a pre-existing
+      // localStorage entry — and reading `ui.exportState.status` throws.
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AppState> | undefined;
+        return {
+          ...currentState,
+          ...persisted,
+          ui: {
+            ...currentState.ui,
+            ...(persisted?.ui ?? {})
+          }
+        };
+      },
+
       // Persist only serializable data slices — never actions, never blobs.
       // playhead.playing is forced to false on persist: after a page reload
       // the audio element is gone and "playing" would be a lie.
