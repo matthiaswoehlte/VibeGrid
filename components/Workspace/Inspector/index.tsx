@@ -4,6 +4,7 @@ import { getPlugin } from '@/lib/renderer/registry';
 import { ParamControl } from '@/components/ui/ParamControl';
 import { PreloadIndicator } from './PreloadIndicator';
 import { AutomateButton } from './AutomateButton';
+import { TransitionSection } from './TransitionSection';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import { isReservedParamKey } from '@/lib/timeline/overlap';
 
@@ -76,6 +77,7 @@ export function Inspector() {
           </div>
         )}
       </div>
+      <TransitionSection clipId={clip.id} />
     </div>
   );
 }
