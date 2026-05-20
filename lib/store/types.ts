@@ -18,7 +18,7 @@ export interface TimelineActions {
   setPlayhead(beats: number): void;
   setMuted(trackId: string, muted: boolean): void;
   setClipParam(clipId: string, key: string, value: unknown): void;
-  convertParamToAutomation(clipId: string, key: string, beat: number): void;
+  convertParamToAutomation(clipId: string, key: string, beat: number, initialValue?: unknown): void;
   convertParamToStatic(clipId: string, key: string): void;
   addParamPoint(clipId: string, key: string, point: AutomationPoint<unknown>): void;
   removeParamPoint(clipId: string, key: string, index: number): void;

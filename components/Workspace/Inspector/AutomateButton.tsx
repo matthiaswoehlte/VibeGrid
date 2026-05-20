@@ -20,7 +20,11 @@ export function AutomateButton({
 
   const onClick = () => {
     if (automated) convertToStatic(clipId, paramKey);
-    else convertToAuto(clipId, paramKey, playheadBeats);
+    // Pass `value` so the store can seed a curve for clips that have never
+    // written this key (clip.params is undefined / lacks the entry). The
+    // Inspector already merges plugin defaults into `value`, so it's the
+    // correct starting value regardless of whether the user has touched it.
+    else convertToAuto(clipId, paramKey, playheadBeats, value);
   };
 
   return (

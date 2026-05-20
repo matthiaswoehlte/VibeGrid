@@ -113,10 +113,25 @@ export const createTimelineSlice: StateCreator<
           }
         }));
       },
-      convertParamToAutomation: (clipId, key, beat) =>
-        patchClipParam(clipId, key, (current) =>
-          isAutomationCurve(current) ? current : makeCurve(current, beat, 'linear')
-        ),
+      convertParamToAutomation: (clipId, key, beat, initialValue) => {
+        // Can't use patchClipParam — that bails when the key is missing from
+        // clip.params (true for fresh clips with no overrides). For those we
+        // need to write a brand-new entry using `initialValue` (the resolved
+        // default the Inspector passes from `plugin.getDefaultParams()`).
+        set((state) => ({
+          timeline: {
+            ...state.timeline,
+            clips: state.timeline.clips.map((c) => {
+              if (c.id !== clipId) return c;
+              const params = c.params ?? {};
+              const existing = key in params ? params[key] : initialValue;
+              if (isAutomationCurve(existing)) return c;
+              if (existing === undefined) return c;
+              return { ...c, params: { ...params, [key]: makeCurve(existing, beat, 'linear') } };
+            })
+          }
+        }));
+      },
       convertParamToStatic: (clipId, key) =>
         patchClipParam(clipId, key, (current) =>
           isAutomationCurve(current) ? toStaticValue(current) : current
