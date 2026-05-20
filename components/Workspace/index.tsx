@@ -7,8 +7,13 @@ import { Stage } from './Stage';
 import { Timeline } from './Timeline';
 import { Inspector } from './Inspector';
 
+const TIMELINE_MIN_PX = 120;
+const STAGE_MIN_PX = 160;
+const DEFAULT_TIMELINE_PX = 256;
+
 export function Workspace({ engine }: { engine: AudioEngine | null }) {
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_PX);
 
   // Global Delete / Backspace shortcut — removes the currently selected clip.
   // No-op when an input/textarea/contenteditable has focus (don't interfere
@@ -51,7 +56,52 @@ export function Workspace({ engine }: { engine: AudioEngine | null }) {
             {inspectorOpen ? '›' : '‹'}
           </button>
         </div>
-        <div className="h-64 shrink-0 border-t border-[var(--border)] bg-[var(--surface-1)]">
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize timeline"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            const target = e.currentTarget;
+            try {
+              target.setPointerCapture(e.pointerId);
+            } catch {
+              /* not all platforms */
+            }
+            const startY = e.clientY;
+            const startHeight = timelineHeight;
+            const move = (ev: PointerEvent) => {
+              // Dragging up = make timeline taller. Dragging down = shorter.
+              const dy = startY - ev.clientY;
+              const maxHeight = Math.max(
+                TIMELINE_MIN_PX,
+                window.innerHeight - STAGE_MIN_PX - 80 /* topbar */
+              );
+              setTimelineHeight(
+                Math.max(TIMELINE_MIN_PX, Math.min(maxHeight, startHeight + dy))
+              );
+            };
+            const up = (ev: PointerEvent) => {
+              try {
+                target.releasePointerCapture(ev.pointerId);
+              } catch {
+                /* may already be released */
+              }
+              target.removeEventListener('pointermove', move);
+              target.removeEventListener('pointerup', up);
+              target.removeEventListener('pointercancel', up);
+            };
+            target.addEventListener('pointermove', move);
+            target.addEventListener('pointerup', up);
+            target.addEventListener('pointercancel', up);
+          }}
+          className="h-1.5 shrink-0 bg-[var(--border)] hover:bg-[var(--a2)] transition-colors"
+          style={{ cursor: 'row-resize', touchAction: 'none' }}
+        />
+        <div
+          className="shrink-0 border-t border-[var(--border)] bg-[var(--surface-1)]"
+          style={{ height: timelineHeight }}
+        >
           <Timeline engine={engine} />
         </div>
       </main>
