@@ -53,13 +53,6 @@ export function AutomationPoint({
       /* jsdom may not implement setPointerCapture */
     }
 
-    // While dragging, the browser would otherwise show the cursor of whatever
-    // is under the moving pointer (often an arrow). Lock the document cursor
-    // to grabbing for the duration of the gesture.
-    const prevBodyCursor =
-      typeof document !== 'undefined' ? document.body.style.cursor : '';
-    if (typeof document !== 'undefined') document.body.style.cursor = 'grabbing';
-
     const startX = e.clientX;
     const startY = e.clientY;
     const startBeat = beat;
@@ -79,7 +72,6 @@ export function AutomationPoint({
       } catch {
         /* may already be released */
       }
-      if (typeof document !== 'undefined') document.body.style.cursor = prevBodyCursor;
       target.removeEventListener('pointermove', move);
       target.removeEventListener('pointerup', up);
       target.removeEventListener('pointercancel', up);
@@ -102,9 +94,8 @@ export function AutomationPoint({
   };
 
   // Two circles in a group: an invisible r=12 hit area so the user doesn't
-  // have to aim at a tiny dot, plus the visible r=6 dot on top. The grab
-  // cursor sits on the visible dot only — the wider hit ring catches clicks
-  // but shows the default cursor so the lane doesn't feel grabby everywhere.
+  // have to aim at a tiny dot, plus the visible r=6 dot. Default cursor
+  // everywhere — no grab/grabbing cursor styling in the automation area.
   return (
     <g
       onPointerDown={onPointerDown}
@@ -112,14 +103,7 @@ export function AutomationPoint({
       role="button"
       aria-label={`Automation point ${pointIndex + 1}`}
     >
-      <circle
-        cx={cx}
-        cy={cy}
-        r={12}
-        fill="rgba(0,0,0,0)"
-        pointerEvents="all"
-        style={{ cursor: 'default' }}
-      />
+      <circle cx={cx} cy={cy} r={12} fill="rgba(0,0,0,0)" pointerEvents="all" />
       <circle
         cx={cx}
         cy={cy}
@@ -127,8 +111,7 @@ export function AutomationPoint({
         fill="var(--a2)"
         stroke="var(--bg)"
         strokeWidth={1.5}
-        pointerEvents="all"
-        style={{ cursor: 'grab' }}
+        pointerEvents="none"
       />
     </g>
   );
