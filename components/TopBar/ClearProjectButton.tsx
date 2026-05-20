@@ -15,7 +15,7 @@ export function ClearProjectButton() {
       ui: {
         zoom: 1,
         selectedClipId: null,
-        expandedAutomationClipId: null,
+        automationEditorClipId: null,
         automationSnap: 'off'
       }
     });

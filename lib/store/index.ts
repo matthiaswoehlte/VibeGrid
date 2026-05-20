@@ -9,24 +9,28 @@ import type { Track } from '@/lib/timeline/types';
 export const useAppStore = create<AppState>()(
   persist(
     (set, get, store) => ({
-      // UI state lives inline — no ui-slice.ts. expandedAutomationClipId
-      // and automationSnap are transient (never persisted; see partialize).
+      // UI state lives inline — no ui-slice.ts. automationEditorClipId and
+      // automationSnap are transient (never persisted; see partialize).
+      // automationEditorClipId was named expandedAutomationClipId in
+      // Plan 5.5/5.6 (inline-lane toggle). Plan 5.7-R repurposed the same
+      // field to drive the full-screen AutomationEditorModal; cleanup
+      // semantics on selectedClipId/removeClip are unchanged.
       ui: {
         zoom: 1,
         selectedClipId: null,
-        expandedAutomationClipId: null,
+        automationEditorClipId: null,
         automationSnap: 'off'
       },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
       setSelectedClipId: (id) =>
         set((s) => ({
           ui:
-            id !== s.ui.expandedAutomationClipId
-              ? { ...s.ui, selectedClipId: id, expandedAutomationClipId: null }
+            id !== s.ui.automationEditorClipId
+              ? { ...s.ui, selectedClipId: id, automationEditorClipId: null }
               : { ...s.ui, selectedClipId: id }
         })),
-      setExpandedAutomationClipId: (clipId) =>
-        set((s) => ({ ui: { ...s.ui, expandedAutomationClipId: clipId } })),
+      setAutomationEditorClipId: (clipId) =>
+        set((s) => ({ ui: { ...s.ui, automationEditorClipId: clipId } })),
       setAutomationSnap: (snap) =>
         set((s) => ({ ui: { ...s.ui, automationSnap: snap } })),
       ...createTimelineSlice(set, get, store),
@@ -55,10 +59,10 @@ export const useAppStore = create<AppState>()(
       // the audio element is gone and "playing" would be a lie.
       // media.mediaRefs are URLs + metadata only — never the underlying blobs.
       partialize: (state) => ({
-        // selectedClipId, expandedAutomationClipId, and automationSnap are
+        // selectedClipId, automationEditorClipId, and automationSnap are
         // all transient UI state. Persisting them would confuse users on
-        // reload (Inspector jumps to a clip they didn't select; automation
-        // lane re-opens without context; snap mode resets to a half-tried
+        // reload (Inspector jumps to a clip they didn't select; editor
+        // re-opens without context; snap mode resets to a half-tried
         // value). Only `zoom` survives reloads.
         ui: { zoom: state.ui.zoom },
         timeline: {

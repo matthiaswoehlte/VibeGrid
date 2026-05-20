@@ -90,8 +90,8 @@ export const createTimelineSlice: StateCreator<
           return {
             timeline: regenerated,
             ui:
-              s.ui.expandedAutomationClipId === clipId
-                ? { ...s.ui, expandedAutomationClipId: null }
+              s.ui.automationEditorClipId === clipId
+                ? { ...s.ui, automationEditorClipId: null }
                 : s.ui
           };
         });

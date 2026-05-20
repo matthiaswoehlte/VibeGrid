@@ -28,7 +28,7 @@ beforeEach(() => {
         }
       ]
     },
-    ui: { ...s.ui, selectedClipId: CLIP_ID, expandedAutomationClipId: null }
+    ui: { ...s.ui, selectedClipId: CLIP_ID, automationEditorClipId: null }
   }));
 });
 
@@ -70,14 +70,14 @@ describe('Inspector — Open editor wiring', () => {
     useAppStore.getState().timelineActions.convertParamToAutomation(CLIP_ID, 'intensity', 0);
   });
 
-  it('clicking sets expandedAutomationClipId to clip.id (opens the modal)', () => {
+  it('clicking sets automationEditorClipId to clip.id (opens the modal)', () => {
     render(<Inspector />);
     fireEvent.click(screen.getByRole('button', { name: /open editor/i }));
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBe(CLIP_ID);
+    expect(useAppStore.getState().ui.automationEditorClipId).toBe(CLIP_ID);
   });
 
   it('button stays labelled "Open editor" regardless of the editor state', () => {
-    useAppStore.getState().setExpandedAutomationClipId(CLIP_ID);
+    useAppStore.getState().setAutomationEditorClipId(CLIP_ID);
     render(<Inspector />);
     // No toggle text — the modal owns its own close affordance (× / Escape).
     expect(screen.getByRole('button', { name: /open editor/i })).toBeDefined();

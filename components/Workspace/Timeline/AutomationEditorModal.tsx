@@ -10,7 +10,7 @@ import { AutomateButton } from '../Inspector/AutomateButton';
 import { AutomationCurveEditor } from './AutomationCurveEditor';
 
 /**
- * Full-screen automation editor. Opens when `ui.expandedAutomationClipId`
+ * Full-screen automation editor. Opens when `ui.automationEditorClipId`
  * matches a clip id. The user reaches it via the Inspector's "Open editor"
  * button. Inside the modal:
  *
@@ -23,8 +23,8 @@ import { AutomationCurveEditor } from './AutomationCurveEditor';
  *  - Closes on backdrop click, Escape, or the × button.
  */
 export function AutomationEditorModal() {
-  const editorClipId = useAppStore((s) => s.ui.expandedAutomationClipId);
-  const setExpanded = useAppStore((s) => s.setExpandedAutomationClipId);
+  const editorClipId = useAppStore((s) => s.ui.automationEditorClipId);
+  const setEditorClip = useAppStore((s) => s.setAutomationEditorClipId);
   const clip = useAppStore((s) =>
     editorClipId ? s.timeline.clips.find((c) => c.id === editorClipId) : undefined
   );
@@ -35,11 +35,11 @@ export function AutomationEditorModal() {
   useEffect(() => {
     if (!editorClipId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setExpanded(null);
+      if (e.key === 'Escape') setEditorClip(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editorClipId, setExpanded]);
+  }, [editorClipId, setEditorClip]);
 
   if (!editorClipId || !clip || !clip.fxId) return null;
   const plugin = getPlugin(clip.fxId);
@@ -73,7 +73,7 @@ export function AutomationEditorModal() {
       onPointerDown={(e) => {
         // Backdrop click: only close when the click was on the backdrop
         // itself, not on the modal card.
-        if (e.target === e.currentTarget) setExpanded(null);
+        if (e.target === e.currentTarget) setEditorClip(null);
       }}
     >
       <div className="bg-[var(--surface-1)] border border-[var(--border)] rounded-lg shadow-2xl w-[90vw] h-[85vh] max-w-[1400px] flex flex-col">
@@ -87,7 +87,7 @@ export function AutomationEditorModal() {
           <button
             type="button"
             aria-label="Close automation editor"
-            onClick={() => setExpanded(null)}
+            onClick={() => setEditorClip(null)}
             className="h-7 w-7 rounded text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]"
           >
             ✕

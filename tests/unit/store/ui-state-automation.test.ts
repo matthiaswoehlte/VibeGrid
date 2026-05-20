@@ -3,34 +3,34 @@ import { useAppStore } from '@/lib/store';
 
 beforeEach(() => {
   useAppStore.setState((s) => ({
-    ui: { ...s.ui, expandedAutomationClipId: null }
+    ui: { ...s.ui, automationEditorClipId: null }
   }));
 });
 
-describe('UI state — expandedAutomationClipId', () => {
+describe('UI state — automationEditorClipId', () => {
   it('defaults to null after a reset', () => {
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+    expect(useAppStore.getState().ui.automationEditorClipId).toBeNull();
   });
 
-  it('setExpandedAutomationClipId writes the field', () => {
-    useAppStore.getState().setExpandedAutomationClipId('clip-x');
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBe('clip-x');
-    useAppStore.getState().setExpandedAutomationClipId(null);
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+  it('setAutomationEditorClipId writes the field', () => {
+    useAppStore.getState().setAutomationEditorClipId('clip-x');
+    expect(useAppStore.getState().ui.automationEditorClipId).toBe('clip-x');
+    useAppStore.getState().setAutomationEditorClipId(null);
+    expect(useAppStore.getState().ui.automationEditorClipId).toBeNull();
   });
 
-  it('partialize excludes expandedAutomationClipId (only zoom persists)', () => {
+  it('partialize excludes automationEditorClipId (only zoom persists)', () => {
     if (typeof window === 'undefined') return;
-    useAppStore.getState().setExpandedAutomationClipId('should-not-persist');
+    useAppStore.getState().setAutomationEditorClipId('should-not-persist');
     const raw = window.localStorage.getItem('vibegrid-store');
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    expect(parsed.state.ui?.expandedAutomationClipId).toBeUndefined();
+    expect(parsed.state.ui?.automationEditorClipId).toBeUndefined();
     expect(parsed.state.ui?.zoom).toBeDefined();
   });
 });
 
-describe('expandedAutomationClipId cleanup', () => {
+describe('automationEditorClipId cleanup', () => {
   beforeEach(() => {
     useAppStore.setState((s) => ({
       timeline: {
@@ -50,24 +50,24 @@ describe('expandedAutomationClipId cleanup', () => {
       ui: {
         zoom: s.ui.zoom,
         selectedClipId: 'clip-x',
-        expandedAutomationClipId: 'clip-x',
+        automationEditorClipId: 'clip-x',
         automationSnap: 'off'
       }
     }));
   });
 
-  it('removing the expanded clip clears expandedAutomationClipId', () => {
+  it('removing the expanded clip clears automationEditorClipId', () => {
     useAppStore.getState().timelineActions.removeClip('clip-x');
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+    expect(useAppStore.getState().ui.automationEditorClipId).toBeNull();
   });
 
-  it('selecting a different clip clears expandedAutomationClipId', () => {
+  it('selecting a different clip clears automationEditorClipId', () => {
     useAppStore.getState().setSelectedClipId('clip-y');
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+    expect(useAppStore.getState().ui.automationEditorClipId).toBeNull();
   });
 
   it('selecting the same clip keeps the lane open', () => {
     useAppStore.getState().setSelectedClipId('clip-x');
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBe('clip-x');
+    expect(useAppStore.getState().ui.automationEditorClipId).toBe('clip-x');
   });
 });

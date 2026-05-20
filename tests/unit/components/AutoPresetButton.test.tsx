@@ -23,7 +23,7 @@ describe('AutoPresetButton', () => {
       ui: {
         zoom: 1,
         selectedClipId: null,
-        expandedAutomationClipId: null,
+        automationEditorClipId: null,
         automationSnap: 'off'
       },
       timeline: {

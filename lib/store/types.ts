@@ -7,7 +7,14 @@ import type { AutomationSnap } from '@/lib/automation/snap';
 export interface UIState {
   zoom: number;
   selectedClipId: string | null;
-  expandedAutomationClipId: string | null;
+  /** Clip id whose AutomationEditorModal is currently open, or null when
+   *  the modal is closed. Plan 5.5–5.6 called this `expandedAutomationClipId`
+   *  and used it to toggle the now-removed inline interactive lane; Plan
+   *  5.7-R repurposed it to drive the full-screen editor modal. The cleanup
+   *  semantics (cleared on selectedClipId change + clip remove) are
+   *  identical, so partialize-exclusion + selectedClipId/removeClip
+   *  handling were carried over without change. */
+  automationEditorClipId: string | null;
   automationSnap: AutomationSnap;
 }
 
@@ -64,7 +71,7 @@ export interface AppState {
   ui: UIState;
   setZoom(zoom: number): void;
   setSelectedClipId(id: string | null): void;
-  setExpandedAutomationClipId(clipId: string | null): void;
+  setAutomationEditorClipId(clipId: string | null): void;
   setAutomationSnap(snap: AutomationSnap): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;

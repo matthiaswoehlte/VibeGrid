@@ -92,11 +92,11 @@ function EditOnTimelineLink({ clipId }: { clipId: string }) {
   // full-screen AutomationEditorModal instead of toggling the inline lane.
   // The inline lane in Tracks is always shown for the selected clip when
   // it has any automation curves (read-only preview).
-  const setExpanded = useAppStore((s) => s.setExpandedAutomationClipId);
+  const openEditor = useAppStore((s) => s.setAutomationEditorClipId);
   return (
     <button
       type="button"
-      onClick={() => setExpanded(clipId)}
+      onClick={() => openEditor(clipId)}
       className="text-xs text-[var(--a2)] underline hover:text-[var(--a1)]"
     >
       Open editor
