@@ -8,6 +8,11 @@ interface ContourParams {
 }
 
 const cache = new WeakMap<ImageBitmap, ContourPath[]>();
+// Tracks bitmaps whose preload is in flight so render() doesn't re-fire it
+// every frame. A WeakSet would be ideal but jsdom test envs don't always
+// hold the bitmap reference long enough; a plain Set with manual cleanup is
+// safer.
+const inflight = new WeakSet<ImageBitmap>();
 
 /** Edge-detection threshold for extractContours. Hardcoded — see preload() note. */
 const CONTOUR_THRESHOLD = 0.3;
@@ -63,7 +68,21 @@ export const contourPlugin: FxPlugin<ContourParams> = {
   render(rc, params) {
     if (!rc.imageBitmap) return;
     const paths = cache.get(rc.imageBitmap);
-    if (!paths || paths.length === 0) return;
+    if (!paths) {
+      // Auto-trigger preload the first time we see this bitmap. Fire-and-
+      // forget — the next frame after preload completes finds paths in the
+      // cache and renders. Without this the contour FX never runs because
+      // nothing else in the app calls `plugin.preload()`.
+      if (!inflight.has(rc.imageBitmap)) {
+        inflight.add(rc.imageBitmap);
+        const ctrl = new AbortController();
+        contourPlugin.preload(rc.imageBitmap, ctrl.signal).catch(() => {
+          /* swallow — preloadState reflects errors */
+        });
+      }
+      return;
+    }
+    if (paths.length === 0) return;
 
     const sx = rc.width / rc.imageBitmap.width;
     const sy = rc.height / rc.imageBitmap.height;
