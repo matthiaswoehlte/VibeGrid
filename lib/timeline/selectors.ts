@@ -52,7 +52,8 @@ export function activeFxClipsByKind(
     contour: [],
     sweep: [],
     pulse: [],
-    particles: []
+    particles: [],
+    'zoom-pulse': []
   };
   for (const c of state.clips) {
     if (c.kind === 'image') continue;

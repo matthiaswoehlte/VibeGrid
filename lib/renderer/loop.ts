@@ -28,7 +28,9 @@ export interface Renderer {
   tick(): void;
 }
 
-const RENDER_ORDER: FxKind[] = ['Contour', 'Sweep', 'Particle', 'Pulse'];
+// Image transforms apply BEFORE overlay FX. Order: Contour (edge detection) →
+// ZoomPulse (image scale punch) → Sweep → Particle → Pulse (flash overlay).
+const RENDER_ORDER: FxKind[] = ['Contour', 'ZoomPulse', 'Sweep', 'Particle', 'Pulse'];
 
 /**
  * Map FX plugin `kind` (PascalCase) to the corresponding key in `activeFxClipsByKind`'s
@@ -37,6 +39,7 @@ const RENDER_ORDER: FxKind[] = ['Contour', 'Sweep', 'Particle', 'Pulse'];
  */
 const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
   Contour: 'contour',
+  ZoomPulse: 'zoom-pulse',
   Pulse: 'pulse',
   Sweep: 'sweep',
   Particle: 'particles'
@@ -128,9 +131,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
           (clip.fxId ? getPlugin(clip.fxId) : undefined) ?? listPluginsByKind(kind)[0];
         if (!plugin) continue;
 
-        // Only Contour actually reads rc.imageBitmap (Canny preload + draw);
-        // Pulse, Sweep, Particle paint pure overlays and work on a black canvas.
-        if (plugin.kind === 'Contour' && !imageBitmap) continue;
+        // Contour reads rc.imageBitmap for Canny edges; ZoomPulse re-draws
+        // the bitmap with a scale transform. Both require a bitmap. Pulse,
+        // Sweep, Particle paint pure overlays and work on a black canvas.
+        if ((plugin.kind === 'Contour' || plugin.kind === 'ZoomPulse') && !imageBitmap) continue;
 
         const guard = lastFiredBeatGuard(nearestBeatIndex, lastFiredByClip.get(clip.id) ?? null);
         const shouldFire = phase.isOnBeat && guard.shouldFire;

@@ -3,11 +3,12 @@ import { pulsePlugin } from './pulse';
 import { sweepPlugin } from './sweep';
 import { particlesPlugin } from './particles';
 import { contourPlugin } from './contour';
+import { zoomPulsePlugin } from './zoom-pulse';
 
 let registered = false;
 
 /**
- * Registers the four v0.1 plugins. Called once by createRenderer.
+ * Registers the five v0.1 plugins. Called once by createRenderer.
  * Idempotent — safe to call multiple times across HMR reloads.
  */
 export function registerBuiltInPlugins(): void {
@@ -16,6 +17,7 @@ export function registerBuiltInPlugins(): void {
   register(sweepPlugin);
   register(particlesPlugin);
   register(contourPlugin);
+  register(zoomPulsePlugin);
   registered = true;
 }
 

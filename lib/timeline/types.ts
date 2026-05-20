@@ -1,4 +1,4 @@
-export type TrackKind = 'image' | 'contour' | 'sweep' | 'pulse' | 'particles';
+export type TrackKind = 'image' | 'contour' | 'sweep' | 'pulse' | 'particles' | 'zoom-pulse';
 
 export type FxKind = Exclude<TrackKind, 'image'>;
 

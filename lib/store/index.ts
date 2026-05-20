@@ -28,16 +28,13 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibegrid-store',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
-      // v1 → v2 migration: ensure all 5 default TrackKind tracks exist.
-      // Pre-Plan-5-fix the timeline was created with `tracks: []` — without
-      // tracks, the lanes don't render and drops have nowhere to land. Merge
-      // missing kinds into whatever the user already has, preserving any
-      // existing tracks and any clips referencing them.
+      // v1 → v2: ensure all default TrackKind tracks exist (Plan 5 fix).
+      // v2 → v3: same merge re-runs after Plan 5.5 adds the zoom-pulse track.
       migrate: (persistedState, version) => {
         const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
-        if (version < 2 && s?.timeline) {
+        if (version < 3 && s?.timeline) {
           const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
           const existingKinds = new Set(existing.map((t) => t.kind));
           const missing = initialTimelineState.tracks.filter((t) => !existingKinds.has(t.kind));

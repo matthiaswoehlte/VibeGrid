@@ -29,7 +29,8 @@ const PLUGIN_TO_TRACK_KIND: Record<PluginFxKind, TrackKind> = {
   Contour: 'contour',
   Pulse: 'pulse',
   Sweep: 'sweep',
-  Particle: 'particles'
+  Particle: 'particles',
+  ZoomPulse: 'zoom-pulse'
 };
 
 export function Tracks({ totalBeats }: { totalBeats: number }) {

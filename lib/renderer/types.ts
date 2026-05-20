@@ -12,7 +12,7 @@ export type ParamSchema = Record<string, ParamType & { label: string }>;
 
 export type PreloadState = 'idle' | 'loading' | 'ready' | 'error';
 
-export type FxKind = 'Contour' | 'Pulse' | 'Sweep' | 'Particle';
+export type FxKind = 'Contour' | 'Pulse' | 'Sweep' | 'Particle' | 'ZoomPulse';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;

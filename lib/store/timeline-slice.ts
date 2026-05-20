@@ -19,9 +19,10 @@ export const initialTimelineState: TimelineState = {
   tracks: [
     { id: 'track-image', kind: 'image', name: 'Image', muted: false, order: 0 },
     { id: 'track-contour', kind: 'contour', name: 'Contour', muted: false, order: 1 },
-    { id: 'track-sweep', kind: 'sweep', name: 'Sweep', muted: false, order: 2 },
-    { id: 'track-particles', kind: 'particles', name: 'Particles', muted: false, order: 3 },
-    { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 4 }
+    { id: 'track-zoom-pulse', kind: 'zoom-pulse', name: 'Zoom Pulse', muted: false, order: 2 },
+    { id: 'track-sweep', kind: 'sweep', name: 'Sweep', muted: false, order: 3 },
+    { id: 'track-particles', kind: 'particles', name: 'Particles', muted: false, order: 4 },
+    { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 5 }
   ],
   clips: [],
   playhead: { beats: 0, playing: false },

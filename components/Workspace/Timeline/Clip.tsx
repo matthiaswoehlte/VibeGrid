@@ -13,7 +13,8 @@ const KIND_COLOR: Record<TrackKind, string> = {
   contour: '#a86bff',   // purple (matches --a1)
   sweep: '#ff6b9d',     // pink
   particles: '#2ee0d0', // teal (matches --a3)
-  pulse: '#ffd166'      // amber
+  pulse: '#ffd166',     // amber
+  'zoom-pulse': '#ff9f43' // orange — distinct from the other five
 };
 
 export function Clip({ clip }: { clip: ClipT }) {
