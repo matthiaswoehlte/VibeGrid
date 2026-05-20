@@ -51,10 +51,10 @@ export const zoomPulsePlugin: FxPlugin<ZoomPulseParams> = {
     rc.ctx.translate(rc.width / 2, rc.height / 2);
     rc.ctx.scale(scale, scale);
     rc.ctx.translate(-rc.width / 2, -rc.height / 2);
-    // Inline drawImage-cover math — same as drawImageCover in loop.ts.
-    const cover = Math.max(rc.width / bm.width, rc.height / bm.height);
-    const sw = bm.width * cover;
-    const sh = bm.height * cover;
+    // Inline drawImage-contain math — same as drawImageContain in loop.ts.
+    const contain = Math.min(rc.width / bm.width, rc.height / bm.height);
+    const sw = bm.width * contain;
+    const sh = bm.height * contain;
     const sx = (rc.width - sw) / 2;
     const sy = (rc.height - sh) / 2;
     rc.ctx.drawImage(bm, sx, sy, sw, sh);

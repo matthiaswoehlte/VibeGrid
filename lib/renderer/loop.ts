@@ -46,18 +46,18 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
 };
 
 /**
- * Draw an image to the canvas with `object-fit: cover` semantics — maintains
- * aspect ratio, crops edges so the canvas is fully covered. Without this,
- * `drawImage(bitmap, 0, 0, w, h)` would stretch the image to fit and
- * distort any portrait/landscape mismatch with the canvas.
+ * Draw an image to the canvas with `object-fit: contain` semantics —
+ * maintains aspect ratio, fits the entire image inside the canvas (may
+ * leave letterbox bars when aspect ratios differ). Without this, a 4000-
+ * wide source would be drawn at its native size and clip everything.
  */
-function drawImageCover(
+function drawImageContain(
   ctx: CanvasRenderingContext2D,
   bitmap: ImageBitmap,
   w: number,
   h: number
 ): void {
-  const scale = Math.max(w / bitmap.width, h / bitmap.height);
+  const scale = Math.min(w / bitmap.width, h / bitmap.height);
   const sw = bitmap.width * scale;
   const sh = bitmap.height * scale;
   const sx = (w - sw) / 2;
@@ -115,7 +115,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const imageBitmap = imageClip?.mediaId ? deps.getImageBitmap(imageClip.mediaId) : undefined;
 
     if (imageClip && imageBitmap) {
-      drawImageCover(ctx!, imageBitmap, w, h);
+      drawImageContain(ctx!, imageBitmap, w, h);
     }
 
     const fxByKind = activeFxClipsByKind(timeline, beats);
