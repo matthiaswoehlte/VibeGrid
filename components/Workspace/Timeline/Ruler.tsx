@@ -1,13 +1,63 @@
 'use client';
 import { useAppStore } from '@/lib/store';
+import type { AudioEngine } from '@/lib/audio/engine';
 import { TRACK_LABEL_WIDTH } from './Tracks';
 
 const BEAT_PX_BASE = 40;
 
-export function Ruler({ totalBeats }: { totalBeats: number }) {
+export function Ruler({
+  totalBeats,
+  engine
+}: {
+  totalBeats: number;
+  engine: AudioEngine | null;
+}) {
   const zoom = useAppStore((s) => s.ui.zoom);
+  const setPlayhead = useAppStore((s) => s.timelineActions.setPlayhead);
+  const playheadBeats = useAppStore((s) => s.timeline.playhead.beats);
   const px = BEAT_PX_BASE * zoom;
   const ticks = Array.from({ length: totalBeats + 1 }, (_, i) => i);
+
+  const seekFromClient = (clientX: number, target: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const localX = Math.max(0, clientX - rect.left);
+    const beat = Math.max(0, Math.min(totalBeats, localX / px));
+    const grid = useAppStore.getState().audio.grid;
+    setPlayhead(beat);
+    if (engine) {
+      const seconds = (beat * 60) / grid.bpm + grid.offsetMs / 1000;
+      engine.seek(seconds);
+    }
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const target = e.currentTarget;
+    seekFromClient(e.clientX, target);
+    // Drag-scrub: subsequent pointermoves keep updating the playhead until
+    // the user releases. Uses setPointerCapture so the scrub follows the
+    // cursor even if it leaves the ruler.
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {
+      /* jsdom */
+    }
+    const move = (ev: PointerEvent) => seekFromClient(ev.clientX, target);
+    const up = (ev: PointerEvent) => {
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* */
+      }
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+    };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+  };
+
   return (
     <div
       className="h-6 flex border-b border-[var(--border)] bg-[var(--surface-1)] sticky top-0 z-30"
@@ -19,11 +69,20 @@ export function Ruler({ totalBeats }: { totalBeats: number }) {
         className="shrink-0 sticky left-0 z-10 bg-[var(--surface-1)] border-r border-[var(--border)]"
         style={{ width: TRACK_LABEL_WIDTH }}
       />
-      <div className="relative shrink-0" style={{ width: totalBeats * px }}>
+      <div
+        className="relative shrink-0"
+        style={{ width: totalBeats * px, cursor: 'pointer', touchAction: 'none' }}
+        onPointerDown={onPointerDown}
+        role="slider"
+        aria-label="Seek playhead"
+        aria-valuemin={0}
+        aria-valuemax={totalBeats}
+        aria-valuenow={Math.round(playheadBeats * 100) / 100}
+      >
         {ticks.map((i) => (
           <div
             key={i}
-            className="absolute top-0 bottom-0 text-[10px] text-[var(--text-muted)] border-l border-[var(--border)] pl-1"
+            className="absolute top-0 bottom-0 text-[10px] text-[var(--text-muted)] border-l border-[var(--border)] pl-1 pointer-events-none"
             style={{ left: i * px }}
           >
             {i % 4 === 0 ? i / 4 + 1 : ''}

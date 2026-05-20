@@ -40,7 +40,7 @@ export function Timeline({ engine }: { engine: AudioEngine | null }) {
         {/* Shared horizontal+vertical scroll so Ruler ticks, track clips and
             the Playhead all stay aligned and scroll together. */}
         <div className="flex-1 overflow-auto relative">
-          <Ruler totalBeats={totalBeats} />
+          <Ruler totalBeats={totalBeats} engine={engine} />
           {peaks && (
             <div
               className="absolute pointer-events-none"
