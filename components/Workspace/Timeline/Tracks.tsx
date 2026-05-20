@@ -120,13 +120,22 @@ export function Tracks() {
           toast.error('No image track found');
           return;
         }
+        // Default image-clip length: cover the active audio (most images are
+        // "the album art" that stays for the full song). Fallback: 256 beats
+        // (~2 min at 120 BPM) when no audio exists yet. User can resize after.
+        const state = useAppStore.getState();
+        const audio = state.media.mediaRefs.find((m) => m.kind === 'audio' && m.duration);
+        const bpm = state.audio.grid.bpm || 120;
+        const lengthBeats = audio?.duration
+          ? Math.ceil((audio.duration * bpm) / 60)
+          : 256;
         addClip({
           id: crypto.randomUUID(),
           trackId: imageTrack.id,
           kind: 'image',
           mediaId: mediaIdImage,
           startBeat,
-          lengthBeats: 16,
+          lengthBeats,
           label: ref.filename
         });
       }

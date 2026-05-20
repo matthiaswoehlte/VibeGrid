@@ -47,6 +47,24 @@ export function useAudioEngine(): UseAudioEngine {
     return unsub;
   }, [engine]);
 
+  // Mirror engine.currentTime into store.timeline.playhead.beats so the visual
+  // <Playhead/> moves during playback. engine.onStateChange fires from audio's
+  // timeupdate event (~4-25 Hz). Throttle: skip if delta < 0.02 beats to avoid
+  // re-render spam.
+  useEffect(() => {
+    if (!engine) return;
+    const unsub = engine.onStateChange((s) => {
+      const t = s.currentTime;
+      if (!Number.isFinite(t)) return;
+      const grid = s.beatGrid;
+      const beats = Math.max(0, ((t - grid.offsetMs / 1000) * grid.bpm) / 60);
+      const current = useAppStore.getState().timeline.playhead.beats;
+      if (Math.abs(current - beats) < 0.02) return;
+      useAppStore.getState().timelineActions.setPlayhead(beats);
+    });
+    return unsub;
+  }, [engine]);
+
   // Auto-load the most recently added audio MediaRef into the engine.
   // v0.1 assumes a single soundtrack at a time — newest audio upload wins.
   useEffect(() => {

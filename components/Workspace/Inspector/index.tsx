@@ -23,15 +23,17 @@ export function Inspector() {
   const params = clip.params ?? plugin.getDefaultParams();
 
   return (
-    <div className="p-3 space-y-3">
-      <header className="flex items-center justify-between">
+    <div className="space-y-3">
+      <header className="flex items-center justify-between px-3 py-2 bg-[var(--surface-2)] border-b-2 border-[var(--a1)]">
         <div>
-          <div className="text-sm font-semibold">{plugin.name}</div>
-          <div className="text-xs text-[var(--text-dim)]">{plugin.kind}</div>
+          <div className="text-base font-bold text-[var(--text)]">{plugin.name}</div>
+          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">
+            {plugin.kind} clip
+          </div>
         </div>
         <PreloadIndicator state={plugin.preloadState} />
       </header>
-      <div className="space-y-2">
+      <div className="px-3 space-y-2">
         {Object.entries(plugin.paramSchema).map(([key, schema]) => {
           const raw = (params as Record<string, unknown>)[key];
           // Inspector edits static values only — show the curve's first point if automated.
