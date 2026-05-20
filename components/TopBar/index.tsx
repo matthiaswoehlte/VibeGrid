@@ -4,6 +4,7 @@ import { BPMBadge } from './BPMBadge';
 import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
 import { ClearProjectButton } from './ClearProjectButton';
+import { FlowModeToggle } from './FlowModeToggle';
 import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
 import type { AudioEngine } from '@/lib/audio/engine';
 
@@ -26,6 +27,7 @@ export function TopBar({
       </div>
       <div className="flex items-center gap-2">
         <RecIndicator onCancel={() => exporter.cancel()} />
+        <FlowModeToggle />
         <ClearProjectButton />
         <ExportButton onStart={() => exporter.start()} />
       </div>
