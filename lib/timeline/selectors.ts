@@ -44,6 +44,17 @@ export function activeImageClip(state: TimelineState, beats: number): Clip | nul
   return null;
 }
 
+/** All image clips active at `beats` — used by the renderer to crossfade
+ *  overlapping image clips. Insertion order preserved. */
+export function activeImageClips(state: TimelineState, beats: number): Clip[] {
+  const out: Clip[] = [];
+  for (const c of state.clips) {
+    if (c.kind !== 'image') continue;
+    if (beats >= c.startBeat && beats < c.startBeat + c.lengthBeats) out.push(c);
+  }
+  return out;
+}
+
 export function activeFxClipsByKind(
   state: TimelineState,
   beats: number
