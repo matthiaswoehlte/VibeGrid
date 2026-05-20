@@ -24,12 +24,28 @@ export function resolveParam<T>(p: StaticOrAuto<T>, beat: number): T {
   const a = pts[i];
   const b = pts[i + 1];
 
-  if (p.interpolation === 'linear' && typeof a.value === 'number' && typeof b.value === 'number') {
+  if (typeof a.value === 'number' && typeof b.value === 'number') {
     const t = (beat - a.beat) / (b.beat - a.beat);
-    return ((a.value as number) + ((b.value as number) - (a.value as number)) * t) as T;
+    const va = a.value as number;
+    const vb = b.value as number;
+    switch (p.interpolation) {
+      case 'linear':
+        return (va + (vb - va) * t) as T;
+      case 'easeIn':
+        // Quadratic ease-in: slow start, accelerating finish.
+        return (va + (vb - va) * (t * t)) as T;
+      case 'easeOut': {
+        // Quadratic ease-out: fast start, decelerating finish. 1 − (1−t)².
+        const inv = 1 - t;
+        return (va + (vb - va) * (1 - inv * inv)) as T;
+      }
+      case 'step':
+      default:
+        break;
+    }
   }
 
-  // Step fallback — hold a.value until next point.
+  // Step fallback — hold a.value until next point. Also handles non-numeric values.
   return a.value;
 }
 

@@ -1,4 +1,4 @@
-export type Interpolation = 'linear'; // 'step' explicit in v0.2
+export type Interpolation = 'linear' | 'step' | 'easeIn' | 'easeOut';
 
 export interface AutomationPoint<T> {
   beat: number;

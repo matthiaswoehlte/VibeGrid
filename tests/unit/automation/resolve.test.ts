@@ -93,3 +93,62 @@ describe('resolveClipParams', () => {
     expect(out.color).toBe('#abcdef');
   });
 });
+
+describe('resolveParam — interpolation modes', () => {
+  const base = (interpolation: 'linear' | 'step' | 'easeIn' | 'easeOut') => ({
+    mode: 'automation' as const,
+    points: [
+      { beat: 0, value: 0 },
+      { beat: 4, value: 1 }
+    ],
+    interpolation
+  });
+
+  it('step holds a.value between points', () => {
+    const curve = base('step');
+    expect(resolveParam(curve, 0)).toBe(0);
+    expect(resolveParam(curve, 2)).toBe(0);
+    expect(resolveParam(curve, 3.99)).toBe(0);
+    expect(resolveParam(curve, 4)).toBe(1);
+  });
+
+  it('easeIn midpoint is t² = 0.25', () => {
+    const curve = base('easeIn');
+    expect(resolveParam(curve, 2)).toBeCloseTo(0.25, 5);
+  });
+
+  it('easeOut midpoint is 1−(1−t)² = 0.75', () => {
+    const curve = base('easeOut');
+    expect(resolveParam(curve, 2)).toBeCloseTo(0.75, 5);
+  });
+
+  it('non-numeric value with easeIn falls back to step (a.value held)', () => {
+    const curve: AutomationCurve<string> = {
+      mode: 'automation',
+      points: [
+        { beat: 0, value: '#ff0000' },
+        { beat: 4, value: '#00ff00' }
+      ],
+      // Even with easeIn picked, non-numeric values can't be interpolated —
+      // the resolver's typeof-number guard makes them step-hold.
+      interpolation: 'easeIn'
+    };
+    expect(resolveParam(curve, 2)).toBe('#ff0000');
+  });
+
+  it('integer-typed value via easeIn returns a float (no rounding)', () => {
+    const curve = base('easeIn');
+    expect(Number.isInteger(resolveParam(curve, 2))).toBe(false);
+  });
+
+  it('interpolation field absent → resolver treats as step (safe default)', () => {
+    const curve = {
+      mode: 'automation' as const,
+      points: [
+        { beat: 0, value: 0 },
+        { beat: 4, value: 1 }
+      ]
+    } as AutomationCurve<number>;
+    expect(resolveParam(curve, 2)).toBe(0);
+  });
+});
