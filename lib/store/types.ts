@@ -29,6 +29,7 @@ export interface TimelineActions {
     patch: Partial<AutomationPoint<unknown>>
   ): void;
   setParamInterpolation(clipId: string, key: string, interpolation: Interpolation): void;
+  setBlendInterpolation(clipId: string, interpolation: Interpolation): void;
 }
 
 export interface AudioState {

@@ -11,6 +11,8 @@ import {
   updatePoint
 } from '@/lib/automation/operations';
 import type { AutomationCurve, AutomationPoint } from '@/lib/automation/types';
+import { regenerateBlendsForTrack } from '@/lib/timeline/blend-lifecycle';
+import { BLEND_KEY } from '@/lib/timeline/blend';
 
 // Default tracks — one per TrackKind per Spec §6. Without these, the timeline
 // renders no lanes and there's nowhere to drop clips. Order matches visual
@@ -62,19 +64,38 @@ export const createTimelineSlice: StateCreator<
   return {
     timeline: initialTimelineState,
     timelineActions: {
-      addClip: (clip) => set({ timeline: ops.addClip(get().timeline, clip) }),
-      moveClip: (clipId, newStartBeat) =>
-        set({ timeline: ops.moveClip(get().timeline, clipId, newStartBeat) }),
-      resizeClip: (clipId, newLengthBeats) =>
-        set({ timeline: ops.resizeClip(get().timeline, clipId, newLengthBeats) }),
-      removeClip: (clipId) =>
-        set((s) => ({
-          timeline: ops.removeClip(s.timeline, clipId),
-          ui:
-            s.ui.expandedAutomationClipId === clipId
-              ? { ...s.ui, expandedAutomationClipId: null }
-              : s.ui
-        })),
+      addClip: (clip) => {
+        const intermediate = ops.addClip(get().timeline, clip);
+        set({ timeline: regenerateBlendsForTrack(intermediate, clip.trackId) });
+      },
+      moveClip: (clipId, newStartBeat) => {
+        const current = get().timeline.clips.find((c) => c.id === clipId);
+        if (!current) return;
+        const intermediate = ops.moveClip(get().timeline, clipId, newStartBeat);
+        set({ timeline: regenerateBlendsForTrack(intermediate, current.trackId) });
+      },
+      resizeClip: (clipId, newLengthBeats) => {
+        const current = get().timeline.clips.find((c) => c.id === clipId);
+        if (!current) return;
+        const intermediate = ops.resizeClip(get().timeline, clipId, newLengthBeats);
+        set({ timeline: regenerateBlendsForTrack(intermediate, current.trackId) });
+      },
+      removeClip: (clipId) => {
+        const current = get().timeline.clips.find((c) => c.id === clipId);
+        set((s) => {
+          const intermediate = ops.removeClip(s.timeline, clipId);
+          const regenerated = current
+            ? regenerateBlendsForTrack(intermediate, current.trackId)
+            : intermediate;
+          return {
+            timeline: regenerated,
+            ui:
+              s.ui.expandedAutomationClipId === clipId
+                ? { ...s.ui, expandedAutomationClipId: null }
+                : s.ui
+          };
+        });
+      },
       setClipParams: (clipId, params) =>
         set({ timeline: ops.setClipParams(get().timeline, clipId, params) }),
       setPlayhead: (beats) => set({ timeline: ops.setPlayhead(get().timeline, beats) }),
@@ -127,7 +148,24 @@ export const createTimelineSlice: StateCreator<
           isAutomationCurve(current)
             ? { ...(current as AutomationCurve<unknown>), interpolation }
             : current
-        )
+        ),
+      setBlendInterpolation: (clipId, interpolation) => {
+        set((s) => {
+          const clips = s.timeline.clips.map((c) => {
+            if (c.id !== clipId) return c;
+            const blend = c.params?.[BLEND_KEY];
+            if (!isAutomationCurve(blend)) return c;
+            return {
+              ...c,
+              params: {
+                ...c.params!,
+                [BLEND_KEY]: { ...(blend as AutomationCurve<unknown>), interpolation }
+              }
+            };
+          });
+          return { timeline: { ...s.timeline, clips } };
+        });
+      }
     }
   };
 };
