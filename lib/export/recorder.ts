@@ -101,7 +101,62 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) chunks.push(e.data);
     };
-    // onstop + stop-trigger wiring lands in Task 6.
+
+    recorder.onstop = () => {
+      // Tear down both stop triggers — whichever didn't fire yet would
+      // otherwise try to call stop() on an already-stopped recorder.
+      if (safetyInterval) {
+        clearInterval(safetyInterval);
+        safetyInterval = null;
+      }
+      const audioElForCleanup = deps.audioEngine.getAudioElement();
+      if (audioElForCleanup && onEndedListener) {
+        audioElForCleanup.removeEventListener('ended', onEndedListener);
+        onEndedListener = null;
+      }
+
+      deps.setExportState({ status: 'finalizing' });
+
+      const blob = new Blob(chunks, { type: chosenMimeType });
+      chunks = [];
+      const url = URL.createObjectURL(blob);
+      const filename = makeFilename();
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+
+      // 10 s delay — Spec §8.1.7 — give the browser time to start the
+      // download. Some Chromium versions abort the download if the URL
+      // is revoked before the save-dialog opens.
+      setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
+
+      deps.setExportState({ status: 'done' });
+      // Auto-reset to idle so the next export can start cleanly.
+      setTimeout(() => deps.setExportState({ status: 'idle' }), DONE_RESET_MS);
+      recorder = null;
+    };
+
+    // Primary stop trigger: audio element 'ended' event.
+    const audioEl = deps.audioEngine.getAudioElement();
+    if (audioEl) {
+      onEndedListener = () => {
+        if (recorder && recorder.state === 'recording') recorder.stop();
+      };
+      audioEl.addEventListener('ended', onEndedListener, { once: true });
+    }
+
+    // Safety net: poll currentTime in case 'ended' fails to fire (e.g. last
+    // 0.1 s of the clip is digital silence so the decoder reports ended early).
+    safetyInterval = setInterval(() => {
+      const el = deps.audioEngine.getAudioElement();
+      if (!el) return;
+      if (el.currentTime >= (el.duration ?? Infinity) - 0.1) {
+        if (recorder && recorder.state === 'recording') recorder.stop();
+      }
+    }, SAFETY_INTERVAL_MS);
 
     deps.setExportState({
       status: 'recording',

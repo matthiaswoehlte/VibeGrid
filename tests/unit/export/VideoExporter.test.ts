@@ -30,13 +30,35 @@ function makeAudioEngine(stream: MediaStream | null = { id: 'audio-stream' } as 
   } as unknown as EngineStub;
 }
 
+function makeAudioEngineWithElement(audioEl: HTMLAudioElement): EngineStub {
+  return {
+    getAudioStream: () =>
+      ({ getAudioTracks: () => [{ kind: 'audio' }] } as unknown as MediaStream),
+    getAudioElement: () => audioEl,
+    getState: () => ({ status: 'ready', currentTime: 0, duration: 60, beatGrid: {} as never }),
+    pause: vi.fn(),
+    play: vi.fn(),
+    seek: vi.fn()
+  } as unknown as EngineStub;
+}
+
+function makeAudioElement(duration = 5, currentTime = 0): HTMLAudioElement {
+  const el = document.createElement('audio');
+  Object.defineProperty(el, 'duration', { value: duration, configurable: true });
+  Object.defineProperty(el, 'currentTime', {
+    value: currentTime,
+    writable: true,
+    configurable: true
+  });
+  return el;
+}
+
 const audioMediaRef: MediaRef = {
   id: 'a1',
   url: 'blob:audio',
   kind: 'audio',
   filename: 'song.mp3',
-  size: 1,
-  uploadedAt: 0,
+  uploadedAt: '2026-05-20T00:00:00Z',
   duration: 60
 };
 
@@ -150,6 +172,86 @@ describe('VideoExporter — pre-checks + start', () => {
       (
         globalThis as { MediaRecorder: { isTypeSupported: (t: string) => boolean } }
       ).MediaRecorder.isTypeSupported = orig;
+    }
+  });
+});
+
+describe('VideoExporter — stop + download', () => {
+  it("stop via audioEl 'ended' fires recorder.stop() and creates a download anchor", async () => {
+    const audioEl = makeAudioElement(5);
+    const createSpy = vi.spyOn(URL, 'createObjectURL');
+    const exp = createVideoExporter({
+      canvas: makeCanvas(),
+      audioEngine: makeAudioEngineWithElement(audioEl),
+      getTimeline: () => timelineWithImage,
+      getAudioMediaRef: () => audioMediaRef,
+      setExportState
+    });
+    await exp!.start();
+
+    audioEl.dispatchEvent(new Event('ended'));
+    // Allow microtasks (blob assembly + anchor click).
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(states.some((s) => s.status === 'finalizing')).toBe(true);
+    expect(states.some((s) => s.status === 'done')).toBe(true);
+    expect(createSpy).toHaveBeenCalled();
+    createSpy.mockRestore();
+  });
+
+  it('stop via safety interval also fires when currentTime >= duration - 0.1', async () => {
+    vi.useFakeTimers();
+    try {
+      const audioEl = document.createElement('audio');
+      Object.defineProperty(audioEl, 'duration', { value: 5, configurable: true });
+      let ct = 0;
+      Object.defineProperty(audioEl, 'currentTime', {
+        get: () => ct,
+        configurable: true
+      });
+      const exp = createVideoExporter({
+        canvas: makeCanvas(),
+        audioEngine: makeAudioEngineWithElement(audioEl),
+        getTimeline: () => timelineWithImage,
+        getAudioMediaRef: () => audioMediaRef,
+        setExportState
+      });
+      await exp!.start();
+
+      ct = 4.95;
+      vi.advanceTimersByTime(250);
+      // Flush the recorder's synchronous onstop dispatched via stop().
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(states.some((s) => s.status === 'done')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('URL.revokeObjectURL is scheduled with ~10 s delay (not immediate)', async () => {
+    vi.useFakeTimers();
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+    try {
+      const audioEl = makeAudioElement(5, 5);
+      const exp = createVideoExporter({
+        canvas: makeCanvas(),
+        audioEngine: makeAudioEngineWithElement(audioEl),
+        getTimeline: () => timelineWithImage,
+        getAudioMediaRef: () => audioMediaRef,
+        setExportState
+      });
+      await exp!.start();
+      audioEl.dispatchEvent(new Event('ended'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(revokeSpy).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(10_100);
+      expect(revokeSpy).toHaveBeenCalled();
+    } finally {
+      revokeSpy.mockRestore();
+      vi.useRealTimers();
     }
   });
 });
