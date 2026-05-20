@@ -23,7 +23,12 @@ export function Inspector() {
     return <div className="p-3 text-xs text-[var(--text-dim)]">FX {clip.fxId} not registered.</div>;
   }
 
-  const params = clip.params ?? plugin.getDefaultParams();
+  // Merge defaults with overrides — a clip carrying only `{__blend: ...}`
+  // (added by the overlap lifecycle) must still expose every plugin default.
+  const params = {
+    ...(plugin.getDefaultParams() as Record<string, unknown>),
+    ...(clip.params ?? {})
+  };
 
   return (
     <div className="space-y-3">

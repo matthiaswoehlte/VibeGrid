@@ -1,7 +1,7 @@
 import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
-import { activeImageClip, activeFxClipsByKind } from '@/lib/timeline/selectors';
+import { activeImageClip, activeImageClips, activeFxClipsByKind } from '@/lib/timeline/selectors';
 import { resolveClipParams } from '@/lib/automation/resolve';
 import { computeClipAlpha } from './blend';
 import { getPlugin, listPluginsByKind } from './registry';
@@ -112,19 +112,26 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const nearestBeatIndex = phase.phase > 0.5 ? phase.beatIndex + 1 : phase.beatIndex;
 
     const timeline = deps.getTimelineState();
-    const imageClip = activeImageClip(timeline, beats);
-    const imageBitmap = imageClip?.mediaId ? deps.getImageBitmap(imageClip.mediaId) : undefined;
-
-    if (imageClip && imageBitmap) {
-      const alpha = computeClipAlpha(timeline, imageClip, beats);
+    // Draw EVERY active image clip — overlapping image clips crossfade via
+    // computeClipAlpha. FX that need a bitmap (Contour, ZoomPulse) still use
+    // the first active clip's bitmap (`imageBitmap` below).
+    const imageClipsActive = activeImageClips(timeline, beats);
+    for (const ic of imageClipsActive) {
+      const bitmap = ic.mediaId ? deps.getImageBitmap(ic.mediaId) : undefined;
+      if (!bitmap) continue;
+      const alpha = computeClipAlpha(timeline, ic, beats);
       const usesAlpha = alpha < 1;
       if (usesAlpha) {
         ctx!.save();
         ctx!.globalAlpha *= alpha;
       }
-      drawImageContain(ctx!, imageBitmap, w, h);
+      drawImageContain(ctx!, bitmap, w, h);
       if (usesAlpha) ctx!.restore();
     }
+
+    // FX path still needs a single bitmap reference. Use the first active.
+    const imageClip = activeImageClip(timeline, beats);
+    const imageBitmap = imageClip?.mediaId ? deps.getImageBitmap(imageClip.mediaId) : undefined;
 
     const fxByKind = activeFxClipsByKind(timeline, beats);
     const trackMuteMap = new Map(timeline.tracks.map((t) => [t.id, t.muted]));
@@ -160,7 +167,14 @@ export function createRenderer(deps: RendererDeps): Renderer {
           imageBitmap
         };
 
-        const rawParams = (clip.params ?? plugin.getDefaultParams()) as Record<string, unknown>;
+        // Merge defaults with clip overrides. Without the spread, a clip with
+        // partial params (e.g. only `{__blend: ...}` added by the lifecycle)
+        // would lose access to every plugin default — Particles would render
+        // with undefined spawnPerBeat, Pulse with undefined intensity, etc.
+        const rawParams = {
+          ...(plugin.getDefaultParams() as Record<string, unknown>),
+          ...(clip.params ?? {})
+        };
         const clipAlpha = computeClipAlpha(timeline, clip, beats);
         const usesAlpha = clipAlpha < 1;
         if (usesAlpha) {
