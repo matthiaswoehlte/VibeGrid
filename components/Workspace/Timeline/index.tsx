@@ -6,14 +6,14 @@ import { Tracks } from './Tracks';
 import { Playhead } from './Playhead';
 import type { AudioEngine } from '@/lib/audio/engine';
 
-export function Timeline({ engine: _engine }: { engine: AudioEngine | null }) {
+export function Timeline({ engine }: { engine: AudioEngine | null }) {
   return (
     <ErrorBoundary name="Timeline">
       <div className="h-full flex flex-col relative">
         <Toolbar />
         <Ruler />
         <Tracks />
-        <Playhead />
+        <Playhead engine={engine} />
       </div>
     </ErrorBoundary>
   );
