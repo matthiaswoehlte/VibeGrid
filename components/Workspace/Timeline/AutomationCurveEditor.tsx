@@ -187,7 +187,7 @@ export function AutomationCurveEditor({
       </div>
       <div className="text-[10px] text-[var(--text-dim)] px-3 mt-1">
         Drag to move • Ctrl=value only • Shift=move trailing points • Double-click for numeric •
-        Right-click to delete • Click empty area to add
+        Long-press or right-click to delete • Click empty area to add
       </div>
     </div>
   );

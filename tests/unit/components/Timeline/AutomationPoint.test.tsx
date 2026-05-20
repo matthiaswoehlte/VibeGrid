@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useAppStore } from '@/lib/store';
 import { AutomationPoint as PointDot } from '@/components/Workspace/Timeline/AutomationPoint';
@@ -124,5 +124,45 @@ describe('AutomationPoint', () => {
     const v = useAppStore.getState().timeline.clips[0].params!.intensity as AutomationCurve<number>;
     expect(v.points[0].beat).toBeCloseTo(0, 5);
     expect(v.points[0].value).toBeCloseTo(1, 5);
+  });
+
+  it('long-press (held > 600ms without movement) deletes the point', async () => {
+    vi.useFakeTimers();
+    try {
+      renderInSvg();
+      const dot = screen.getByLabelText(/automation point 1/i);
+      dot.dispatchEvent(new MouseEvent('pointerdown', { clientX: 0, clientY: 50, bubbles: true }));
+      // Advance fake time past the 600 ms long-press threshold without any
+      // pointermove — the timer fires and removeParamPoint is dispatched.
+      vi.advanceTimersByTime(700);
+      const v = useAppStore.getState().timeline.clips[0].params!
+        .intensity as AutomationCurve<number>;
+      expect(v.points.map((p) => p.beat)).toEqual([4]); // point at beat 0 removed
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('long-press is cancelled when the pointer moves before the threshold', () => {
+    vi.useFakeTimers();
+    try {
+      renderInSvg();
+      const dot = screen.getByLabelText(/automation point 1/i);
+      dot.dispatchEvent(new MouseEvent('pointerdown', { clientX: 0, clientY: 50, bubbles: true }));
+      // Move 10 px right BEFORE the 600 ms threshold — cancels long-press.
+      window.dispatchEvent(
+        new MouseEvent('pointermove', { clientX: 10, clientY: 50, bubbles: true })
+      );
+      vi.advanceTimersByTime(700);
+      window.dispatchEvent(
+        new MouseEvent('pointerup', { clientX: 10, clientY: 50, bubbles: true })
+      );
+      const v = useAppStore.getState().timeline.clips[0].params!
+        .intensity as AutomationCurve<number>;
+      // Both original points still present — long-press did NOT fire delete.
+      expect(v.points).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

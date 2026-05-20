@@ -63,6 +63,28 @@ export function AutomationPoint({
       /* jsdom may not implement setPointerCapture */
     }
 
+    // Long-press to delete — works on touch AND desktop. After 600 ms of the
+    // pointer being held without significant movement, the point is removed.
+    // Any drag motion (> 4 px) or pointerup before the timeout cancels it.
+    let moved = false;
+    const longPressMs = 600;
+    const longPressTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      if (moved) return;
+      // Tear down drag listeners — we're deleting, not dragging.
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      try {
+        target.releasePointerCapture(pointerId);
+      } catch {
+        /* */
+      }
+      if (totalPoints <= 1) convertToStatic(clipId, paramKey);
+      else removeParamPoint(clipId, paramKey, pointIndex);
+    }, longPressMs);
+
     // Active point's anchor comes from PROPS — keeps the OLD drag semantics
     // even if rapid sequential store updates briefly desync from the render.
     const activeStartBeat = beat;
@@ -87,6 +109,13 @@ export function AutomationPoint({
     const pxPerBeat = laneWidthPx / lengthBeats;
 
     const move = (ev: PointerEvent) => {
+      // Even tiny movement disqualifies a long-press — the user is dragging.
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        moved = true;
+        clearTimeout(longPressTimer);
+      }
       const dxBeatsRaw = (ev.clientX - startX) / pxPerBeat;
       const dyValueRaw = -((ev.clientY - startY) / laneHeightPx) * range;
 
@@ -132,6 +161,8 @@ export function AutomationPoint({
       updateParamPoints(clipId, paramKey, updates);
     };
     const up = (ev: PointerEvent) => {
+      // Cancel the long-press — released before threshold (or after a drag).
+      clearTimeout(longPressTimer);
       try {
         target.releasePointerCapture(ev.pointerId);
       } catch {
