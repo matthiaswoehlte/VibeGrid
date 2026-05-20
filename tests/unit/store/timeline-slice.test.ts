@@ -24,7 +24,7 @@ describe('timeline store slice', () => {
     expect(useAppStore.getState().timeline.clips).toHaveLength(1);
   });
 
-  it('addClip re-throws OperationError on overlap so the UI can catch it', () => {
+  it('addClip allows overlapping clips on the same track (transition prerequisite)', () => {
     const { timelineActions } = useAppStore.getState();
     timelineActions.addClip({
       id: 'a',
@@ -34,16 +34,15 @@ describe('timeline store slice', () => {
       lengthBeats: 8,
       label: 'a'
     });
-    expect(() =>
-      timelineActions.addClip({
-        id: 'b',
-        trackId: 't1',
-        kind: 'contour',
-        startBeat: 4,
-        lengthBeats: 4,
-        label: 'b'
-      })
-    ).toThrow(OperationError);
+    timelineActions.addClip({
+      id: 'b',
+      trackId: 't1',
+      kind: 'contour',
+      startBeat: 4,
+      lengthBeats: 4,
+      label: 'b'
+    });
+    expect(useAppStore.getState().timeline.clips.map((c) => c.id)).toEqual(['a', 'b']);
   });
 
   it('setPlayhead updates the timeline.playhead.beats', () => {

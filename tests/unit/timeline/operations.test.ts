@@ -13,11 +13,11 @@ import { freezeState, makeClip, makeState } from './_helpers';
 
 describe('OperationError', () => {
   it('is throwable, identifiable via instanceof, and carries a code', () => {
-    const err = new OperationError('OVERLAP', 'Clip overlaps existing clip');
+    const err = new OperationError('CLIP_NOT_FOUND', 'Clip not found');
     expect(err).toBeInstanceOf(OperationError);
     expect(err).toBeInstanceOf(Error);
-    expect(err.code).toBe('OVERLAP');
-    expect(err.message).toBe('Clip overlaps existing clip');
+    expect(err.code).toBe('CLIP_NOT_FOUND');
+    expect(err.message).toBe('Clip not found');
     expect(err.name).toBe('OperationError');
   });
 });
@@ -42,15 +42,18 @@ describe('addClip', () => {
     expect(s1.playhead).toBe(s0.playhead);
   });
 
-  it('throws OperationError(OVERLAP) when proposed clip intersects existing on same track', () => {
+  it('allows adding a clip that overlaps an existing clip on the same track', () => {
     const s0 = freezeState(
       makeState({
         clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 8 })]
       })
     );
-    expect(() =>
-      addClip(s0, makeClip({ id: 'b', trackId: 't1', kind: 'contour', startBeat: 4, lengthBeats: 4 }))
-    ).toThrow(OperationError);
+    const s1 = addClip(
+      s0,
+      makeClip({ id: 'b', trackId: 't1', kind: 'contour', startBeat: 4, lengthBeats: 4 })
+    );
+    expect(s1.clips).toHaveLength(2);
+    expect(s1.clips.map((c) => c.startBeat)).toEqual([0, 4]);
   });
 
   it('does NOT throw when proposed clip is on a different track', () => {
@@ -97,7 +100,7 @@ describe('moveClip', () => {
     expect(s1.clips[0].startBeat).toBe(2);
   });
 
-  it('throws OVERLAP when the moved clip would collide with another clip on the same track', () => {
+  it('allows moving a clip into an overlap with another clip on the same track', () => {
     const s0 = freezeState(
       makeState({
         clips: [
@@ -106,7 +109,9 @@ describe('moveClip', () => {
         ]
       })
     );
-    expect(() => moveClip(s0, 'a', 8)).toThrow(OperationError);
+    const s1 = moveClip(s0, 'a', 8);
+    expect(s1.clips.find((c) => c.id === 'a')!.startBeat).toBe(8);
+    expect(s1.clips.find((c) => c.id === 'b')!.startBeat).toBe(10);
   });
 
   it('preserves non-moved clips unchanged', () => {
@@ -149,7 +154,7 @@ describe('resizeClip', () => {
     expect(() => resizeClip(makeState(), 'missing', 4)).toThrow(OperationError);
   });
 
-  it('throws OVERLAP when the new length would extend into another clip on the same track', () => {
+  it('allows resizing a clip to extend into another clip on the same track', () => {
     const s0 = freezeState(
       makeState({
         clips: [
@@ -158,7 +163,8 @@ describe('resizeClip', () => {
         ]
       })
     );
-    expect(() => resizeClip(s0, 'a', 10)).toThrow(OperationError);
+    const s1 = resizeClip(s0, 'a', 10);
+    expect(s1.clips.find((c) => c.id === 'a')!.lengthBeats).toBe(10);
   });
 });
 
