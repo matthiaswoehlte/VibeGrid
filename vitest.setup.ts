@@ -117,4 +117,68 @@ if (typeof window !== 'undefined') {
       close: vi.fn()
     } as unknown as ImageBitmap;
   }) as typeof createImageBitmap;
+
+  // jsdom does not implement URL.createObjectURL / revokeObjectURL.
+  // VideoExporter (Plan 6) and the media-meta tests rely on them.
+  if (typeof URL.createObjectURL !== 'function') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (URL as any).createObjectURL = (_b: Blob) => 'blob:stub';
+  }
+  if (typeof URL.revokeObjectURL !== 'function') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (URL as any).revokeObjectURL = (_u: string) => undefined;
+  }
+
+  // jsdom's File extends Blob but lacks .arrayBuffer(). Patch the prototype
+  // so every File instance gets the polyfill — used by media-meta tests
+  // and any future exporter consumer.
+  if (
+    typeof window.File !== 'undefined' &&
+    typeof window.File.prototype.arrayBuffer !== 'function'
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window.File.prototype as any).arrayBuffer = async function (this: File) {
+      return await new Response(this).arrayBuffer();
+    };
+  }
+
+  /**
+   * MockMediaRecorder backs Plan 6's VideoExporter tests. Real MediaRecorder
+   * is not available in jsdom. Fires `ondataavailable` + `onstop` synchronously
+   * from `requestData()` / `stop()` so tests stay deterministic without fake
+   * timers. `stop()` throws `InvalidStateError` when called outside 'recording'
+   * — exactly the behaviour the cancel-guard (`recorder.state === 'recording'`)
+   * is designed against.
+   */
+  class MockMediaRecorder {
+    static isTypeSupported = vi.fn((type: string) => type.startsWith('video/webm'));
+    state: 'inactive' | 'recording' | 'paused' = 'inactive';
+    ondataavailable: ((e: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    onerror: ((e: Event) => void) | null = null;
+    readonly mimeType: string;
+    readonly stream: MediaStream;
+    constructor(stream: MediaStream, opts?: { mimeType?: string }) {
+      this.stream = stream;
+      this.mimeType = opts?.mimeType ?? 'video/webm';
+    }
+    start(_timeslice?: number): void {
+      this.state = 'recording';
+    }
+    stop(): void {
+      if (this.state !== 'recording') throw new Error('InvalidStateError');
+      this.state = 'inactive';
+      this.ondataavailable?.({
+        data: new Blob([new Uint8Array([0])], { type: this.mimeType })
+      });
+      this.onstop?.();
+    }
+    requestData(): void {
+      this.ondataavailable?.({
+        data: new Blob([new Uint8Array([0])], { type: this.mimeType })
+      });
+    }
+  }
+  // @ts-expect-error — test-only global.
+  globalThis.MediaRecorder = MockMediaRecorder;
 }

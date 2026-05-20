@@ -1,27 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { extractImageMeta, extractAudioMeta } from '@/lib/storage/media-meta';
 
-// jsdom does not implement URL.createObjectURL or Blob.arrayBuffer. Stub both.
-beforeEach(() => {
-  if (typeof URL.createObjectURL !== 'function') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (URL as any).createObjectURL = (_b: Blob) => 'blob:stub';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (URL as any).revokeObjectURL = (_u: string) => undefined;
-  }
-});
+// jsdom stubs (URL.createObjectURL, File.prototype.arrayBuffer) live in
+// vitest.setup.ts since Plan 6. No per-file patching needed any more.
 
 function fileWithBuffer(name: string, type: string, bytes: Uint8Array): File {
-  const f = new File([bytes], name, { type });
-  // jsdom's File extends Blob but lacks .arrayBuffer(); patch per-instance.
-  if (typeof f.arrayBuffer !== 'function') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (f as any).arrayBuffer = async () => bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength
-    );
-  }
-  return f;
+  return new File([bytes], name, { type });
 }
 
 describe('extractImageMeta', () => {
