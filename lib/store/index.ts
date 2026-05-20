@@ -9,9 +9,14 @@ import type { Track } from '@/lib/timeline/types';
 export const useAppStore = create<AppState>()(
   persist(
     (set, get, store) => ({
-      // UI state lives inline — no ui-slice.ts. expandedAutomationClipId is
-      // transient (never persisted; see partialize below).
-      ui: { zoom: 1, selectedClipId: null, expandedAutomationClipId: null },
+      // UI state lives inline — no ui-slice.ts. expandedAutomationClipId
+      // and automationSnap are transient (never persisted; see partialize).
+      ui: {
+        zoom: 1,
+        selectedClipId: null,
+        expandedAutomationClipId: null,
+        automationSnap: 'off'
+      },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
       setSelectedClipId: (id) =>
         set((s) => ({
@@ -22,6 +27,8 @@ export const useAppStore = create<AppState>()(
         })),
       setExpandedAutomationClipId: (clipId) =>
         set((s) => ({ ui: { ...s.ui, expandedAutomationClipId: clipId } })),
+      setAutomationSnap: (snap) =>
+        set((s) => ({ ui: { ...s.ui, automationSnap: snap } })),
       ...createTimelineSlice(set, get, store),
       ...createAudioSlice(set, get, store),
       ...createMediaSlice(set, get, store)
@@ -48,10 +55,11 @@ export const useAppStore = create<AppState>()(
       // the audio element is gone and "playing" would be a lie.
       // media.mediaRefs are URLs + metadata only — never the underlying blobs.
       partialize: (state) => ({
-        // Both selectedClipId and expandedAutomationClipId are transient UI
-        // state. Persisting them would confuse users on reload (Inspector
-        // jumps to a clip they didn't select; automation lane re-opens
-        // without context). Only `zoom` survives reloads.
+        // selectedClipId, expandedAutomationClipId, and automationSnap are
+        // all transient UI state. Persisting them would confuse users on
+        // reload (Inspector jumps to a clip they didn't select; automation
+        // lane re-opens without context; snap mode resets to a half-tried
+        // value). Only `zoom` survives reloads.
         ui: { zoom: state.ui.zoom },
         timeline: {
           ...state.timeline,

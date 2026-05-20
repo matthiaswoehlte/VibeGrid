@@ -2,11 +2,13 @@ import type { TimelineState, Clip } from '@/lib/timeline/types';
 import type { BeatGrid } from '@/lib/audio/types';
 import type { MediaRef } from '@/lib/storage/types';
 import type { AutomationPoint, Interpolation } from '@/lib/automation/types';
+import type { AutomationSnap } from '@/lib/automation/snap';
 
 export interface UIState {
   zoom: number;
   selectedClipId: string | null;
   expandedAutomationClipId: string | null;
+  automationSnap: AutomationSnap;
 }
 
 export interface TimelineActions {
@@ -30,6 +32,11 @@ export interface TimelineActions {
   ): void;
   setParamInterpolation(clipId: string, key: string, interpolation: Interpolation): void;
   setBlendInterpolation(clipId: string, interpolation: Interpolation): void;
+  updateParamPoints(
+    clipId: string,
+    key: string,
+    updates: Array<{ index: number; beat?: number; value?: number }>
+  ): void;
 }
 
 export interface AudioState {
@@ -58,6 +65,7 @@ export interface AppState {
   setZoom(zoom: number): void;
   setSelectedClipId(id: string | null): void;
   setExpandedAutomationClipId(clipId: string | null): void;
+  setAutomationSnap(snap: AutomationSnap): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;
   audio: AudioState;

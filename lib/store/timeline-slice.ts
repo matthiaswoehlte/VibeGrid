@@ -164,6 +164,27 @@ export const createTimelineSlice: StateCreator<
             ? { ...(current as AutomationCurve<unknown>), interpolation }
             : current
         ),
+      updateParamPoints: (clipId, key, updates) => {
+        if (updates.length === 0) return;
+        set((state) => {
+          const clips = state.timeline.clips.map((c) => {
+            if (c.id !== clipId) return c;
+            const params = c.params ?? {};
+            if (!(key in params)) return c;
+            const cur = params[key];
+            if (!isAutomationCurve(cur)) return c;
+            let curve = cur as AutomationCurve<unknown>;
+            for (const u of updates) {
+              const patch: Partial<AutomationPoint<unknown>> = {};
+              if (u.beat !== undefined) patch.beat = u.beat;
+              if (u.value !== undefined) patch.value = u.value;
+              curve = updatePoint(curve, u.index, patch);
+            }
+            return { ...c, params: { ...params, [key]: curve } };
+          });
+          return { timeline: { ...state.timeline, clips } };
+        });
+      },
       setBlendInterpolation: (clipId, interpolation) => {
         set((s) => {
           const clips = s.timeline.clips.map((c) => {

@@ -20,7 +20,12 @@ describe('AutoPresetButton', () => {
     _resetBuiltInPluginsForTests();
     registerBuiltInPlugins();
     useAppStore.setState({
-      ui: { zoom: 1, selectedClipId: null, expandedAutomationClipId: null },
+      ui: {
+        zoom: 1,
+        selectedClipId: null,
+        expandedAutomationClipId: null,
+        automationSnap: 'off'
+      },
       timeline: {
         tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],
         clips: [

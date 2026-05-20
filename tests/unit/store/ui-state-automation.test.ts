@@ -47,7 +47,12 @@ describe('expandedAutomationClipId cleanup', () => {
           }
         ]
       },
-      ui: { zoom: s.ui.zoom, selectedClipId: 'clip-x', expandedAutomationClipId: 'clip-x' }
+      ui: {
+        zoom: s.ui.zoom,
+        selectedClipId: 'clip-x',
+        expandedAutomationClipId: 'clip-x',
+        automationSnap: 'off'
+      }
     }));
   });
 
