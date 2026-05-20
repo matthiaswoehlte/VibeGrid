@@ -97,7 +97,7 @@ beforeEach(() => {
 });
 
 describe('VideoExporter — pre-checks + start', () => {
-  it('start with all pre-checks satisfied transitions to recording', async () => {
+  it('start with all pre-checks satisfied transitions to recording (default: MP4)', async () => {
     const exp = createVideoExporter({
       canvas: makeCanvas(),
       audioEngine: makeAudioEngine(),
@@ -108,7 +108,9 @@ describe('VideoExporter — pre-checks + start', () => {
     await exp!.start();
     expect(states.some((s) => s.status === 'preparing')).toBe(true);
     expect(states.some((s) => s.status === 'recording')).toBe(true);
-    expect(states[states.length - 1].codecLabel).toContain('VP9');
+    // MockMediaRecorder.isTypeSupported in vitest.setup.ts accepts video/webm
+    // AND video/mp4, so MP4 (first in the preference list) wins.
+    expect(states[states.length - 1].codecLabel).toContain('MP4');
   });
 
   it('start without audio MediaRef → status=error, errorCode=no-audio', async () => {
@@ -151,13 +153,14 @@ describe('VideoExporter — pre-checks + start', () => {
     expect(states[states.length - 1].status).toBe('error');
   });
 
-  it('codec-fallback picks vp8 when vp9 is unsupported', async () => {
+  it('codec-fallback picks vp8 when MP4 and vp9 are unsupported', async () => {
     const orig = (
       globalThis as { MediaRecorder: { isTypeSupported: (t: string) => boolean } }
     ).MediaRecorder.isTypeSupported;
     (
       globalThis as { MediaRecorder: { isTypeSupported: (t: string) => boolean } }
-    ).MediaRecorder.isTypeSupported = (t: string) => !t.includes('vp9');
+    ).MediaRecorder.isTypeSupported = (t: string) =>
+      !t.includes('mp4') && !t.includes('vp9');
     try {
       const exp = createVideoExporter({
         canvas: makeCanvas(),

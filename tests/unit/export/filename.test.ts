@@ -19,4 +19,9 @@ describe('makeFilename', () => {
   it('never contains "undefined" (regression guard for AC-13)', () => {
     expect(makeFilename(new Date())).not.toContain('undefined');
   });
+
+  it("respects the extension argument — 'mp4' produces a .mp4 filename", () => {
+    const f = makeFilename(new Date('2026-05-20T14:30:00Z'), 'mp4');
+    expect(f).toBe('vibegrid_export_2026-05-20T14-30-00.mp4');
+  });
 });

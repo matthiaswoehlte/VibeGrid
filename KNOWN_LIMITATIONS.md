@@ -12,13 +12,17 @@ This file is the canonical reference for v0.1 caveats. Each section is filled in
   `visibilitychange` and surface a persistent warning toast, but the
   export keeps running and will likely have dropped frames. Keep the tab
   active for clean output.
-- **WebM only, no iOS Safari playback.** v0.1 produces WebM (VP9 or VP8 +
-  Opus). iOS Safari does not natively play WebM. The v0.2 Capacitor build
-  will need MP4 / WebCodecs.
-- **Codec varies by browser.** Chrome, Edge, and Firefox all support
-  `video/webm;codecs=vp9,opus`. Safari Desktop sometimes falls back to
-  `vp8,opus` — the UI toasts the selected codec at the start of every
-  export so the user knows what they have.
+- **Codec varies by browser.** Preference list, picked at start: MP4
+  (H.264 + AAC) → WebM (VP9 + Opus) → WebM (VP8 + Opus) → WebM (default).
+  Chrome 122+, Safari 14.1+, and Edge produce MP4 directly via
+  MediaRecorder — playable in iOS Safari, every social-platform upload
+  pipeline, and macOS Quick Look without re-encoding. Firefox falls
+  through to WebM. The UI toasts the selected codec at the start of
+  every export so the user knows what they have.
+- **No WebCodecs / re-encoding.** When the browser can't produce MP4 via
+  MediaRecorder (Firefox today), the output is WebM. There's no
+  client-side re-encode-to-MP4 path in v0.1 — that's WebCodecs +
+  mp4-muxer territory, parked for v0.2.
 - **No quality / bitrate UI.** Bitrate is fixed at 6 Mbps video +
   128 Kbps audio in v0.1. The exporter records at 30 fps regardless of
   zoom or device-pixel-ratio.

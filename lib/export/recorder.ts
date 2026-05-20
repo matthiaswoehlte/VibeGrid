@@ -45,6 +45,7 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
   let safetyInterval: ReturnType<typeof setInterval> | null = null;
   let onEndedListener: (() => void) | null = null;
   let chosenMimeType = '';
+  let chosenExt: 'mp4' | 'webm' = 'webm';
 
   async function start(): Promise<void> {
     if (recorder) return; // already running
@@ -70,6 +71,7 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
 
     const codec = pickCodec();
     chosenMimeType = codec.mimeType;
+    chosenExt = codec.ext;
     if (!MediaRecorder.isTypeSupported(codec.mimeType)) {
       deps.setExportState({ status: 'error', errorCode: 'codec-unsupported' });
       return;
@@ -120,7 +122,7 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
       const blob = new Blob(chunks, { type: chosenMimeType });
       chunks = [];
       const url = URL.createObjectURL(blob);
-      const filename = makeFilename();
+      const filename = makeFilename(new Date(), chosenExt);
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = filename;

@@ -151,7 +151,9 @@ if (typeof window !== 'undefined') {
    * is designed against.
    */
   class MockMediaRecorder {
-    static isTypeSupported = vi.fn((type: string) => type.startsWith('video/webm'));
+    static isTypeSupported = vi.fn(
+      (type: string) => type.startsWith('video/webm') || type.startsWith('video/mp4')
+    );
     state: 'inactive' | 'recording' | 'paused' = 'inactive';
     ondataavailable: ((e: { data: Blob }) => void) | null = null;
     onstop: (() => void) | null = null;
