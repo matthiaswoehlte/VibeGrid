@@ -42,8 +42,24 @@ function makePool(): Particle[] {
   }));
 }
 
-let pool: Particle[] = makePool();
-let lastSpawnBeat: number | null = null;
+interface ClipState {
+  pool: Particle[];
+  lastSpawnBeat: number | null;
+}
+
+// Per-clip state — two overlapping Particles clips need independent pools
+// so their crossfade can show one set of particles fading out while another
+// fades in. The renderer passes the clip id via RenderContext.clipId.
+const clipStates = new Map<string, ClipState>();
+
+function getOrCreateState(clipId: string): ClipState {
+  let s = clipStates.get(clipId);
+  if (!s) {
+    s = { pool: makePool(), lastSpawnBeat: null };
+    clipStates.set(clipId, s);
+  }
+  return s;
+}
 
 interface SpawnRC {
   width: number;
@@ -130,7 +146,13 @@ function spawnGeometry(
   }
 }
 
-function spawn(rc: SpawnRC, count: number, direction: ParticleDirection, speed: number): void {
+function spawn(
+  rc: SpawnRC,
+  pool: Particle[],
+  count: number,
+  direction: ParticleDirection,
+  speed: number
+): void {
   let spawned = 0;
   for (const p of pool) {
     if (spawned >= count) break;
@@ -200,9 +222,10 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
   }),
   async preload() {},
   render(rc, params) {
-    if (rc.isOnBeat && lastSpawnBeat !== rc.beatIndex) {
-      lastSpawnBeat = rc.beatIndex;
-      spawn(rc, params.spawnPerBeat, params.direction, params.speed);
+    const state = getOrCreateState(rc.clipId);
+    if (rc.isOnBeat && state.lastSpawnBeat !== rc.beatIndex) {
+      state.lastSpawnBeat = rc.beatIndex;
+      spawn(rc, state.pool, params.spawnPerBeat, params.direction, params.speed);
     }
 
     rc.ctx.save();
@@ -211,7 +234,7 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
     // compound across particles since the loop shares one outer save/restore.
     const baseAlpha = rc.ctx.globalAlpha;
     rc.ctx.fillStyle = params.color;
-    for (const p of pool) {
+    for (const p of state.pool) {
       if (!p.alive) continue;
       const age = rc.time - p.bornAt;
       if (age >= params.life) {
@@ -230,7 +253,6 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
     rc.ctx.restore();
   },
   dispose() {
-    pool = makePool();
-    lastSpawnBeat = null;
+    clipStates.clear();
   }
 };

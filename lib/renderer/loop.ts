@@ -164,6 +164,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
           beatIndex: phase.beatIndex,
           isOnBeat: shouldFire,
           trigger: clip.trigger ?? plugin.defaultTrigger,
+          clipId: clip.id,
           imageBitmap
         };
 

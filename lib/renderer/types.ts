@@ -23,6 +23,9 @@ export interface RenderContext {
   beatIndex: number;
   isOnBeat: boolean;
   trigger: TriggerMode;
+  /** Identity of the clip currently being rendered. Plugins that hold
+   *  per-clip mutable state (e.g. Particles' spawn pool) key off this. */
+  clipId: string;
   /**
    * Guaranteed non-undefined when render() is invoked, EXCEPT for plugins
    * whose `kind === 'Pulse'`. The render loop never invokes other plugins
