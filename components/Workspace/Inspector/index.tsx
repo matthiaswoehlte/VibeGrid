@@ -77,11 +77,18 @@ export function Inspector() {
   );
 }
 
-function EditOnTimelineLink({ clipId: _clipId }: { clipId: string }) {
-  // Task 5 wires this to expandedAutomationClipId. Stub for now so Task 4 tests compile.
+function EditOnTimelineLink({ clipId }: { clipId: string }) {
+  const expandedId = useAppStore((s) => s.ui.expandedAutomationClipId);
+  const setExpanded = useAppStore((s) => s.setExpandedAutomationClipId);
+  const open = expandedId === clipId;
   return (
-    <button type="button" className="text-xs text-[var(--a2)] underline">
-      Edit on timeline
+    <button
+      type="button"
+      onClick={() => setExpanded(open ? null : clipId)}
+      className="text-xs text-[var(--a2)] underline hover:text-[var(--a1)]"
+      aria-pressed={open}
+    >
+      {open ? 'Hide automation' : 'Edit on timeline'}
     </button>
   );
 }

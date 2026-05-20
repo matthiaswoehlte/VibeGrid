@@ -64,3 +64,28 @@ describe('Inspector — Automate button', () => {
     expect(screen.getByRole('button', { name: /edit on timeline/i })).toBeDefined();
   });
 });
+
+describe('Inspector — Edit on timeline wiring', () => {
+  beforeEach(() => {
+    useAppStore.getState().timelineActions.convertParamToAutomation(CLIP_ID, 'intensity', 0);
+  });
+
+  it('clicking sets expandedAutomationClipId to clip.id', () => {
+    render(<Inspector />);
+    fireEvent.click(screen.getByRole('button', { name: /edit on timeline/i }));
+    expect(useAppStore.getState().ui.expandedAutomationClipId).toBe(CLIP_ID);
+  });
+
+  it('button text flips to "Hide automation" when open', () => {
+    useAppStore.getState().setExpandedAutomationClipId(CLIP_ID);
+    render(<Inspector />);
+    expect(screen.getByRole('button', { name: /hide automation/i })).toBeDefined();
+  });
+
+  it('clicking again clears expandedAutomationClipId', () => {
+    useAppStore.getState().setExpandedAutomationClipId(CLIP_ID);
+    render(<Inspector />);
+    fireEvent.click(screen.getByRole('button', { name: /hide automation/i }));
+    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+  });
+});
