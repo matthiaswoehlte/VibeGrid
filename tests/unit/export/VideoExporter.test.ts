@@ -230,6 +230,43 @@ describe('VideoExporter — stop + download', () => {
     }
   });
 
+  it('cancel during recording → status=idle, no download anchor created', async () => {
+    const audioEl = makeAudioElement(60);
+    const createSpy = vi.spyOn(URL, 'createObjectURL');
+    const exp = createVideoExporter({
+      canvas: makeCanvas(),
+      audioEngine: makeAudioEngineWithElement(audioEl),
+      getTimeline: () => timelineWithImage,
+      getAudioMediaRef: () => audioMediaRef,
+      setExportState
+    });
+    await exp!.start();
+    const createCallsBefore = createSpy.mock.calls.length;
+    exp!.cancel();
+    await Promise.resolve();
+    expect(states[states.length - 1].status).toBe('idle');
+    // No additional URL.createObjectURL call after cancel.
+    expect(createSpy.mock.calls.length).toBe(createCallsBefore);
+    createSpy.mockRestore();
+  });
+
+  it('cancel removes the audioEl ended listener (no spurious second stop)', async () => {
+    const audioEl = makeAudioElement(60);
+    const exp = createVideoExporter({
+      canvas: makeCanvas(),
+      audioEngine: makeAudioEngineWithElement(audioEl),
+      getTimeline: () => timelineWithImage,
+      getAudioMediaRef: () => audioMediaRef,
+      setExportState
+    });
+    await exp!.start();
+    exp!.cancel();
+    // Now fire 'ended' — must be a no-op.
+    audioEl.dispatchEvent(new Event('ended'));
+    await Promise.resolve();
+    expect(states[states.length - 1].status).toBe('idle');
+  });
+
   it('URL.revokeObjectURL is scheduled with ~10 s delay (not immediate)', async () => {
     vi.useFakeTimers();
     const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');

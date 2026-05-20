@@ -169,21 +169,42 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
   }
 
   function cancel(): void {
-    // Full cancel wiring lands in Task 7. Stub here so the API is complete.
+    // Tear down the safety interval first so it can't fire after we null
+    // the recorder reference.
     if (safetyInterval) {
       clearInterval(safetyInterval);
       safetyInterval = null;
     }
-    if (recorder && recorder.state === 'recording') {
-      try {
-        recorder.stop();
-      } catch {
-        /* ignore — already stopped */
-      }
+
+    // Remove the audio 'ended' listener — without this, audio reaching its
+    // natural end after cancel would trigger another stop() on a recorder
+    // that no longer exists.
+    const audioEl = deps.audioEngine.getAudioElement();
+    if (audioEl && onEndedListener) {
+      audioEl.removeEventListener('ended', onEndedListener);
+      onEndedListener = null;
     }
-    recorder = null;
+
+    // Disable onstop BEFORE calling stop() — we don't want the finalizing
+    // path to fire (no blob, no download).
+    if (recorder) {
+      recorder.onstop = null;
+      recorder.ondataavailable = null;
+      if (recorder.state === 'recording') {
+        try {
+          recorder.stop();
+        } catch {
+          /* recorder already stopped */
+        }
+      }
+      recorder = null;
+    }
+
+    // Pause + rewind so the next Export starts cleanly from beat 0.
+    deps.audioEngine.pause();
+    deps.audioEngine.seek(0);
+
     chunks = [];
-    onEndedListener = null;
     deps.setExportState({ status: 'idle' });
   }
 
