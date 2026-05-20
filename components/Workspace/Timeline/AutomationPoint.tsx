@@ -14,7 +14,8 @@ export function AutomationPoint({
   laneHeightPx,
   valueMin,
   valueMax,
-  onEdit
+  onEdit,
+  interactive = true
 }: {
   clipId: string;
   paramKey: string;
@@ -28,6 +29,9 @@ export function AutomationPoint({
   valueMax: number;
   /** Called on double-click — caller mounts the EditOverlay. */
   onEdit?: (info: { key: string; index: number }) => void;
+  /** When false (used by the read-only preview lane in Tracks), the point
+   *  is drawn but does not respond to pointer/context/double-click events. */
+  interactive?: boolean;
 }) {
   const updateParamPoint = useAppStore((s) => s.timelineActions.updateParamPoint);
   const updateParamPoints = useAppStore((s) => s.timelineActions.updateParamPoints);
@@ -162,6 +166,23 @@ export function AutomationPoint({
   // Two circles in a group: an invisible r=12 hit area so the user doesn't
   // have to aim at a tiny dot, plus the visible r=6 dot. Default cursor
   // everywhere — no grab/grabbing cursor styling in the automation area.
+  // When non-interactive, drop the event handlers AND the hit circle so the
+  // point can't accidentally swallow events meant for the surrounding lane.
+  if (!interactive) {
+    return (
+      <g aria-label={`Automation point ${pointIndex + 1}`} aria-hidden="true">
+        <circle
+          cx={cx}
+          cy={cy}
+          r={4}
+          fill="var(--a2)"
+          stroke="var(--bg)"
+          strokeWidth={1.5}
+          pointerEvents="none"
+        />
+      </g>
+    );
+  }
   return (
     <g
       onPointerDown={onPointerDown}

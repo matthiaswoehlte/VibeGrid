@@ -2,11 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useAppStore } from '@/lib/store';
 import { _resetBuiltInPluginsForTests, registerBuiltInPlugins } from '@/lib/fx';
-import { AutomationLane } from '@/components/Workspace/Timeline/AutomationLane';
+import { AutomationCurveEditor } from '@/components/Workspace/Timeline/AutomationCurveEditor';
 import type { AutomationCurve } from '@/lib/automation/types';
 
 const CLIP_ID = 'clip-edit';
-const PX_PER_BEAT = 40;
 
 beforeEach(() => {
   _resetBuiltInPluginsForTests();
@@ -35,17 +34,32 @@ beforeEach(() => {
           }
         }
       ]
-    },
-    ui: { ...s.ui, expandedAutomationClipId: CLIP_ID }
+    }
   }));
 });
 
+const renderEditor = () => {
+  const clip = useAppStore.getState().timeline.clips[0];
+  const curve = clip.params!.intensity as AutomationCurve<number>;
+  render(
+    <AutomationCurveEditor
+      clipId={CLIP_ID}
+      paramKey="intensity"
+      paramLabel="Intensity"
+      curve={curve}
+      lengthBeats={8}
+      valueMin={0}
+      valueMax={1}
+    />
+  );
+};
+
 const openOverlayFor = (index: number) => {
-  render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
+  renderEditor();
   fireEvent.doubleClick(screen.getByLabelText(`Automation point ${index + 1}`));
 };
 
-describe('EditOverlay', () => {
+describe('EditOverlay (inside AutomationCurveEditor)', () => {
   it('double-click opens the overlay with current beat + value', () => {
     openOverlayFor(1);
     const beatInput = screen.getByLabelText(/beat/i) as HTMLInputElement;

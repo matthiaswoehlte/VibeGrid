@@ -6,6 +6,7 @@ import { LeftPanel } from './LeftPanel';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
 import { Inspector } from './Inspector';
+import { AutomationEditorModal } from './Timeline/AutomationEditorModal';
 
 const TIMELINE_MIN_PX = 120;
 const STAGE_MIN_PX = 160;
@@ -110,6 +111,7 @@ export function Workspace({ engine }: { engine: AudioEngine | null }) {
           <Inspector />
         </aside>
       )}
+      <AutomationEditorModal />
     </div>
   );
 }

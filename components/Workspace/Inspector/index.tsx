@@ -88,17 +88,18 @@ export function Inspector() {
 }
 
 function EditOnTimelineLink({ clipId }: { clipId: string }) {
-  const expandedId = useAppStore((s) => s.ui.expandedAutomationClipId);
+  // Renamed conceptually to "Open editor" — the action now opens the
+  // full-screen AutomationEditorModal instead of toggling the inline lane.
+  // The inline lane in Tracks is always shown for the selected clip when
+  // it has any automation curves (read-only preview).
   const setExpanded = useAppStore((s) => s.setExpandedAutomationClipId);
-  const open = expandedId === clipId;
   return (
     <button
       type="button"
-      onClick={() => setExpanded(open ? null : clipId)}
+      onClick={() => setExpanded(clipId)}
       className="text-xs text-[var(--a2)] underline hover:text-[var(--a1)]"
-      aria-pressed={open}
     >
-      {open ? 'Hide automation' : 'Edit on timeline'}
+      Open editor
     </button>
   );
 }

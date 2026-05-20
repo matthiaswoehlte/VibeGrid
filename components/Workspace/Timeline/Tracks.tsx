@@ -37,7 +37,10 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   const tracks = useAppStore((s) => s.timeline.tracks);
   const clips = useAppStore((s) => s.timeline.clips);
   const zoom = useAppStore((s) => s.ui.zoom);
-  const expandedAutomationClipId = useAppStore((s) => s.ui.expandedAutomationClipId);
+  // Inline lane preview is shown for the SELECTED clip (when it has any
+  // automation curve). The editor modal opens via the Inspector and is
+  // independent of inline visibility.
+  const selectedClipId = useAppStore((s) => s.ui.selectedClipId);
   const moveClip = useAppStore((s) => s.timelineActions.moveClip);
   const addClip = useAppStore((s) => s.timelineActions.addClip);
   const getMediaRef = useAppStore((s) => s.mediaActions.getMediaRef);
@@ -156,8 +159,12 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => {
-          const expandedClip = expandedAutomationClipId
-            ? clips.find((c) => c.trackId === t.id && c.id === expandedAutomationClipId)
+          // Show the read-only inline lane under the selected clip's track
+          // row whenever that clip has at least one automation curve. The
+          // AutomationLane itself filters params and returns null when no
+          // sliders are automated, so we don't double-check here.
+          const expandedClip = selectedClipId
+            ? clips.find((c) => c.trackId === t.id && c.id === selectedClipId)
             : undefined;
           return (
             <div key={t.id}>

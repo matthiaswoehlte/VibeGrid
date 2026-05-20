@@ -56,36 +56,30 @@ describe('Inspector — Automate button', () => {
     expect(useAppStore.getState().timeline.clips[0].params!.intensity).toBe(0.9);
   });
 
-  it('"Edit on timeline" link appears only when at least one param is automated', () => {
+  it('"Open editor" link appears only when at least one param is automated', () => {
     const { rerender } = render(<Inspector />);
-    expect(screen.queryByRole('button', { name: /edit on timeline/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /open editor/i })).toBeNull();
     useAppStore.getState().timelineActions.convertParamToAutomation(CLIP_ID, 'intensity', 0);
     rerender(<Inspector />);
-    expect(screen.getByRole('button', { name: /edit on timeline/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /open editor/i })).toBeDefined();
   });
 });
 
-describe('Inspector — Edit on timeline wiring', () => {
+describe('Inspector — Open editor wiring', () => {
   beforeEach(() => {
     useAppStore.getState().timelineActions.convertParamToAutomation(CLIP_ID, 'intensity', 0);
   });
 
-  it('clicking sets expandedAutomationClipId to clip.id', () => {
+  it('clicking sets expandedAutomationClipId to clip.id (opens the modal)', () => {
     render(<Inspector />);
-    fireEvent.click(screen.getByRole('button', { name: /edit on timeline/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open editor/i }));
     expect(useAppStore.getState().ui.expandedAutomationClipId).toBe(CLIP_ID);
   });
 
-  it('button text flips to "Hide automation" when open', () => {
+  it('button stays labelled "Open editor" regardless of the editor state', () => {
     useAppStore.getState().setExpandedAutomationClipId(CLIP_ID);
     render(<Inspector />);
-    expect(screen.getByRole('button', { name: /hide automation/i })).toBeDefined();
-  });
-
-  it('clicking again clears expandedAutomationClipId', () => {
-    useAppStore.getState().setExpandedAutomationClipId(CLIP_ID);
-    render(<Inspector />);
-    fireEvent.click(screen.getByRole('button', { name: /hide automation/i }));
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+    // No toggle text — the modal owns its own close affordance (× / Escape).
+    expect(screen.getByRole('button', { name: /open editor/i })).toBeDefined();
   });
 });

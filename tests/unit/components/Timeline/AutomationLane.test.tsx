@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { useAppStore } from '@/lib/store';
 import { _resetBuiltInPluginsForTests, registerBuiltInPlugins } from '@/lib/fx';
 import { AutomationLane } from '@/components/Workspace/Timeline/AutomationLane';
 import type { AutomationCurve } from '@/lib/automation/types';
 
-const CLIP_ID = 'clip-auto-1';
+const CLIP_ID = 'clip-lane-1';
 const PX_PER_BEAT = 40;
 
 beforeEach(() => {
@@ -36,68 +36,82 @@ beforeEach(() => {
           }
         }
       ]
-    },
-    ui: { ...s.ui, zoom: 1, expandedAutomationClipId: CLIP_ID }
+    }
   }));
 });
 
-describe('AutomationLane', () => {
-  it('renders nothing when expandedAutomationClipId !== clip.id', () => {
-    useAppStore.getState().setExpandedAutomationClipId(null);
+describe('AutomationLane (read-only preview)', () => {
+  it('renders nothing when the clip has no automated slider params', () => {
+    useAppStore.setState((s) => ({
+      timeline: {
+        ...s.timeline,
+        clips: s.timeline.clips.map((c) =>
+          c.id === CLIP_ID ? { ...c, params: { intensity: 0.5, color: '#ff00ff' } } : c
+        )
+      }
+    }));
     const { container } = render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders one sub-row per automated slider param (skips color/toggle)', () => {
+  it('renders one sub-row per automated slider param', () => {
     render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
     expect(screen.getAllByTestId('automation-lane-row')).toHaveLength(1);
   });
 
-  it('shows the param label + interpolation picker in the header', () => {
+  it('shows the param label in the row header', () => {
     render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
     expect(screen.getByText(/intensity/i)).toBeDefined();
-    expect(screen.getByRole('combobox', { name: /interpolation/i })).toBeDefined();
   });
 
-  it('changing the interpolation picker dispatches setParamInterpolation', () => {
+  it('does NOT render the snap, interpolation or close controls (preview is read-only)', () => {
     render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
-    fireEvent.change(screen.getByRole('combobox', { name: /interpolation/i }), {
-      target: { value: 'easeOut' }
-    });
-    const v = useAppStore.getState().timeline.clips[0].params!.intensity as AutomationCurve<number>;
-    expect(v.interpolation).toBe('easeOut');
+    expect(screen.queryByRole('combobox', { name: /snap to grid/i })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /interpolation/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /close automation/i })).toBeNull();
   });
 
-  it('close button clears expandedAutomationClipId', () => {
-    render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
-    fireEvent.click(screen.getByRole('button', { name: /close automation/i }));
-    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+  it('renders the curve path inside the SVG surface', () => {
+    const { container } = render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
+    const svg = container.querySelector('svg');
+    expect(svg).not.toBeNull();
+    const path = svg!.querySelector('path');
+    expect(path?.getAttribute('d')).toMatch(/^M /);
   });
 
-  it('clicking the empty lane area adds a new point', () => {
+  it('renders non-interactive points (no point events attached)', () => {
     render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
-    const surface = screen.getByTestId('automation-lane-surface');
-    surface.dispatchEvent(
-      new MouseEvent('pointerdown', { clientX: 80, clientY: 25, button: 0, bubbles: true })
-    );
-    const v = useAppStore.getState().timeline.clips[0].params!.intensity as AutomationCurve<number>;
-    expect(v.points.length).toBe(3);
-  });
-});
-
-describe('AutomationLane — snap picker', () => {
-  it('renders a snap select reflecting ui.automationSnap', () => {
-    useAppStore.getState().setAutomationSnap('1/4');
-    render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
-    const select = screen.getByRole('combobox', { name: /snap to grid/i }) as HTMLSelectElement;
-    expect(select.value).toBe('1/4');
+    // The non-interactive variant of AutomationPoint marks itself aria-hidden
+    // and skips the wrapper <g>'s onPointerDown / onContextMenu / onDoubleClick.
+    const dot = screen.getByLabelText(/automation point 1/i);
+    expect(dot.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('changing the snap select dispatches setAutomationSnap', () => {
-    render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
-    fireEvent.change(screen.getByRole('combobox', { name: /snap to grid/i }), {
-      target: { value: '1/8' }
-    });
-    expect(useAppStore.getState().ui.automationSnap).toBe('1/8');
+  it('filters out reserved __-prefix params (e.g. __blend) from the preview', () => {
+    useAppStore.setState((s) => ({
+      timeline: {
+        ...s.timeline,
+        clips: s.timeline.clips.map((c) =>
+          c.id === CLIP_ID
+            ? {
+                ...c,
+                params: {
+                  intensity: 0.5,
+                  __blend: {
+                    mode: 'automation',
+                    interpolation: 'linear',
+                    points: [
+                      { beat: 0, value: 0 },
+                      { beat: 4, value: 1 }
+                    ]
+                  } satisfies AutomationCurve<number>
+                }
+              }
+            : c
+        )
+      }
+    }));
+    const { container } = render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
+    expect(container.firstChild).toBeNull();
   });
 });
