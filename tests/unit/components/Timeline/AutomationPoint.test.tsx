@@ -32,7 +32,10 @@ beforeEach(() => {
           }
         }
       ]
-    }
+    },
+    // Plan 5.7: reset transient UI fields so other test files can't leak
+    // state (especially automationSnap, which the drag handler reads).
+    ui: { ...s.ui, automationSnap: 'off' }
   }));
 });
 
