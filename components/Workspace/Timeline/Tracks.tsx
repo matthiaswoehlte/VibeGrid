@@ -146,6 +146,9 @@ export function Tracks() {
             className="relative border-b border-[var(--border)]"
             style={{ height: TRACK_HEIGHT }}
           >
+            <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] pointer-events-none select-none z-10">
+              {t.name}
+            </div>
             {clips
               .filter((c) => c.trackId === t.id)
               .map((c) => (
