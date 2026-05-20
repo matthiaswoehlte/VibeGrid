@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import { isAutomationCurve } from '@/lib/automation/resolve';
@@ -7,6 +8,7 @@ import type { AutomationCurve, Interpolation } from '@/lib/automation/types';
 import type { AutomationSnap } from '@/lib/automation/snap';
 import { AutomationPoint as PointDot } from './AutomationPoint';
 import { AutomationCurvePath } from './AutomationCurvePath';
+import { AutomationPointEditOverlay } from './AutomationPointEditOverlay';
 
 const LANE_HEIGHT = 50;
 const INTERPOLATION_MODES: Interpolation[] = ['linear', 'step', 'easeIn', 'easeOut'];
@@ -35,6 +37,10 @@ export function AutomationLane({
   const setExpanded = useAppStore((s) => s.setExpandedAutomationClipId);
   const automationSnap = useAppStore((s) => s.ui.automationSnap);
   const setAutomationSnap = useAppStore((s) => s.setAutomationSnap);
+  // Local lane state: which point (key + index) is being edited via the
+  // double-click overlay. Single-slot — a second double-click swaps the
+  // overlay onto the new point.
+  const [editing, setEditing] = useState<{ key: string; index: number } | null>(null);
   const clip = useAppStore((s) => s.timeline.clips.find((c) => c.id === clipId));
   const setParamInterpolation = useAppStore((s) => s.timelineActions.setParamInterpolation);
   const addParamPoint = useAppStore((s) => s.timelineActions.addParamPoint);
@@ -210,9 +216,21 @@ export function AutomationLane({
                     laneHeightPx={LANE_HEIGHT}
                     valueMin={schema.min}
                     valueMax={schema.max}
+                    onEdit={setEditing}
                   />
                 ))}
               </svg>
+              {editing?.key === key && (
+                <AutomationPointEditOverlay
+                  clipId={clipId}
+                  paramKey={key}
+                  pointIndex={editing.index}
+                  valueMin={schema.min}
+                  valueMax={schema.max}
+                  lengthBeats={clip.lengthBeats}
+                  onClose={() => setEditing(null)}
+                />
+              )}
             </div>
           </div>
         );
