@@ -23,6 +23,14 @@ This file is the canonical reference for v0.1 caveats. Each section is filled in
   MediaRecorder (Firefox today), the output is WebM. There's no
   client-side re-encode-to-MP4 path in v0.1 — that's WebCodecs +
   mp4-muxer territory, parked for v0.2.
+- **WebM duration patched via `fix-webm-duration`, MP4 unpatched.**
+  MediaRecorder writes the EBML Duration element BEFORE it knows how
+  long the recording will run, so the raw WebM has 0:00 in the header.
+  We post-process the Blob to rewrite that field with the actual length.
+  MP4 from modern Chromium / Safari has a correctly-finalised moov atom
+  out of the box — no patching needed. If a future MediaRecorder shipping
+  malformed MP4 surfaces, the fix is `mp4box.js` or `mp4-muxer` —
+  heavier than `fix-webm-duration` (~3 KB), would land as a v0.2 chore.
 - **No quality / bitrate UI.** Bitrate is fixed at 6 Mbps video +
   128 Kbps audio in v0.1. The exporter records at 30 fps regardless of
   zoom or device-pixel-ratio.

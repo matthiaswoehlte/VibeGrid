@@ -1,3 +1,4 @@
+import fixWebmDuration from 'fix-webm-duration';
 import { isClient } from '@/lib/utils/is-client';
 import { activeImageClips } from '@/lib/timeline/selectors';
 import { pickCodec } from './codec';
@@ -104,7 +105,7 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
       if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
-    recorder.onstop = () => {
+    recorder.onstop = async () => {
       // Tear down both stop triggers — whichever didn't fire yet would
       // otherwise try to call stop() on an already-stopped recorder.
       if (safetyInterval) {
@@ -119,8 +120,29 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
 
       deps.setExportState({ status: 'finalizing' });
 
-      const blob = new Blob(chunks, { type: chosenMimeType });
+      let blob = new Blob(chunks, { type: chosenMimeType });
       chunks = [];
+
+      // WebM duration patch. MediaRecorder writes the EBML Duration element
+      // before it knows how long the recording will be, so the header ends
+      // up with 0:00. Browsers + VLC then show "Infinity" or seek-bar weirdness.
+      // fix-webm-duration rewrites that field with the actual length.
+      // MP4 from modern Chromium / Safari muxes the moov atom correctly,
+      // so we only patch the WebM branch.
+      if (chosenExt === 'webm') {
+        const durationMs = (audioMediaRef.duration ?? 0) * 1000;
+        if (durationMs > 0) {
+          try {
+            blob = await fixWebmDuration(blob, durationMs, { logger: false });
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[VideoExporter] fixWebmDuration failed:', err);
+            // Proceed with the unpatched blob — players that derive duration
+            // from cues still seek correctly, just the displayed length is off.
+          }
+        }
+      }
+
       const url = URL.createObjectURL(blob);
       const filename = makeFilename(new Date(), chosenExt);
       const anchor = document.createElement('a');
