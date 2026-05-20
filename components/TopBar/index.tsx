@@ -16,7 +16,8 @@ export function TopBar({ engine }: { engine: AudioEngine | null }) {
       <div className="flex items-center gap-2">
         <RecIndicator />
         <ClearProjectButton />
-        <ExportButton />
+        {/* onStart is a no-op until Task 10 wires the useVideoExporter hook. */}
+        <ExportButton onStart={() => undefined} />
       </div>
     </header>
   );
