@@ -3,6 +3,7 @@ import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import { ParamControl } from '@/components/ui/ParamControl';
 import { PreloadIndicator } from './PreloadIndicator';
+import { AutomateButton } from './AutomateButton';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 
 export function Inspector() {
@@ -36,13 +37,24 @@ export function Inspector() {
       <div className="px-3 space-y-2">
         {Object.entries(plugin.paramSchema).map(([key, schema]) => {
           const raw = (params as Record<string, unknown>)[key];
-          // Inspector edits static values only — show the curve's first point if automated.
-          const display = isAutomationCurve(raw) ? raw.points[0]?.value : raw;
+          const automated = isAutomationCurve(raw);
+          const display = automated ? raw.points[0]?.value : raw;
+          const showAutomate = schema.kind === 'slider';
           return (
             <label key={key} className="block">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-[var(--text-dim)]">{schema.label}</span>
-                {isAutomationCurve(raw) && (
+                <span className="text-xs text-[var(--text-dim)] flex items-center">
+                  {schema.label}
+                  {showAutomate && (
+                    <AutomateButton
+                      clipId={clip.id}
+                      paramKey={key}
+                      paramLabel={schema.label}
+                      value={raw}
+                    />
+                  )}
+                </span>
+                {automated && (
                   <span className="text-[10px] uppercase text-[var(--a2)]">automated</span>
                 )}
               </div>
@@ -55,7 +67,21 @@ export function Inspector() {
             </label>
           );
         })}
+        {Object.values(params as Record<string, unknown>).some((v) => isAutomationCurve(v)) && (
+          <div className="pt-1">
+            <EditOnTimelineLink clipId={clip.id} />
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function EditOnTimelineLink({ clipId: _clipId }: { clipId: string }) {
+  // Task 5 wires this to expandedAutomationClipId. Stub for now so Task 4 tests compile.
+  return (
+    <button type="button" className="text-xs text-[var(--a2)] underline">
+      Edit on timeline
+    </button>
   );
 }
