@@ -12,6 +12,8 @@ export interface AudioEngine {
   detectBPM(signal: AbortSignal, onProgress?: (p: number) => void): Promise<BeatGrid>;
   setBPM(bpm: number): void;
   getAnalyser(): AnalyserNode | null;
+  getAudioStream(): MediaStream | null;
+  getAudioElement(): HTMLAudioElement | null;
   getState(): AudioEngineState;
   onStateChange(cb: (s: AudioEngineState) => void): () => void;
   destroy(): void;
@@ -225,6 +227,14 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
 
     getAnalyser(): AnalyserNode | null {
       return analyser;
+    },
+
+    getAudioStream(): MediaStream | null {
+      return streamDest?.stream ?? null;
+    },
+
+    getAudioElement(): HTMLAudioElement | null {
+      return audioEl;
     },
 
     getState(): AudioEngineState {
