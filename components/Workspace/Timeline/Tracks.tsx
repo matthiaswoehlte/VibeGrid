@@ -13,6 +13,7 @@ import { getPlugin } from '@/lib/renderer/registry';
 import type { FxKind as PluginFxKind } from '@/lib/renderer/types';
 import type { TrackKind } from '@/lib/timeline/types';
 import { Clip } from './Clip';
+import { AutomationLane } from './AutomationLane';
 
 const TRACK_HEIGHT = 32;
 const BEAT_PX_BASE = 40;
@@ -35,6 +36,7 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   const tracks = useAppStore((s) => s.timeline.tracks);
   const clips = useAppStore((s) => s.timeline.clips);
   const zoom = useAppStore((s) => s.ui.zoom);
+  const expandedAutomationClipId = useAppStore((s) => s.ui.expandedAutomationClipId);
   const moveClip = useAppStore((s) => s.timelineActions.moveClip);
   const addClip = useAppStore((s) => s.timelineActions.addClip);
   const getMediaRef = useAppStore((s) => s.mediaActions.getMediaRef);
@@ -152,32 +154,48 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
-        {tracks.map((t) => (
-          <div
-            key={t.id}
-            className="flex border-b border-[var(--border)]"
-            style={{ height: TRACK_HEIGHT, width: TRACK_LABEL_WIDTH + totalBeats * px }}
-          >
-            <div
-              className="shrink-0 sticky left-0 z-20 bg-[var(--surface-1)] border-r border-[var(--border)] px-2 flex items-center text-[10px] uppercase tracking-wider text-[var(--text-muted)] select-none"
-              style={{ width: TRACK_LABEL_WIDTH }}
-            >
-              {t.name}
+        {tracks.map((t) => {
+          const expandedClip = expandedAutomationClipId
+            ? clips.find((c) => c.trackId === t.id && c.id === expandedAutomationClipId)
+            : undefined;
+          return (
+            <div key={t.id}>
+              <div
+                className="flex border-b border-[var(--border)]"
+                style={{ height: TRACK_HEIGHT, width: TRACK_LABEL_WIDTH + totalBeats * px }}
+              >
+                <div
+                  className="shrink-0 sticky left-0 z-20 bg-[var(--surface-1)] border-r border-[var(--border)] px-2 flex items-center text-[10px] uppercase tracking-wider text-[var(--text-muted)] select-none"
+                  style={{ width: TRACK_LABEL_WIDTH }}
+                >
+                  {t.name}
+                </div>
+                <div
+                  className="relative shrink-0"
+                  style={{ width: totalBeats * px }}
+                  data-track-id={t.id}
+                  data-track-kind={t.kind}
+                >
+                  {clips
+                    .filter((c) => c.trackId === t.id)
+                    .map((c) => (
+                      <Clip key={c.id} clip={c} />
+                    ))}
+                </div>
+              </div>
+              {expandedClip && (
+                <div
+                  className="relative border-b border-[var(--border)]"
+                  style={{ width: TRACK_LABEL_WIDTH + totalBeats * px }}
+                >
+                  {/* Height is intentionally not fixed — the lane auto-grows
+                      for N automated params (Sweep has two: speed + radius). */}
+                  <AutomationLane clipId={expandedClip.id} pxPerBeat={px} />
+                </div>
+              )}
             </div>
-            <div
-              className="relative shrink-0"
-              style={{ width: totalBeats * px }}
-              data-track-id={t.id}
-              data-track-kind={t.kind}
-            >
-              {clips
-                .filter((c) => c.trackId === t.id)
-                .map((c) => (
-                  <Clip key={c.id} clip={c} />
-                ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </DndContext>
   );
