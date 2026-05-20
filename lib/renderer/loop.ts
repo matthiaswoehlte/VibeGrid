@@ -76,11 +76,21 @@ export function createRenderer(deps: RendererDeps): Renderer {
   let rafId: number | null = null;
 
   function tick(): void {
-    const time = deps.getCurrentTime();
+    // Skip if the canvas has a zero-sized pixel buffer (happens during window
+    // resize when the parent flex container collapses briefly). Drawing into
+    // a 0×0 buffer is silent — the image would visually disappear until next
+    // observer fire. Returning early keeps the previous frame on-screen.
+    const w = deps.canvas.width;
+    const h = deps.canvas.height;
+    if (w === 0 || h === 0) return;
+
+    // Guard against non-finite time (HTMLMediaElement.currentTime can be NaN
+    // between src-assignment and the loadedmetadata event). NaN propagates
+    // into plugin math like createRadialGradient(NaN, ...) which throws.
+    const rawTime = deps.getCurrentTime();
+    const time = Number.isFinite(rawTime) ? rawTime : 0;
     const grid = deps.getBeatGrid();
     const beats = ((time - grid.offsetMs / 1000) * grid.bpm) / 60;
-    const w = deps.canvas.width || 800;
-    const h = deps.canvas.height || 450;
 
     ctx!.clearRect(0, 0, w, h);
 
@@ -139,7 +149,15 @@ export function createRenderer(deps: RendererDeps): Renderer {
         };
 
         const rawParams = (clip.params ?? plugin.getDefaultParams()) as Record<string, unknown>;
-        plugin.render(rc, resolveClipParams(rawParams, beats));
+        try {
+          plugin.render(rc, resolveClipParams(rawParams, beats));
+        } catch (err) {
+          // A plugin throwing inside RAF would tear down the whole render loop
+          // (and trigger Next.js dev's unhandled-error overlay). Swallow per
+          // plugin call so the rest of the frame still renders.
+          // eslint-disable-next-line no-console
+          console.warn(`[renderer] plugin "${plugin.id}" render() threw:`, err);
+        }
       }
     }
   }
