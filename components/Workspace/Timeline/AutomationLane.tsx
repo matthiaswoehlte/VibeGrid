@@ -21,6 +21,7 @@ export function AutomationLane({
   const clip = useAppStore((s) => s.timeline.clips.find((c) => c.id === clipId));
   const setParamInterpolation = useAppStore((s) => s.timelineActions.setParamInterpolation);
   const addParamPoint = useAppStore((s) => s.timelineActions.addParamPoint);
+  const updateParamPoint = useAppStore((s) => s.timelineActions.updateParamPoint);
 
   if (!clip || expandedId !== clipId) return null;
   if (!clip.fxId) return null;
@@ -85,9 +86,9 @@ export function AutomationLane({
                 height={LANE_HEIGHT}
                 data-testid="automation-lane-surface"
                 onPointerDown={(e) => {
-                  // Skip when the click landed on a point handle — the dot
-                  // stops propagation itself, but a missed click could still
-                  // bubble up. Defensive guard.
+                  // If the click landed on a point's hit area, the point's
+                  // <g> handler already runs (with stopPropagation). Guard
+                  // anyway in case a stray click bubbles up.
                   if ((e.target as Element).tagName === 'circle') return;
                   const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
                   // jsdom returns a zero-sized rect for SVGs. Fall back to the
@@ -105,6 +106,55 @@ export function AutomationLane({
                     Math.min(schema.max, schema.min + norm * range)
                   );
                   addParamPoint(clipId, key, { beat, value });
+
+                  // Drag-from-creation: the newly added point should follow
+                  // the cursor while the button stays held. Without this the
+                  // user has to release, then re-click the (small) dot to
+                  // start moving it. Find the new point's index in the now-
+                  // sorted curve and set up the same drag pipeline that
+                  // AutomationPoint uses.
+                  const after = useAppStore
+                    .getState()
+                    .timeline.clips.find((c) => c.id === clipId)?.params?.[key];
+                  if (!isAutomationCurve(after)) return;
+                  const newIdx = (after.points as { beat: number; value: number }[]).findIndex(
+                    (p) => p.beat === beat && p.value === value
+                  );
+                  if (newIdx < 0) return;
+
+                  const target = e.currentTarget as SVGSVGElement;
+                  const pointerId = e.pointerId;
+                  try {
+                    target.setPointerCapture(pointerId);
+                  } catch {
+                    /* jsdom */
+                  }
+                  const startX = e.clientX;
+                  const startY = e.clientY;
+                  const startBeat = beat;
+                  const startValue = value;
+                  const pxPerBeatLocal = laneWidthPx / clip.lengthBeats;
+
+                  const move = (ev: PointerEvent) => {
+                    const dxBeats = (ev.clientX - startX) / pxPerBeatLocal;
+                    const dyValue = -((ev.clientY - startY) / LANE_HEIGHT) * range;
+                    const nb = Math.max(0, Math.min(clip.lengthBeats, startBeat + dxBeats));
+                    const nv = Math.max(schema.min, Math.min(schema.max, startValue + dyValue));
+                    updateParamPoint(clipId, key, newIdx, { beat: nb, value: nv });
+                  };
+                  const up = (ev: PointerEvent) => {
+                    try {
+                      target.releasePointerCapture(ev.pointerId);
+                    } catch {
+                      /* may already be released */
+                    }
+                    target.removeEventListener('pointermove', move);
+                    target.removeEventListener('pointerup', up);
+                    target.removeEventListener('pointercancel', up);
+                  };
+                  target.addEventListener('pointermove', move);
+                  target.addEventListener('pointerup', up);
+                  target.addEventListener('pointercancel', up);
                 }}
               >
                 <AutomationCurvePath

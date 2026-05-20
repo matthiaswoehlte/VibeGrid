@@ -60,8 +60,11 @@ describe('AutomationPoint', () => {
   it('renders at (beat·px, valueY) from schema min/max', () => {
     renderInSvg();
     const dot = screen.getByLabelText(/automation point 1/i);
-    expect(dot.getAttribute('cx')).toBe('0');
-    expect(dot.getAttribute('cy')).toBe('50');
+    // Wrapper is now a <g> with two child circles (hit area + visible dot).
+    // Both share cx/cy — read from the first circle inside the group.
+    const circle = dot.querySelector('circle');
+    expect(circle?.getAttribute('cx')).toBe('0');
+    expect(circle?.getAttribute('cy')).toBe('50');
   });
 
   it('right-click on a non-last point dispatches removeParamPoint', () => {

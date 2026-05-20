@@ -43,7 +43,7 @@ export function AutomationPoint({
   const cx = (beat / lengthBeats) * laneWidthPx;
   const cy = laneHeightPx - ((value - valueMin) / range) * laneHeightPx;
 
-  const onPointerDown = (e: React.PointerEvent<SVGCircleElement>) => {
+  const onPointerDown = (e: React.PointerEvent<SVGElement>) => {
     // stopPropagation keeps the lane's SVG-level pointerdown from also firing
     // (which would otherwise add a new point at the cursor). No preventDefault
     // here — calling it on a pointerdown can suppress subsequent pointer
@@ -103,19 +103,28 @@ export function AutomationPoint({
     else removeParamPoint(clipId, paramKey, pointIndex);
   };
 
+  // Two circles in a group: an invisible r=12 hit area so the user doesn't
+  // have to aim at a tiny dot, plus the visible r=6 dot on top of it. The
+  // group carries the pointer handler so target.setPointerCapture works on
+  // the same element regardless of which circle the cursor was over.
   return (
-    <circle
-      cx={cx}
-      cy={cy}
-      r={4}
-      fill="var(--a2)"
-      stroke="var(--bg)"
-      strokeWidth={1.5}
+    <g
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       role="button"
       aria-label={`Automation point ${pointIndex + 1}`}
       style={{ cursor: 'grab' }}
-    />
+    >
+      <circle cx={cx} cy={cy} r={12} fill="rgba(0,0,0,0)" pointerEvents="all" />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        fill="var(--a2)"
+        stroke="var(--bg)"
+        strokeWidth={1.5}
+        pointerEvents="none"
+      />
+    </g>
   );
 }
