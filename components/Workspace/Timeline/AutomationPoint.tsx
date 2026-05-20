@@ -44,24 +44,21 @@ export function AutomationPoint({
   const cy = laneHeightPx - ((value - valueMin) / range) * laneHeightPx;
 
   const onPointerDown = (e: React.PointerEvent<SVGElement>) => {
-    // stopPropagation keeps the lane's SVG-level pointerdown from also firing
-    // (which would otherwise add a new point at the cursor). No preventDefault
-    // here — calling it on a pointerdown can suppress subsequent pointer
-    // events in some browsers, which is exactly what broke browser drag.
     e.stopPropagation();
     const target = e.currentTarget;
     const pointerId = e.pointerId;
-    // setPointerCapture redirects all subsequent pointermove/pointerup events
-    // for this gesture to the circle, regardless of where the cursor is. With
-    // a 4px-radius dot, the cursor leaves the element almost immediately —
-    // without capture, pointermove fires on whatever is under the cursor and
-    // never reaches our listener. jsdom doesn't always implement capture, so
-    // guard with try/catch to keep unit tests green.
     try {
       target.setPointerCapture(pointerId);
     } catch {
       /* jsdom may not implement setPointerCapture */
     }
+
+    // While dragging, the browser would otherwise show the cursor of whatever
+    // is under the moving pointer (often an arrow). Lock the document cursor
+    // to grabbing for the duration of the gesture.
+    const prevBodyCursor =
+      typeof document !== 'undefined' ? document.body.style.cursor : '';
+    if (typeof document !== 'undefined') document.body.style.cursor = 'grabbing';
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -82,6 +79,7 @@ export function AutomationPoint({
       } catch {
         /* may already be released */
       }
+      if (typeof document !== 'undefined') document.body.style.cursor = prevBodyCursor;
       target.removeEventListener('pointermove', move);
       target.removeEventListener('pointerup', up);
       target.removeEventListener('pointercancel', up);
@@ -104,18 +102,24 @@ export function AutomationPoint({
   };
 
   // Two circles in a group: an invisible r=12 hit area so the user doesn't
-  // have to aim at a tiny dot, plus the visible r=6 dot on top of it. The
-  // group carries the pointer handler so target.setPointerCapture works on
-  // the same element regardless of which circle the cursor was over.
+  // have to aim at a tiny dot, plus the visible r=6 dot on top. The grab
+  // cursor sits on the visible dot only — the wider hit ring catches clicks
+  // but shows the default cursor so the lane doesn't feel grabby everywhere.
   return (
     <g
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       role="button"
       aria-label={`Automation point ${pointIndex + 1}`}
-      style={{ cursor: 'grab' }}
     >
-      <circle cx={cx} cy={cy} r={12} fill="rgba(0,0,0,0)" pointerEvents="all" />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={12}
+        fill="rgba(0,0,0,0)"
+        pointerEvents="all"
+        style={{ cursor: 'default' }}
+      />
       <circle
         cx={cx}
         cy={cy}
@@ -123,7 +127,8 @@ export function AutomationPoint({
         fill="var(--a2)"
         stroke="var(--bg)"
         strokeWidth={1.5}
-        pointerEvents="none"
+        pointerEvents="all"
+        style={{ cursor: 'grab' }}
       />
     </g>
   );

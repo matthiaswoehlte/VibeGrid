@@ -129,6 +129,13 @@ export function AutomationLane({
                   } catch {
                     /* jsdom */
                   }
+                  // Lock the cursor to grabbing for the duration of the drag,
+                  // so it doesn't flip to whatever sits under the pointer.
+                  const prevBodyCursor =
+                    typeof document !== 'undefined' ? document.body.style.cursor : '';
+                  if (typeof document !== 'undefined')
+                    document.body.style.cursor = 'grabbing';
+
                   const startX = e.clientX;
                   const startY = e.clientY;
                   const startBeat = beat;
@@ -148,6 +155,8 @@ export function AutomationLane({
                     } catch {
                       /* may already be released */
                     }
+                    if (typeof document !== 'undefined')
+                      document.body.style.cursor = prevBodyCursor;
                     target.removeEventListener('pointermove', move);
                     target.removeEventListener('pointerup', up);
                     target.removeEventListener('pointercancel', up);
