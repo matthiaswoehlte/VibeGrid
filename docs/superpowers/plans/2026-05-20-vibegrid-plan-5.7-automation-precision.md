@@ -6,6 +6,90 @@
 
 ---
 
+## ⚠ Post-implementation update (after user smoke-test feedback)
+
+Tasks 1–7 below shipped as planned. After the manual smoke-test the user
+flagged the inline AutomationLane as too cramped to edit precisely
+(50 px tall) and the double-click numeric popover as effectively invisible.
+A follow-up refactor — committed as part of this plan — split the automation
+UI into two surfaces:
+
+- **Inline AutomationLane in Tracks → READ-ONLY preview.** Shows the curve
+  path + non-interactive dots. No snap/interpolation pickers, no ✕ button,
+  no click-to-add. Visibility now tied to `ui.selectedClipId` (any selected
+  clip with an automated slider renders the lane below its track row) —
+  decoupled from `ui.expandedAutomationClipId`.
+- **New AutomationEditorModal** — full-screen overlay (~90vw × 85vh, mounted
+  in `Workspace`). Triggered by the Inspector's renamed "Open editor"
+  button. Stacks an `AutomationCurveEditor` per automated slider (180 px
+  curve canvas, snap picker, interpolation picker, ⚡-off button, full
+  drag/snap/modifier-key/double-click semantics). A bottom section shows
+  non-automated params as compact Inspector controls so the user can flip
+  ⚡-toggles + tweak colors/selects without closing the editor.
+- **`AutomationPoint` gained an `interactive` prop** (default true). The
+  read-only lane passes `interactive={false}` — the wrapper `<g>` drops
+  every event handler AND the r=12 hit circle so it can never swallow
+  events meant for the preview surface (only the r=4 visible dot remains).
+- **Delete UX redesigned** for touch-first: **long-press 600 ms** on a
+  point deletes it (or collapses to static when it's the last one). Any
+  pointer movement > 4 px cancels the timer (drag wins). Right-click stays
+  as a power-user shortcut.
+- **`ui.expandedAutomationClipId` repurposed:** still the same field, same
+  store-side cleanup behaviour (cleared on `setSelectedClipId(differentId)`
+  and `removeClip(matching id)`), but it now drives **modal visibility**
+  instead of inline-lane toggling. Semantically: "Editor open for clip X".
+- Inspector "Edit on timeline" → renamed "Open editor". One-way: clicking
+  always opens the modal. The modal owns its own close affordance
+  (✕ button · backdrop click · Escape key).
+- The double-click number-input popover now mounts inside the
+  `AutomationCurveEditor` (large 180 px canvas → popover is actually
+  visible). Same Enter / Escape / blur commit semantics.
+
+**Files added by the refactor:**
+- `components/Workspace/Timeline/AutomationCurveEditor.tsx`
+- `components/Workspace/Timeline/AutomationEditorModal.tsx`
+
+**Files modified by the refactor:**
+- `components/Workspace/Timeline/AutomationPoint.tsx` — `interactive` prop +
+  long-press timer
+- `components/Workspace/Timeline/AutomationLane.tsx` — stripped to read-only
+  preview render
+- `components/Workspace/Timeline/AutomationCurveEditor.tsx` — help text:
+  "Long-press or right-click to delete"
+- `components/Workspace/Timeline/Tracks.tsx` — visibility from
+  `selectedClipId`
+- `components/Workspace/Inspector/index.tsx` — button rename
+- `components/Workspace/index.tsx` — mounts `<AutomationEditorModal />`
+
+**Tests rewritten / added:**
+- `tests/unit/components/Timeline/AutomationLane.test.tsx` — read-only
+  semantics + reserved-key filter
+- `tests/unit/components/Timeline/EditOverlay.test.tsx` — renders via
+  `AutomationCurveEditor` directly
+- `tests/unit/components/Inspector-automate.test.tsx` — "Open editor"
+  wiring (replaces the "Edit on timeline" / "Hide automation" toggle
+  tests)
+- `tests/unit/components/Timeline/AutomationPoint.test.tsx` — two
+  long-press tests using `vi.useFakeTimers`
+
+**Verification state after refactor:** 358 tests green · typecheck clean ·
+lint clean · build +1 kB (modal-code).
+
+**Breaking-state note for downstream plans:** `ui.expandedAutomationClipId`
+semantics shifted from "inline-lane visible" to "modal open". If Plan 6 or
+later code paths inspect this field, they're checking modal state, not
+preview-lane visibility. The store-action cleanup (Plan 5.5 Task 13) still
+applies and behaves correctly in the new meaning.
+
+The task list below (Tasks 0–7) is preserved as the original implementation
+plan and the verification gate it shipped at. The refactor described above
+is a single additional commit (`4116bd1`) plus the long-press commit
+(`c3d6d14`).
+
+---
+
+---
+
 ## Context for the external reviewer (post-handoff-doc state)
 
 29 commits landed between Plan 5.6 completion and this plan being written. The architect-handoff document captures the project state at Plan 5.6 done; this section bridges to the current HEAD so the review has full picture.
