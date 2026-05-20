@@ -9,9 +9,13 @@ import type { Track } from '@/lib/timeline/types';
 export const useAppStore = create<AppState>()(
   persist(
     (set, get, store) => ({
-      ui: { zoom: 1, selectedClipId: null },
+      // UI state lives inline — no ui-slice.ts. expandedAutomationClipId is
+      // transient (never persisted; see partialize below).
+      ui: { zoom: 1, selectedClipId: null, expandedAutomationClipId: null },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
       setSelectedClipId: (id) => set((s) => ({ ui: { ...s.ui, selectedClipId: id } })),
+      setExpandedAutomationClipId: (clipId) =>
+        set((s) => ({ ui: { ...s.ui, expandedAutomationClipId: clipId } })),
       ...createTimelineSlice(set, get, store),
       ...createAudioSlice(set, get, store),
       ...createMediaSlice(set, get, store)
@@ -41,8 +45,10 @@ export const useAppStore = create<AppState>()(
       // the audio element is gone and "playing" would be a lie.
       // media.mediaRefs are URLs + metadata only — never the underlying blobs.
       partialize: (state) => ({
-        // selectedClipId is transient — never persist (stale id after reload
-        // would silently confuse the Inspector). Only `zoom` survives reloads.
+        // Both selectedClipId and expandedAutomationClipId are transient UI
+        // state. Persisting them would confuse users on reload (Inspector
+        // jumps to a clip they didn't select; automation lane re-opens
+        // without context). Only `zoom` survives reloads.
         ui: { zoom: state.ui.zoom },
         timeline: {
           ...state.timeline,

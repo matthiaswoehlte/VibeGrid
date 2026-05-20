@@ -12,7 +12,7 @@ export function ClearProjectButton() {
     useAppStore.setState({
       timeline: { ...initialTimelineState },
       media: { ...initialMediaState },
-      ui: { zoom: 1, selectedClipId: null }
+      ui: { zoom: 1, selectedClipId: null, expandedAutomationClipId: null }
     });
   };
   return (
