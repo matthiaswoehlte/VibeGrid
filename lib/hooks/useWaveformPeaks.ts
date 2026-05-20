@@ -75,16 +75,10 @@ export function useWaveformPeaks(opts: UseWaveformPeaksOpts): UseWaveformPeaksRe
         const buf = await resp.arrayBuffer();
         if (cancelled) return;
 
-        const Ctx =
-          typeof OfflineAudioContext !== 'undefined'
-            ? OfflineAudioContext
-            : (
-                globalThis as {
-                  OfflineAudioContext?: typeof OfflineAudioContext;
-                }
-              ).OfflineAudioContext;
-        if (!Ctx) throw new Error('OfflineAudioContext unavailable');
-        const ctx = new Ctx(1, 1, 44100);
+        if (typeof OfflineAudioContext === 'undefined') {
+          throw new Error('OfflineAudioContext unavailable');
+        }
+        const ctx = new OfflineAudioContext(1, 1, 44100);
         const audioBuffer = await ctx.decodeAudioData(buf);
         if (cancelled) return;
         const samples = audioBuffer.getChannelData(0);
