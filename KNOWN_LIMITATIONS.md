@@ -4,11 +4,30 @@ This file is the canonical reference for v0.1 caveats. Each section is filled in
 
 ## Export (Plan 6)
 
-_To be filled in by Plan 6._
-
-- WebM not natively playable in iOS Safari (relevant for v0.2 Capacitor build).
-- Realtime export — user must not switch tabs (browsers throttle RAF in the background).
-- Browser-specific codec support varies.
+- **Realtime constraint.** Export plays the entire audio through and records
+  in real time — a 3-minute song takes 3 minutes to export. There is no
+  faster-than-realtime offline render in v0.1.
+- **Tab focus required.** When the browser tab is in the background, the
+  browser throttles `requestAnimationFrame` to ~1 Hz. We detect this with
+  `visibilitychange` and surface a persistent warning toast, but the
+  export keeps running and will likely have dropped frames. Keep the tab
+  active for clean output.
+- **WebM only, no iOS Safari playback.** v0.1 produces WebM (VP9 or VP8 +
+  Opus). iOS Safari does not natively play WebM. The v0.2 Capacitor build
+  will need MP4 / WebCodecs.
+- **Codec varies by browser.** Chrome, Edge, and Firefox all support
+  `video/webm;codecs=vp9,opus`. Safari Desktop sometimes falls back to
+  `vp8,opus` — the UI toasts the selected codec at the start of every
+  export so the user knows what they have.
+- **No quality / bitrate UI.** Bitrate is fixed at 6 Mbps video +
+  128 Kbps audio in v0.1. The exporter records at 30 fps regardless of
+  zoom or device-pixel-ratio.
+- **Single-image-clip-at-beat-0 requirement.** The Export button is
+  disabled when no image clip starts at beat 0. The exporter would
+  otherwise produce a black opening frame.
+- **No progress percentage.** The REC indicator shows `MM:SS / MM:SS`
+  (elapsed / total). A percent bar would just be `elapsed / total` —
+  redundant. v0.2 may add one if a faster-than-realtime path lands.
 
 ## Dev Dependencies — accepted vulnerabilities (Plan 0)
 
