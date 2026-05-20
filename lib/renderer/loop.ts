@@ -3,6 +3,7 @@ import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeImageClip, activeFxClipsByKind } from '@/lib/timeline/selectors';
 import { resolveClipParams } from '@/lib/automation/resolve';
+import { computeClipAlpha } from './blend';
 import { getPlugin, listPluginsByKind } from './registry';
 import { registerBuiltInPlugins } from '@/lib/fx';
 import type { FxKind as TrackFxKind, TimelineState } from '@/lib/timeline/types';
@@ -115,7 +116,14 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const imageBitmap = imageClip?.mediaId ? deps.getImageBitmap(imageClip.mediaId) : undefined;
 
     if (imageClip && imageBitmap) {
+      const alpha = computeClipAlpha(timeline, imageClip, beats);
+      const usesAlpha = alpha < 1;
+      if (usesAlpha) {
+        ctx!.save();
+        ctx!.globalAlpha *= alpha;
+      }
       drawImageContain(ctx!, imageBitmap, w, h);
+      if (usesAlpha) ctx!.restore();
     }
 
     const fxByKind = activeFxClipsByKind(timeline, beats);
@@ -153,6 +161,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
         };
 
         const rawParams = (clip.params ?? plugin.getDefaultParams()) as Record<string, unknown>;
+        const clipAlpha = computeClipAlpha(timeline, clip, beats);
+        const usesAlpha = clipAlpha < 1;
+        if (usesAlpha) {
+          ctx!.save();
+          ctx!.globalAlpha *= clipAlpha;
+        }
         try {
           plugin.render(rc, resolveClipParams(rawParams, beats));
         } catch (err) {
@@ -161,6 +175,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
           // plugin call so the rest of the frame still renders.
           // eslint-disable-next-line no-console
           console.warn(`[renderer] plugin "${plugin.id}" render() threw:`, err);
+        } finally {
+          if (usesAlpha) ctx!.restore();
         }
       }
     }

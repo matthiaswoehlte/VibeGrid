@@ -48,7 +48,8 @@ export const sweepPlugin: FxPlugin<SweepParams> = {
       grad.addColorStop(1, 'transparent');
       rc.ctx.save();
       rc.ctx.fillStyle = grad;
-      rc.ctx.globalAlpha = 0.5;
+      // *= so the outer crossfade alpha set by the renderer composes correctly.
+      rc.ctx.globalAlpha *= 0.5;
       rc.ctx.fillRect(x - params.radius, y - params.radius, params.radius * 2, params.radius * 2);
       rc.ctx.restore();
     }

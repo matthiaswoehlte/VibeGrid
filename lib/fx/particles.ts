@@ -80,6 +80,10 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
     }
 
     rc.ctx.save();
+    // Capture the outer alpha (set by the renderer's crossfade envelope) and
+    // multiply each particle's life-decay on top. Naive `*= (1 - lifeT)` would
+    // compound across particles since the loop shares one outer save/restore.
+    const baseAlpha = rc.ctx.globalAlpha;
     rc.ctx.fillStyle = params.color;
     for (const p of pool) {
       if (!p.alive) continue;
@@ -92,7 +96,7 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       const lifeT = age / params.life;
-      rc.ctx.globalAlpha = 1 - lifeT;
+      rc.ctx.globalAlpha = baseAlpha * (1 - lifeT);
       rc.ctx.beginPath();
       rc.ctx.arc(p.x, p.y, params.size, 0, Math.PI * 2);
       rc.ctx.fill();

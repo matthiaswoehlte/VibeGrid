@@ -30,7 +30,8 @@ export const pulsePlugin: FxPlugin<PulseParams> = {
     if (!rc.isOnBeat) return;
     const decay = Math.max(0, 1 - rc.beatPhase * 4);
     rc.ctx.save();
-    rc.ctx.globalAlpha = decay * params.intensity;
+    // *= so the outer crossfade alpha set by the renderer composes correctly.
+    rc.ctx.globalAlpha *= decay * params.intensity;
     rc.ctx.fillStyle = params.color;
     rc.ctx.fillRect(0, 0, rc.width, rc.height);
     rc.ctx.restore();
