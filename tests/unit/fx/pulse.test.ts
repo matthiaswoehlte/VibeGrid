@@ -38,6 +38,13 @@ describe('pulsePlugin', () => {
     expect(calls.find((c) => c.method === 'fillRect')).toBeUndefined();
   });
 
+  it('Flow Mode suppresses the beat flash even when isOnBeat is true', () => {
+    const rc = makeRenderContext({ isOnBeat: true, beatPhase: 0, flowMode: true });
+    pulsePlugin.render(rc, pulsePlugin.getDefaultParams());
+    const calls = (rc.ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
+    expect(calls.find((c) => c.method === 'fillRect')).toBeUndefined();
+  });
+
   it('has paramSchema entries for color and intensity', () => {
     expect(pulsePlugin.paramSchema.color.kind).toBe('color');
     expect(pulsePlugin.paramSchema.intensity.kind).toBe('slider');

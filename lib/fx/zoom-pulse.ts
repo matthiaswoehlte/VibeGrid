@@ -41,6 +41,10 @@ export const zoomPulsePlugin: FxPlugin<ZoomPulseParams> = {
   },
   render(rc, params) {
     if (!rc.imageBitmap) return;
+    // Flow Mode disables the per-beat scale punch. Without it the image
+    // would zoom on every beat regardless of the master toggle (ZoomPulse
+    // reads beatPhase directly, not the isOnBeat flag).
+    if (rc.flowMode) return;
     const fade = Math.max(0, 1 - rc.beatPhase * (1 + params.decay * 3));
     if (fade <= 0 || params.intensity <= 0) return;
     const scale = 1 + params.intensity * fade;

@@ -27,6 +27,9 @@ export const pulsePlugin: FxPlugin<PulseParams> = {
     // Pulse never preloads — preloadState stays 'ready'.
   },
   render(rc, params) {
+    // Flow Mode kills the beat flash entirely — Pulse has no continuous
+    // animation, so flowMode + no beat trigger == nothing to paint.
+    if (rc.flowMode) return;
     if (!rc.isOnBeat) return;
     const decay = Math.max(0, 1 - rc.beatPhase * 4);
     rc.ctx.save();

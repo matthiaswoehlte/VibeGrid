@@ -53,6 +53,21 @@ describe('zoomPulsePlugin', () => {
     expect((scaleHigh!.args[0] as number) > (scaleLow!.args[0] as number)).toBe(true);
   });
 
+  it('Flow Mode suppresses the per-beat scale punch', () => {
+    const bitmap = { width: 400, height: 300, close: () => {} } as unknown as ImageBitmap;
+    const rc = makeRenderContext({
+      isOnBeat: true,
+      beatPhase: 0,
+      imageBitmap: bitmap,
+      flowMode: true
+    });
+    zoomPulsePlugin.render(rc, { intensity: 0.8, decay: 0.5 });
+    const calls = (rc.ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
+    // Neither the scale transform nor a re-draw of the bitmap happens.
+    expect(calls.find((c) => c.method === 'scale')).toBeUndefined();
+    expect(calls.find((c) => c.method === 'drawImage')).toBeUndefined();
+  });
+
   it('ctx.save and ctx.restore are balanced', () => {
     const bitmap = { width: 400, height: 300, close: () => {} } as unknown as ImageBitmap;
     const rc = makeRenderContext({ isOnBeat: true, beatPhase: 0, imageBitmap: bitmap });

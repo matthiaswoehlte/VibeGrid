@@ -223,7 +223,10 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
   async preload() {},
   render(rc, params) {
     const state = getOrCreateState(rc.clipId);
-    if (rc.isOnBeat && state.lastSpawnBeat !== rc.beatIndex) {
+    // Flow Mode suppresses the beat-burst spawn — existing in-flight
+    // particles keep animating to their natural life-end so the toggle
+    // doesn't snap-clear the screen; the pool simply stops being refilled.
+    if (!rc.flowMode && rc.isOnBeat && state.lastSpawnBeat !== rc.beatIndex) {
       state.lastSpawnBeat = rc.beatIndex;
       spawn(rc, state.pool, params.spawnPerBeat, params.direction, params.speed);
     }

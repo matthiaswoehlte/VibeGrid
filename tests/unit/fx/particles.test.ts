@@ -35,6 +35,20 @@ describe('particlesPlugin', () => {
     expect(after2).toBeGreaterThanOrEqual(0);
   });
 
+  it('Flow Mode suppresses the beat-burst spawn', () => {
+    // Fresh state (afterEach disposes), so no in-flight particles either.
+    const rc = makeRenderContext({
+      isOnBeat: true,
+      beatIndex: 1,
+      time: 0.5,
+      flowMode: true
+    });
+    particlesPlugin.render(rc, particlesPlugin.getDefaultParams());
+    const calls = (rc.ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
+    // Without a spawn there's nothing to draw — no arc/fill in this frame.
+    expect(calls.find((c) => c.method === 'arc')).toBeUndefined();
+  });
+
   it('paramSchema has spawnPerBeat, life, color, size', () => {
     expect(particlesPlugin.paramSchema.spawnPerBeat.kind).toBe('slider');
     expect(particlesPlugin.paramSchema.life.kind).toBe('slider');
