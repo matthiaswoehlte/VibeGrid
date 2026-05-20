@@ -5,6 +5,7 @@ import { createTimelineSlice, initialTimelineState } from './timeline-slice';
 import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
 import type { Track } from '@/lib/timeline/types';
+import { EXPORT_INITIAL_STATE, reduceExportState } from '@/lib/export/state-machine';
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -19,7 +20,8 @@ export const useAppStore = create<AppState>()(
         zoom: 1,
         selectedClipId: null,
         automationEditorClipId: null,
-        automationSnap: 'off'
+        automationSnap: 'off',
+        exportState: EXPORT_INITIAL_STATE
       },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
       setSelectedClipId: (id) =>
@@ -33,6 +35,10 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ ui: { ...s.ui, automationEditorClipId: clipId } })),
       setAutomationSnap: (snap) =>
         set((s) => ({ ui: { ...s.ui, automationSnap: snap } })),
+      setExportState: (patch) =>
+        set((s) => ({
+          ui: { ...s.ui, exportState: reduceExportState(s.ui.exportState, patch) }
+        })),
       ...createTimelineSlice(set, get, store),
       ...createAudioSlice(set, get, store),
       ...createMediaSlice(set, get, store)
@@ -59,11 +65,12 @@ export const useAppStore = create<AppState>()(
       // the audio element is gone and "playing" would be a lie.
       // media.mediaRefs are URLs + metadata only — never the underlying blobs.
       partialize: (state) => ({
-        // selectedClipId, automationEditorClipId, and automationSnap are
-        // all transient UI state. Persisting them would confuse users on
-        // reload (Inspector jumps to a clip they didn't select; editor
-        // re-opens without context; snap mode resets to a half-tried
-        // value). Only `zoom` survives reloads.
+        // selectedClipId, automationEditorClipId, automationSnap, and
+        // exportState are all transient UI state. Persisting them would
+        // confuse users on reload (Inspector jumps to a clip they didn't
+        // select; editor re-opens without context; snap mode resets;
+        // exportState would resume a recording session that no longer
+        // has a MediaRecorder). Only `zoom` survives reloads.
         ui: { zoom: state.ui.zoom },
         timeline: {
           ...state.timeline,

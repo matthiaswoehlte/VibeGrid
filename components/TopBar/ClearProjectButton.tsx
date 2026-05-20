@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/Button';
 import { useAppStore } from '@/lib/store';
 import { initialTimelineState } from '@/lib/store/timeline-slice';
 import { initialMediaState } from '@/lib/store/media-slice';
+import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
 
 export function ClearProjectButton() {
   const onClick = () => {
@@ -16,7 +17,8 @@ export function ClearProjectButton() {
         zoom: 1,
         selectedClipId: null,
         automationEditorClipId: null,
-        automationSnap: 'off'
+        automationSnap: 'off',
+        exportState: EXPORT_INITIAL_STATE
       }
     });
   };

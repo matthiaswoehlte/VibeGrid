@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { Clip } from '@/components/Workspace/Timeline/Clip';
 import { DndContext } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
+import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
 
 describe('Clip', () => {
   beforeEach(() => {
@@ -11,7 +12,8 @@ describe('Clip', () => {
         zoom: 1,
         selectedClipId: null,
         automationEditorClipId: null,
-        automationSnap: 'off'
+        automationSnap: 'off',
+        exportState: EXPORT_INITIAL_STATE
       },
       timeline: {
         tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],

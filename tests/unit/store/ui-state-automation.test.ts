@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '@/lib/store';
+import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
 
 beforeEach(() => {
   useAppStore.setState((s) => ({
@@ -51,7 +52,8 @@ describe('automationEditorClipId cleanup', () => {
         zoom: s.ui.zoom,
         selectedClipId: 'clip-x',
         automationEditorClipId: 'clip-x',
-        automationSnap: 'off'
+        automationSnap: 'off',
+        exportState: EXPORT_INITIAL_STATE
       }
     }));
   });

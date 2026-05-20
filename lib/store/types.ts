@@ -3,6 +3,7 @@ import type { BeatGrid } from '@/lib/audio/types';
 import type { MediaRef } from '@/lib/storage/types';
 import type { AutomationPoint, Interpolation } from '@/lib/automation/types';
 import type { AutomationSnap } from '@/lib/automation/snap';
+import type { ExportState } from '@/lib/export/types';
 
 export interface UIState {
   zoom: number;
@@ -16,6 +17,7 @@ export interface UIState {
    *  handling were carried over without change. */
   automationEditorClipId: string | null;
   automationSnap: AutomationSnap;
+  exportState: ExportState;
 }
 
 export interface TimelineActions {
@@ -73,6 +75,7 @@ export interface AppState {
   setSelectedClipId(id: string | null): void;
   setAutomationEditorClipId(clipId: string | null): void;
   setAutomationSnap(snap: AutomationSnap): void;
+  setExportState(patch: Partial<ExportState>): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;
   audio: AudioState;

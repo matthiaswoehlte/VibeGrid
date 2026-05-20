@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { Inspector } from '@/components/Workspace/Inspector';
 import { useAppStore } from '@/lib/store';
 import { registerBuiltInPlugins, _resetBuiltInPluginsForTests } from '@/lib/fx';
+import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
 
 describe('Inspector', () => {
   beforeEach(() => {
@@ -15,7 +16,8 @@ describe('Inspector', () => {
         zoom: 1,
         selectedClipId: null,
         automationEditorClipId: null,
-        automationSnap: 'off'
+        automationSnap: 'off',
+        exportState: EXPORT_INITIAL_STATE
       },
       timeline: {
         tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],
