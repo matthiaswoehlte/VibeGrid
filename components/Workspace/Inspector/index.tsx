@@ -5,6 +5,7 @@ import { ParamControl } from '@/components/ui/ParamControl';
 import { PreloadIndicator } from './PreloadIndicator';
 import { AutomateButton } from './AutomateButton';
 import { isAutomationCurve } from '@/lib/automation/resolve';
+import { isReservedParamKey } from '@/lib/timeline/overlap';
 
 export function Inspector() {
   const selectedClipId = useAppStore((s) => s.ui.selectedClipId);
@@ -67,7 +68,9 @@ export function Inspector() {
             </label>
           );
         })}
-        {Object.values(params as Record<string, unknown>).some((v) => isAutomationCurve(v)) && (
+        {Object.entries(params as Record<string, unknown>)
+          .filter(([k]) => !isReservedParamKey(k))
+          .some(([, v]) => isAutomationCurve(v)) && (
           <div className="pt-1">
             <EditOnTimelineLink clipId={clip.id} />
           </div>

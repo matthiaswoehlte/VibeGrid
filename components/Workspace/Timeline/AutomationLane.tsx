@@ -2,6 +2,7 @@
 import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import { isAutomationCurve } from '@/lib/automation/resolve';
+import { isReservedParamKey } from '@/lib/timeline/overlap';
 import type { AutomationCurve, Interpolation } from '@/lib/automation/types';
 import { AutomationPoint as PointDot } from './AutomationPoint';
 import { AutomationCurvePath } from './AutomationCurvePath';
@@ -31,6 +32,7 @@ export function AutomationLane({
   const params = (clip.params ?? {}) as Record<string, unknown>;
   // Only slider params with active automation curves get a visual lane in v0.1.
   const automated = Object.entries(plugin.paramSchema).filter(([k, schema]) => {
+    if (isReservedParamKey(k)) return false;
     return schema.kind === 'slider' && isAutomationCurve(params[k]);
   });
   if (automated.length === 0) return null;
