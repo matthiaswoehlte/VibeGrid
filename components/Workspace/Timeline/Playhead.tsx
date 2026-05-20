@@ -7,14 +7,21 @@ import { TRACK_LABEL_WIDTH } from './Tracks';
 const BEAT_PX_BASE = 40;
 
 /**
- * Smooth 60fps playhead. The store-based path (useAudioEngine → onStateChange
- * → setPlayhead) only fires when audioEl.timeupdate fires (~4 Hz in most
- * browsers), so the visual position would step in ~250ms chunks. We bypass
- * React reconciliation here: rAF loop reads engine.currentTime each frame and
- * writes the left style imperatively. The store still gets the throttled
- * updates for non-visual consumers (Stop button, tests).
+ * Smooth 60fps playhead inside the shared horizontal-scroll container.
+ * Reads engine.currentTime each rAF tick and writes el.style.left
+ * imperatively to bypass React reconciliation.
+ *
+ * Bounded: hidden when beats > totalBeats so the line never escapes the
+ * Gantt area (visible escapes used to overlap the right edge of the
+ * timeline panel).
  */
-export function Playhead({ engine }: { engine: AudioEngine | null }) {
+export function Playhead({
+  engine,
+  totalBeats
+}: {
+  engine: AudioEngine | null;
+  totalBeats: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,8 +31,6 @@ export function Playhead({ engine }: { engine: AudioEngine | null }) {
       if (el) {
         const grid = useAppStore.getState().audio.grid;
         const zoom = useAppStore.getState().ui.zoom;
-        // Prefer live engine.currentTime; fall back to the store's last-known
-        // playhead (which is what Stop / programmatic seeks write into).
         let beats: number;
         const t = engine?.getState().currentTime;
         if (engine && Number.isFinite(t)) {
@@ -33,18 +38,23 @@ export function Playhead({ engine }: { engine: AudioEngine | null }) {
         } else {
           beats = useAppStore.getState().timeline.playhead.beats;
         }
-        el.style.left = `${TRACK_LABEL_WIDTH + beats * BEAT_PX_BASE * zoom}px`;
+        if (beats > totalBeats) {
+          el.style.display = 'none';
+        } else {
+          el.style.display = 'block';
+          el.style.left = `${TRACK_LABEL_WIDTH + beats * BEAT_PX_BASE * zoom}px`;
+        }
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [engine]);
+  }, [engine, totalBeats]);
 
   return (
     <div
       ref={ref}
-      className="absolute top-0 bottom-0 w-px bg-[var(--a1)] pointer-events-none"
+      className="absolute top-0 bottom-0 w-px bg-[var(--a1)] pointer-events-none z-40"
     />
   );
 }

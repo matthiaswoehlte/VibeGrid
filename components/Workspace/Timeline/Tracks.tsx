@@ -31,7 +31,7 @@ const PLUGIN_TO_TRACK_KIND: Record<PluginFxKind, TrackKind> = {
   Particle: 'particles'
 };
 
-export function Tracks() {
+export function Tracks({ totalBeats }: { totalBeats: number }) {
   const tracks = useAppStore((s) => s.timeline.tracks);
   const clips = useAppStore((s) => s.timeline.clips);
   const zoom = useAppStore((s) => s.ui.zoom);
@@ -151,16 +151,12 @@ export function Tracks() {
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-      <div
-        className="relative flex-1 overflow-x-auto"
-        onDragOver={onNativeDragOver}
-        onDrop={onNativeDrop}
-      >
+      <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => (
           <div
             key={t.id}
             className="flex border-b border-[var(--border)]"
-            style={{ height: TRACK_HEIGHT }}
+            style={{ height: TRACK_HEIGHT, width: TRACK_LABEL_WIDTH + totalBeats * px }}
           >
             <div
               className="shrink-0 sticky left-0 z-20 bg-[var(--surface-1)] border-r border-[var(--border)] px-2 flex items-center text-[10px] uppercase tracking-wider text-[var(--text-muted)] select-none"
@@ -169,7 +165,8 @@ export function Tracks() {
               {t.name}
             </div>
             <div
-              className="relative flex-1"
+              className="relative shrink-0"
+              style={{ width: totalBeats * px }}
               data-track-id={t.id}
               data-track-kind={t.kind}
             >
