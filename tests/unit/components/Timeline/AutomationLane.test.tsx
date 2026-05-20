@@ -84,3 +84,20 @@ describe('AutomationLane', () => {
     expect(v.points.length).toBe(3);
   });
 });
+
+describe('AutomationLane — snap picker', () => {
+  it('renders a snap select reflecting ui.automationSnap', () => {
+    useAppStore.getState().setAutomationSnap('1/4');
+    render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
+    const select = screen.getByRole('combobox', { name: /snap to grid/i }) as HTMLSelectElement;
+    expect(select.value).toBe('1/4');
+  });
+
+  it('changing the snap select dispatches setAutomationSnap', () => {
+    render(<AutomationLane clipId={CLIP_ID} pxPerBeat={PX_PER_BEAT} />);
+    fireEvent.change(screen.getByRole('combobox', { name: /snap to grid/i }), {
+      target: { value: '1/8' }
+    });
+    expect(useAppStore.getState().ui.automationSnap).toBe('1/8');
+  });
+});

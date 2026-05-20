@@ -4,11 +4,25 @@ import { getPlugin } from '@/lib/renderer/registry';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import { isReservedParamKey } from '@/lib/timeline/overlap';
 import type { AutomationCurve, Interpolation } from '@/lib/automation/types';
+import type { AutomationSnap } from '@/lib/automation/snap';
 import { AutomationPoint as PointDot } from './AutomationPoint';
 import { AutomationCurvePath } from './AutomationCurvePath';
 
 const LANE_HEIGHT = 50;
 const INTERPOLATION_MODES: Interpolation[] = ['linear', 'step', 'easeIn', 'easeOut'];
+
+const SNAP_UNITS: AutomationSnap[] = ['off', '1', '1/2', '1/4', '1/8', '1/16'];
+
+// Display labels match the clip-snap Toolbar's labels (1/1 instead of 1) so
+// the two snap pickers look consistent when shown side by side.
+const SNAP_LABEL: Record<AutomationSnap, string> = {
+  off: 'off',
+  '1': '1/1',
+  '1/2': '1/2',
+  '1/4': '1/4',
+  '1/8': '1/8',
+  '1/16': '1/16'
+};
 
 export function AutomationLane({
   clipId,
@@ -19,6 +33,8 @@ export function AutomationLane({
 }) {
   const expandedId = useAppStore((s) => s.ui.expandedAutomationClipId);
   const setExpanded = useAppStore((s) => s.setExpandedAutomationClipId);
+  const automationSnap = useAppStore((s) => s.ui.automationSnap);
+  const setAutomationSnap = useAppStore((s) => s.setAutomationSnap);
   const clip = useAppStore((s) => s.timeline.clips.find((c) => c.id === clipId));
   const setParamInterpolation = useAppStore((s) => s.timelineActions.setParamInterpolation);
   const addParamPoint = useAppStore((s) => s.timelineActions.addParamPoint);
@@ -55,6 +71,19 @@ export function AutomationLane({
                 {schema.label}
               </span>
               <div className="flex items-center gap-1">
+                <select
+                  aria-label={`Snap to grid for ${schema.label}`}
+                  className="text-[10px] bg-[var(--surface-3)] text-[var(--text)] rounded px-1 py-0.5"
+                  value={automationSnap}
+                  onChange={(e) => setAutomationSnap(e.target.value as AutomationSnap)}
+                  title="Snap automation points to grid"
+                >
+                  {SNAP_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {SNAP_LABEL[u]}
+                    </option>
+                  ))}
+                </select>
                 <select
                   aria-label={`Interpolation for ${schema.label}`}
                   className="text-[10px] bg-[var(--surface-3)] text-[var(--text)] rounded px-1 py-0.5"
