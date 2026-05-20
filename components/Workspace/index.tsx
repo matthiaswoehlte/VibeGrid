@@ -12,7 +12,13 @@ const TIMELINE_MIN_PX = 120;
 const STAGE_MIN_PX = 160;
 const DEFAULT_TIMELINE_PX = 256;
 
-export function Workspace({ engine }: { engine: AudioEngine | null }) {
+export function Workspace({
+  engine,
+  canvasRef
+}: {
+  engine: AudioEngine | null;
+  canvasRef: React.RefObject<HTMLCanvasElement>;
+}) {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_PX);
 
@@ -47,7 +53,7 @@ export function Workspace({ engine }: { engine: AudioEngine | null }) {
       </aside>
       <main className="flex-1 flex flex-col min-w-0">
         <div className="flex-1 min-h-0 relative">
-          <Stage engine={engine} />
+          <Stage engine={engine} canvasRef={canvasRef} />
           <button
             type="button"
             aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}

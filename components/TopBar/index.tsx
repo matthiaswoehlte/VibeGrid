@@ -4,9 +4,20 @@ import { BPMBadge } from './BPMBadge';
 import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
 import { ClearProjectButton } from './ClearProjectButton';
+import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
 import type { AudioEngine } from '@/lib/audio/engine';
 
-export function TopBar({ engine }: { engine: AudioEngine | null }) {
+export function TopBar({
+  engine,
+  canvasRef
+}: {
+  engine: AudioEngine | null;
+  canvasRef: React.RefObject<HTMLCanvasElement>;
+}) {
+  const exporter = useVideoExporter({
+    canvas: canvasRef.current,
+    audioEngine: engine
+  });
   return (
     <header className="h-12 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">
       <div className="flex items-center gap-3">
@@ -14,11 +25,9 @@ export function TopBar({ engine }: { engine: AudioEngine | null }) {
         <BPMBadge />
       </div>
       <div className="flex items-center gap-2">
-        {/* onStart + onCancel are no-ops until Task 10 wires the
-            useVideoExporter hook. */}
-        <RecIndicator onCancel={() => undefined} />
+        <RecIndicator onCancel={() => exporter.cancel()} />
         <ClearProjectButton />
-        <ExportButton onStart={() => undefined} />
+        <ExportButton onStart={() => exporter.start()} />
       </div>
     </header>
   );

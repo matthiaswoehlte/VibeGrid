@@ -1,17 +1,21 @@
 'use client';
-import { useRef } from 'react';
 import { useRenderer } from '@/lib/hooks/useRenderer';
 import type { AudioEngine } from '@/lib/audio/engine';
 
-export function CanvasView({ engine }: { engine: AudioEngine | null }) {
-  const ref = useRef<HTMLCanvasElement>(null);
+export function CanvasView({
+  engine,
+  canvasRef
+}: {
+  engine: AudioEngine | null;
+  canvasRef: React.RefObject<HTMLCanvasElement>;
+}) {
   useRenderer({
-    canvasRef: ref,
+    canvasRef,
     getCurrentTime: () => engine?.getState().currentTime ?? 0
   });
   return (
     <canvas
-      ref={ref}
+      ref={canvasRef}
       className="block w-full h-full bg-black"
       style={{ aspectRatio: '16/9' }}
     />
