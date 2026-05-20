@@ -13,7 +13,8 @@ describe('Clip', () => {
         selectedClipId: null,
         automationEditorClipId: null,
         automationSnap: 'off',
-        exportState: EXPORT_INITIAL_STATE
+        exportState: EXPORT_INITIAL_STATE,
+        flowMode: false
       },
       timeline: {
         tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],

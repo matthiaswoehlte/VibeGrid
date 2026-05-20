@@ -18,7 +18,8 @@ export function ClearProjectButton() {
         selectedClipId: null,
         automationEditorClipId: null,
         automationSnap: 'off',
-        exportState: EXPORT_INITIAL_STATE
+        exportState: EXPORT_INITIAL_STATE,
+        flowMode: false
       }
     });
   };

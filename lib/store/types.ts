@@ -18,6 +18,11 @@ export interface UIState {
   automationEditorClipId: string | null;
   automationSnap: AutomationSnap;
   exportState: ExportState;
+  /** Hotfix: global Beat ↔ Flow toggle. When true, beat-triggered FX
+   *  (Pulse flash, ZoomPulse scale, Particles burst) are suppressed and
+   *  automation curves stretch over each clip's full length instead of
+   *  being read in absolute beat coords. Transient — never persisted. */
+  flowMode: boolean;
 }
 
 export interface TimelineActions {
@@ -76,6 +81,7 @@ export interface AppState {
   setAutomationEditorClipId(clipId: string | null): void;
   setAutomationSnap(snap: AutomationSnap): void;
   setExportState(patch: Partial<ExportState>): void;
+  setFlowMode(value: boolean): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;
   audio: AudioState;

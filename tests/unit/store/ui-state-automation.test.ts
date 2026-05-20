@@ -53,7 +53,8 @@ describe('automationEditorClipId cleanup', () => {
         selectedClipId: 'clip-x',
         automationEditorClipId: 'clip-x',
         automationSnap: 'off',
-        exportState: EXPORT_INITIAL_STATE
+        exportState: EXPORT_INITIAL_STATE,
+        flowMode: false
       }
     }));
   });
