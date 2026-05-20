@@ -43,9 +43,26 @@ export function AutomationPoint({
   const cx = (beat / lengthBeats) * laneWidthPx;
   const cy = laneHeightPx - ((value - valueMin) / range) * laneHeightPx;
 
-  const onPointerDown = (e: React.PointerEvent) => {
+  const onPointerDown = (e: React.PointerEvent<SVGCircleElement>) => {
+    // stopPropagation keeps the lane's SVG-level pointerdown from also firing
+    // (which would otherwise add a new point at the cursor). No preventDefault
+    // here — calling it on a pointerdown can suppress subsequent pointer
+    // events in some browsers, which is exactly what broke browser drag.
     e.stopPropagation();
-    e.preventDefault();
+    const target = e.currentTarget;
+    const pointerId = e.pointerId;
+    // setPointerCapture redirects all subsequent pointermove/pointerup events
+    // for this gesture to the circle, regardless of where the cursor is. With
+    // a 4px-radius dot, the cursor leaves the element almost immediately —
+    // without capture, pointermove fires on whatever is under the cursor and
+    // never reaches our listener. jsdom doesn't always implement capture, so
+    // guard with try/catch to keep unit tests green.
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      /* jsdom may not implement setPointerCapture */
+    }
+
     const startX = e.clientX;
     const startY = e.clientY;
     const startBeat = beat;
@@ -59,10 +76,23 @@ export function AutomationPoint({
       const nextValue = Math.max(valueMin, Math.min(valueMax, startValue + dyValue));
       updateParamPoint(clipId, paramKey, pointIndex, { beat: nextBeat, value: nextValue });
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* may already be released */
+      }
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+      // Window fallback for the test harness (jsdom dispatches on window).
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+    // jsdom-only fallback so existing tests dispatching on `window` keep working.
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
