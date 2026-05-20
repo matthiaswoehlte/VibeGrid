@@ -74,7 +74,8 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
       getBeatGrid: () => useAppStore.getState().audio.grid,
       getTimelineState: () => useAppStore.getState().timeline,
       getImageBitmap: (mediaId) => cache.get(mediaId),
-      getSeekCounter: () => getSeekCounterRef.current?.() ?? 0
+      getSeekCounter: () => getSeekCounterRef.current?.() ?? 0,
+      getFlowMode: () => useAppStore.getState().ui.flowMode
     });
 
     // DPR sizing — dpr.ts only computes; we set canvas.width/height and apply

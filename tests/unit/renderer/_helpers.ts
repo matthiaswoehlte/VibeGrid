@@ -66,6 +66,7 @@ export function makeRenderContext(overrides: Partial<RenderContext> = {}): Rende
     isOnBeat: false,
     trigger: 'beat',
     clipId: 'test-clip',
+    flowMode: false,
     imageBitmap: makeMockImageBitmap(),
     ...overrides
   };

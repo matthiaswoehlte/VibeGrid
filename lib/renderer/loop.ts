@@ -18,6 +18,9 @@ export interface RendererDeps {
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   /** Increments on each seek so the loop can clear lastFired state. */
   getSeekCounter?: () => number;
+  /** Optional — when missing, the loop defaults to Beat Mode (false). The
+   *  studio hook passes a store-getter so the toggle is read once per tick. */
+  getFlowMode?: () => boolean;
   rafCallback?: (cb: FrameRequestCallback) => number;
   cancelRafCallback?: (id: number) => void;
 }
@@ -120,6 +123,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
 
     const phase = beatPhase(time, grid);
     const nearestBeatIndex = phase.phase > 0.5 ? phase.beatIndex + 1 : phase.beatIndex;
+    // Read once per tick — flips mid-frame would tear the cross-clip frame.
+    const flowMode = deps.getFlowMode?.() ?? false;
 
     const timeline = deps.getTimelineState();
     // Draw EVERY active image clip — overlapping image clips crossfade via
@@ -175,6 +180,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
           isOnBeat: shouldFire,
           trigger: clip.trigger ?? plugin.defaultTrigger,
           clipId: clip.id,
+          flowMode,
           imageBitmap
         };
 
@@ -192,8 +198,16 @@ export function createRenderer(deps: RendererDeps): Renderer {
           ctx!.save();
           ctx!.globalAlpha *= clipAlpha;
         }
+        // Flow Mode passes a clip-relative beat so the resolver can stretch
+        // the curve over `clip.lengthBeats`. Beat Mode keeps the absolute
+        // beats it has always passed — preserves the existing semantics
+        // (and any existing alignment users authored against the grid).
+        const paramBeat = flowMode ? beats - clip.startBeat : beats;
         try {
-          plugin.render(rc, resolveClipParams(rawParams, beats));
+          plugin.render(
+            rc,
+            resolveClipParams(rawParams, paramBeat, clip.lengthBeats, flowMode)
+          );
         } catch (err) {
           // A plugin throwing inside RAF would tear down the whole render loop
           // (and trigger Next.js dev's unhandled-error overlay). Swallow per

@@ -152,3 +152,54 @@ describe('resolveParam — interpolation modes', () => {
     expect(resolveParam(curve, 2)).toBe(0);
   });
 });
+
+describe('resolveParam — Flow Mode', () => {
+  const curveTo4: AutomationCurve<number> = {
+    mode: 'automation',
+    points: [
+      { beat: 0, value: 0 },
+      { beat: 4, value: 1 }
+    ],
+    interpolation: 'linear'
+  };
+
+  it('Beat Mode (default) keeps absolute-beat semantics unchanged', () => {
+    // 2 of 4 beats authored → 50% — same as before flowMode existed.
+    expect(resolveParam(curveTo4, 2)).toBeCloseTo(0.5);
+    // Explicit flowMode=false produces identical behavior.
+    expect(resolveParam(curveTo4, 2, 8, false)).toBeCloseTo(0.5);
+  });
+
+  it('Flow Mode stretches a curve (points 0..4) over an 8-beat clip', () => {
+    // Beat 4 of an 8-beat clip → 50% of the clip → 50% of the curve →
+    // value 0.5. Beat 8 → end of clip → end of curve → 1.
+    expect(resolveParam(curveTo4, 4, 8, true)).toBeCloseTo(0.5);
+    expect(resolveParam(curveTo4, 8, 8, true)).toBe(1);
+    expect(resolveParam(curveTo4, 0, 8, true)).toBe(0);
+  });
+
+  it('Flow Mode preserves step interpolation (hard jumps, just not beat-locked)', () => {
+    const step: AutomationCurve<number> = {
+      mode: 'automation',
+      points: [
+        { beat: 0, value: 0 },
+        { beat: 4, value: 1 }
+      ],
+      interpolation: 'step'
+    };
+    // Stretched lookup at 50% of clip = 2 in curve coords; still pre-jump → 0.
+    expect(resolveParam(step, 4, 8, true)).toBe(0);
+    expect(resolveParam(step, 8, 8, true)).toBe(1);
+  });
+
+  it('Flow Mode clamps clip-relative beat to [0, clipLength]', () => {
+    // Negative beat (pre-roll) → t=0 → first point. Over-shoot → t=1 → last.
+    expect(resolveParam(curveTo4, -2, 8, true)).toBe(0);
+    expect(resolveParam(curveTo4, 100, 8, true)).toBe(1);
+  });
+
+  it('Flow Mode with clipLengthBeats undefined falls back to Beat Mode', () => {
+    // Defensive: passing flowMode without a length must not crash or stretch.
+    expect(resolveParam(curveTo4, 2, undefined, true)).toBeCloseTo(0.5);
+  });
+});
