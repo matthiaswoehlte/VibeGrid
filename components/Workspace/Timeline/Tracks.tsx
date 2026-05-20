@@ -16,6 +16,10 @@ import { Clip } from './Clip';
 
 const TRACK_HEIGHT = 32;
 const BEAT_PX_BASE = 40;
+// Shared with Ruler.tsx and Playhead.tsx — the sticky left column width
+// reserved for track-name labels. All horizontal positioning of clips/ticks
+// happens to the RIGHT of this column.
+export const TRACK_LABEL_WIDTH = 80;
 
 // PluginFxKind (PascalCase, used by FxPlugin.kind) → TrackKind (slice key).
 // Mirrors the same map in lib/renderer/loop.ts — kept local to avoid an
@@ -70,10 +74,15 @@ export function Tracks() {
     if (!fxId && !mediaIdImage) return;
     e.preventDefault();
 
-    const container = e.currentTarget;
-    const rect = container.getBoundingClientRect();
-    const xInContainer = e.clientX - rect.left + container.scrollLeft;
-    const startBeat = Math.max(0, xInContainer / px);
+    // Compute startBeat from the actual clip-area under the cursor (not the
+    // outer container). This keeps the label column non-droppable and avoids
+    // the off-by-LABEL_WIDTH issue when the user drops near a track's left edge.
+    const target = e.target as HTMLElement;
+    const clipArea = target.closest('[data-track-kind]') as HTMLElement | null;
+    if (!clipArea) return;
+    const rect = clipArea.getBoundingClientRect();
+    const xInArea = e.clientX - rect.left;
+    const startBeat = Math.max(0, xInArea / px);
 
     try {
       if (fxId) {
@@ -141,19 +150,26 @@ export function Tracks() {
         {tracks.map((t) => (
           <div
             key={t.id}
-            data-track-id={t.id}
-            data-track-kind={t.kind}
-            className="relative border-b border-[var(--border)]"
+            className="flex border-b border-[var(--border)]"
             style={{ height: TRACK_HEIGHT }}
           >
-            <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wider text-[var(--text-muted)] pointer-events-none select-none z-10">
+            <div
+              className="shrink-0 sticky left-0 z-20 bg-[var(--surface-1)] border-r border-[var(--border)] px-2 flex items-center text-[10px] uppercase tracking-wider text-[var(--text-muted)] select-none"
+              style={{ width: TRACK_LABEL_WIDTH }}
+            >
               {t.name}
             </div>
-            {clips
-              .filter((c) => c.trackId === t.id)
-              .map((c) => (
-                <Clip key={c.id} clip={c} />
-              ))}
+            <div
+              className="relative flex-1"
+              data-track-id={t.id}
+              data-track-kind={t.kind}
+            >
+              {clips
+                .filter((c) => c.trackId === t.id)
+                .map((c) => (
+                  <Clip key={c.id} clip={c} />
+                ))}
+            </div>
           </div>
         ))}
       </div>

@@ -31,8 +31,17 @@ export function Transport({ engine }: { engine: AudioEngine | null }) {
         variant="secondary"
         size="sm"
         onClick={() => {
+          // Stop = pause + rewind. Without the pause(), audio kept playing
+          // even though the playhead jumped to 0 (Bug Plan-5 smoke).
+          engine?.pause();
           engine?.seek(0);
           setPlayhead(0);
+          useAppStore.setState((s) => ({
+            timeline: {
+              ...s.timeline,
+              playhead: { ...s.timeline.playhead, playing: false }
+            }
+          }));
         }}
         aria-label="Stop"
       >
