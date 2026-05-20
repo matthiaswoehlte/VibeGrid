@@ -13,7 +13,13 @@ export const useAppStore = create<AppState>()(
       // transient (never persisted; see partialize below).
       ui: { zoom: 1, selectedClipId: null, expandedAutomationClipId: null },
       setZoom: (zoom) => set((s) => ({ ui: { ...s.ui, zoom } })),
-      setSelectedClipId: (id) => set((s) => ({ ui: { ...s.ui, selectedClipId: id } })),
+      setSelectedClipId: (id) =>
+        set((s) => ({
+          ui:
+            id !== s.ui.expandedAutomationClipId
+              ? { ...s.ui, selectedClipId: id, expandedAutomationClipId: null }
+              : { ...s.ui, selectedClipId: id }
+        })),
       setExpandedAutomationClipId: (clipId) =>
         set((s) => ({ ui: { ...s.ui, expandedAutomationClipId: clipId } })),
       ...createTimelineSlice(set, get, store),

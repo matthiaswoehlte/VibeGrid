@@ -29,3 +29,40 @@ describe('UI state — expandedAutomationClipId', () => {
     expect(parsed.state.ui?.zoom).toBeDefined();
   });
 });
+
+describe('expandedAutomationClipId cleanup', () => {
+  beforeEach(() => {
+    useAppStore.setState((s) => ({
+      timeline: {
+        ...s.timeline,
+        clips: [
+          {
+            id: 'clip-x',
+            trackId: 'track-pulse',
+            kind: 'pulse',
+            fxId: 'pulse',
+            startBeat: 0,
+            lengthBeats: 4,
+            label: 'X'
+          }
+        ]
+      },
+      ui: { zoom: s.ui.zoom, selectedClipId: 'clip-x', expandedAutomationClipId: 'clip-x' }
+    }));
+  });
+
+  it('removing the expanded clip clears expandedAutomationClipId', () => {
+    useAppStore.getState().timelineActions.removeClip('clip-x');
+    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+  });
+
+  it('selecting a different clip clears expandedAutomationClipId', () => {
+    useAppStore.getState().setSelectedClipId('clip-y');
+    expect(useAppStore.getState().ui.expandedAutomationClipId).toBeNull();
+  });
+
+  it('selecting the same clip keeps the lane open', () => {
+    useAppStore.getState().setSelectedClipId('clip-x');
+    expect(useAppStore.getState().ui.expandedAutomationClipId).toBe('clip-x');
+  });
+});
