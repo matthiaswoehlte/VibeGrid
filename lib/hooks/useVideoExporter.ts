@@ -141,13 +141,29 @@ export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) 
 
   const api = useMemo(
     () => ({
-      start: () => {
+      start: async () => {
         // Pre-start: rewind audio + playhead to beat 0 so the export always
         // captures the full song from the beginning.
         audioEngine?.pause();
         audioEngine?.seek(0);
         useAppStore.getState().timelineActions.setPlayhead(0);
-        return exporterRef.current?.start();
+
+        // Start the recorder FIRST so we capture frame 0. Then start audio
+        // playback — the MediaRecorder is now live on both tracks.
+        await exporterRef.current?.start();
+
+        // Kick off audio playback. Without this, the audio stream is silent,
+        // the audio element never reaches 'ended', and the safety interval
+        // polls a currentTime that stays at 0 forever → recording runs
+        // until the user hits Cancel.
+        try {
+          await audioEngine?.play();
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[useVideoExporter] audio play() failed:', err);
+          // Roll back the recorder so we don't have a silent recording.
+          exporterRef.current?.cancel();
+        }
       },
       cancel: () => exporterRef.current?.cancel()
     }),
