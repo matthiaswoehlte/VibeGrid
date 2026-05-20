@@ -14,9 +14,10 @@ export function TopBar({ engine }: { engine: AudioEngine | null }) {
         <BPMBadge />
       </div>
       <div className="flex items-center gap-2">
-        <RecIndicator />
+        {/* onStart + onCancel are no-ops until Task 10 wires the
+            useVideoExporter hook. */}
+        <RecIndicator onCancel={() => undefined} />
         <ClearProjectButton />
-        {/* onStart is a no-op until Task 10 wires the useVideoExporter hook. */}
         <ExportButton onStart={() => undefined} />
       </div>
     </header>
