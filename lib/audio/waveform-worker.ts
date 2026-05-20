@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { downsamplePeaks, type WaveformPeaks } from './peaks';
 
 export type WaveformWorkerInbound = {
   type: 'downsample';
@@ -6,7 +7,7 @@ export type WaveformWorkerInbound = {
   targetCols: number;
 };
 
-export type WaveformPeaks = Array<[min: number, max: number]>;
+export type { WaveformPeaks };
 
 export type WaveformWorkerOutbound =
   | { type: 'peaks'; payload: WaveformPeaks }
@@ -15,24 +16,10 @@ export type WaveformWorkerOutbound =
 self.onmessage = (e: MessageEvent<WaveformWorkerInbound>) => {
   if (e.data.type !== 'downsample') return;
   try {
-    const { data, targetCols } = e.data;
-    const samplesPerCol = data.length / targetCols;
-    const peaks: WaveformPeaks = [];
-    for (let c = 0; c < targetCols; c++) {
-      const start = Math.floor(c * samplesPerCol);
-      const end = Math.min(data.length, Math.floor((c + 1) * samplesPerCol));
-      let min = 0;
-      let max = 0;
-      for (let i = start; i < end; i++) {
-        const s = data[i];
-        if (s < min) min = s;
-        if (s > max) max = s;
-      }
-      peaks.push([min, max]);
-    }
+    const payload = downsamplePeaks(e.data.data, e.data.targetCols);
     (self as DedicatedWorkerGlobalScope).postMessage({
       type: 'peaks',
-      payload: peaks
+      payload
     } satisfies WaveformWorkerOutbound);
   } catch (err) {
     (self as DedicatedWorkerGlobalScope).postMessage({
