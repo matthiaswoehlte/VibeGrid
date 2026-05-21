@@ -75,7 +75,8 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   const onNativeDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
     if (
       e.dataTransfer.types.includes('application/x-vibegrid-fx') ||
-      e.dataTransfer.types.includes('application/x-vibegrid-media-image')
+      e.dataTransfer.types.includes('application/x-vibegrid-media-image') ||
+      e.dataTransfer.types.includes('application/x-vibegrid-media-video')
     ) {
       e.preventDefault();
     }
@@ -84,7 +85,8 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   const onNativeDrop = (e: ReactDragEvent<HTMLDivElement>) => {
     const fxId = e.dataTransfer.getData('application/x-vibegrid-fx');
     const mediaIdImage = e.dataTransfer.getData('application/x-vibegrid-media-image');
-    if (!fxId && !mediaIdImage) return;
+    const mediaIdVideo = e.dataTransfer.getData('application/x-vibegrid-media-video');
+    if (!fxId && !mediaIdImage && !mediaIdVideo) return;
     e.preventDefault();
 
     // Compute startBeat from the actual clip-area under the cursor (not the
@@ -170,6 +172,43 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           trackId: imageTrack.id,
           kind: 'image',
           mediaId: mediaIdImage,
+          startBeat,
+          lengthBeats,
+          label: ref.filename
+        });
+        return;
+      }
+
+      if (mediaIdVideo) {
+        // Plan-5.9b — video drop.
+        const ref = getMediaRef(mediaIdVideo);
+        if (!ref) {
+          toast.error(`Media reference ${mediaIdVideo} not found`);
+          return;
+        }
+        if (droppedTrackKind && !canDropOnTrack('video', droppedTrackKind)) {
+          toast.error(
+            `Video kann nicht auf "${droppedTrackKind}"-Track — nur auf Video-Tracks`
+          );
+          return;
+        }
+        const videoTrack = droppedTrackId
+          ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'video')
+          : tracks.find((t) => t.kind === 'video');
+        if (!videoTrack) {
+          toast.error('No video track found');
+          return;
+        }
+        // Video-clip length matches the source video duration (in beats).
+        const bpm = useAppStore.getState().audio.grid.bpm || 120;
+        const lengthBeats = ref.duration
+          ? Math.max(1, Math.ceil((ref.duration * bpm) / 60))
+          : 16;
+        addClip({
+          id: crypto.randomUUID(),
+          trackId: videoTrack.id,
+          kind: 'video',
+          mediaId: mediaIdVideo,
           startBeat,
           lengthBeats,
           label: ref.filename

@@ -1,15 +1,25 @@
 'use client';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { useMediaUpload } from '@/lib/hooks/useMediaUpload';
 import { AutoPresetButton } from './AutoPresetButton';
 
+function formatDurationSec(s: number): string {
+  const total = Math.max(0, Math.round(s));
+  const m = Math.floor(total / 60);
+  const r = total % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
 export function MediaLibrary() {
   const refs = useAppStore((s) => s.media.mediaRefs);
-  const { upload } = useMediaUpload();
+  const { upload, uploadVideo } = useMediaUpload();
   const imageInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
+  /** Plan-5.9b — active video uploads keyed by a temporary id. */
+  const [videoUploads, setVideoUploads] = useState<Record<string, number>>({});
 
   const handle = async (file: File, kind: 'image' | 'audio') => {
     try {
@@ -17,6 +27,25 @@ export function MediaLibrary() {
       toast.success(`Uploaded ${file.name}`);
     } catch (err) {
       toast.error(`Upload failed: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
+  };
+
+  const handleVideo = async (file: File) => {
+    const tempId = crypto.randomUUID();
+    setVideoUploads((p) => ({ ...p, [tempId]: 0 }));
+    try {
+      await uploadVideo(file, (progress) => {
+        setVideoUploads((p) => ({ ...p, [tempId]: progress.percent }));
+      });
+      toast.success(`Uploaded ${file.name}`);
+    } catch (err) {
+      toast.error(`Video upload failed: ${err instanceof Error ? err.message : 'unknown'}`);
+    } finally {
+      setVideoUploads((p) => {
+        const next = { ...p };
+        delete next[tempId];
+        return next;
+      });
     }
   };
 
@@ -51,34 +80,85 @@ export function MediaLibrary() {
           hidden
           onChange={(e) => e.target.files?.[0] && handle(e.target.files[0], 'audio')}
         />
+        <button
+          type="button"
+          onClick={() => videoInput.current?.click()}
+          className="flex-1 h-8 rounded border border-dashed border-[var(--border)] text-xs text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
+        >
+          + Video
+        </button>
+        <input
+          ref={videoInput}
+          type="file"
+          accept="video/mp4,video/webm"
+          hidden
+          onChange={(e) => e.target.files?.[0] && handleVideo(e.target.files[0])}
+        />
       </div>
+
+      {/* Plan-5.9b — active video upload progress bars. */}
+      {Object.entries(videoUploads).length > 0 && (
+        <ul className="space-y-1">
+          {Object.entries(videoUploads).map(([id, pct]) => (
+            <li
+              key={id}
+              className="p-2 rounded bg-[var(--surface-2)] text-xs space-y-1"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--text-dim)]">Video upload…</span>
+                <span className="font-mono text-[var(--text)]">
+                  {Math.round(pct)}%
+                </span>
+              </div>
+              <div className="h-1 rounded bg-[var(--surface-3)] overflow-hidden">
+                <div
+                  className="h-full bg-[var(--a1)] transition-all"
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <ul className="space-y-1">
         {refs.map((r) => {
-          // Only images go on the timeline (drag into image-track). Audio is
-          // the project soundtrack — auto-loaded into the engine on upload, no
-          // drag needed. We highlight the LAST-uploaded audio as the active
-          // soundtrack since useAudioEngine auto-loads the most recent.
           const isImage = r.kind === 'image';
+          const isVideo = r.kind === 'video';
           const audioRefs = refs.filter((m) => m.kind === 'audio');
-          const isActiveAudio = !isImage && r.id === audioRefs[audioRefs.length - 1]?.id;
-          // Hint for non-image rows so the user understands what to do (or not).
+          const isActiveAudio =
+            r.kind === 'audio' && r.id === audioRefs[audioRefs.length - 1]?.id;
+
           const audioTitle = isActiveAudio
             ? 'Active soundtrack — loaded into the audio engine. Press Play in the toolbar.'
             : 'Earlier soundtrack — re-upload to re-activate.';
+
+          const dragKey = isImage
+            ? 'application/x-vibegrid-media-image'
+            : isVideo
+              ? 'application/x-vibegrid-media-video'
+              : null;
+          const draggable = dragKey !== null;
+          const onDragStart = dragKey
+            ? (e: React.DragEvent<HTMLLIElement>) => {
+                e.dataTransfer.setData(dragKey, r.id);
+              }
+            : undefined;
+
           return (
             <li
               key={r.id}
-              draggable={isImage}
-              onDragStart={
+              draggable={draggable}
+              onDragStart={onDragStart}
+              title={
                 isImage
-                  ? (e) => {
-                      e.dataTransfer.setData('application/x-vibegrid-media-image', r.id);
-                    }
-                  : undefined
+                  ? r.filename
+                  : isVideo
+                    ? `${r.filename} — drag onto a Video track`
+                    : audioTitle
               }
-              title={isImage ? r.filename : audioTitle}
               className={`flex items-center gap-2 p-2 rounded text-xs ${
-                isImage
+                draggable
                   ? 'bg-[var(--surface-2)] cursor-grab active:cursor-grabbing'
                   : `cursor-default select-none ${
                       isActiveAudio
@@ -87,14 +167,30 @@ export function MediaLibrary() {
                     }`
               }`}
             >
+              {isVideo && r.thumbnailUrl && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={r.thumbnailUrl}
+                  alt=""
+                  className="shrink-0 w-12 h-7 rounded object-cover bg-black"
+                />
+              )}
+              {isVideo && !r.thumbnailUrl && (
+                <span className="shrink-0 w-12 h-7 rounded bg-black flex items-center justify-center text-[10px] text-[var(--text-dim)]">
+                  ▶
+                </span>
+              )}
               <span className="flex-1 truncate">
                 {r.filename}
                 <span className="block text-[var(--text-muted)]">
                   {isImage && r.width && r.height ? `${r.width}×${r.height}` : null}
-                  {!isImage && r.duration
-                    ? `${r.duration.toFixed(1)}s — ${isActiveAudio ? 'active soundtrack' : 'soundtrack'}`
+                  {isVideo && r.duration ? `▶ ${formatDurationSec(r.duration)}` : null}
+                  {r.kind === 'audio' && r.duration
+                    ? `${r.duration.toFixed(1)}s — ${
+                        isActiveAudio ? 'active soundtrack' : 'soundtrack'
+                      }`
                     : null}
-                  {!isImage && !r.duration
+                  {r.kind === 'audio' && !r.duration
                     ? isActiveAudio
                       ? 'active soundtrack'
                       : 'soundtrack'
