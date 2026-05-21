@@ -184,6 +184,65 @@ if (typeof window !== 'undefined') {
   // @ts-expect-error — test-only global.
   globalThis.MediaRecorder = MockMediaRecorder;
 
+  /**
+   * mp4-muxer and webm-muxer (Plan 6-R Task 6) do strict instanceof checks
+   * on EncodedVideoChunk / EncodedAudioChunk. jsdom has no WebCodecs, so
+   * we install minimal stub classes that our duck-typed test chunks can
+   * extend. Anything from a real browser already has the genuine class.
+   */
+  if (typeof (globalThis as Record<string, unknown>).EncodedVideoChunk === 'undefined') {
+    class StubEncodedVideoChunk {
+      type: 'key' | 'delta';
+      timestamp: number;
+      duration: number | null;
+      byteLength: number;
+      private readonly _data: Uint8Array;
+      constructor(init: {
+        type: 'key' | 'delta';
+        timestamp: number;
+        duration?: number;
+        data: Uint8Array;
+      }) {
+        this.type = init.type;
+        this.timestamp = init.timestamp;
+        this.duration = init.duration ?? null;
+        this._data = init.data;
+        this.byteLength = init.data.byteLength;
+      }
+      copyTo(dst: BufferSource): void {
+        new Uint8Array(dst as ArrayBuffer).set(this._data);
+      }
+    }
+    // @ts-expect-error — test-only global.
+    globalThis.EncodedVideoChunk = StubEncodedVideoChunk;
+  }
+  if (typeof (globalThis as Record<string, unknown>).EncodedAudioChunk === 'undefined') {
+    class StubEncodedAudioChunk {
+      type: 'key' | 'delta';
+      timestamp: number;
+      duration: number | null;
+      byteLength: number;
+      private readonly _data: Uint8Array;
+      constructor(init: {
+        type: 'key' | 'delta';
+        timestamp: number;
+        duration?: number;
+        data: Uint8Array;
+      }) {
+        this.type = init.type;
+        this.timestamp = init.timestamp;
+        this.duration = init.duration ?? null;
+        this._data = init.data;
+        this.byteLength = init.data.byteLength;
+      }
+      copyTo(dst: BufferSource): void {
+        new Uint8Array(dst as ArrayBuffer).set(this._data);
+      }
+    }
+    // @ts-expect-error — test-only global.
+    globalThis.EncodedAudioChunk = StubEncodedAudioChunk;
+  }
+
   // jsdom has no MediaStream constructor. VideoExporter calls
   // `new MediaStream([videoTrack, audioTrack])` — a minimal stub satisfies it.
   if (typeof globalThis.MediaStream === 'undefined') {
