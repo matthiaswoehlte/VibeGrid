@@ -5,10 +5,11 @@ import { createOfflineMuxer } from './muxer';
 import type { TimelineState } from '@/lib/timeline/types';
 import type { BeatGrid } from '@/lib/audio/types';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // WebCodecs types (VideoEncoder, AudioEncoder, VideoFrame, AudioData)
 // ship in lib.dom on recent TypeScript versions but we cast loosely here
 // to stay compatible with older toolchains. Tests stub the globals.
+// eslint rule for no-explicit-any isn't configured in this project's
+// next/core-web-vitals preset, so we use unknown-casts where possible.
 
 export interface OfflineRenderProgress {
   currentFrame: number;

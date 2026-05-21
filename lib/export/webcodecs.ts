@@ -11,7 +11,6 @@
  * spend a bit more on quality.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // WebCodecs types ship in lib.dom on recent TypeScript versions. We
 // cast loosely here to stay compatible with older toolchains that don't
 // yet have VideoEncoderConfig / AudioEncoderConfig in lib.dom.

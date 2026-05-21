@@ -3,23 +3,50 @@ import { useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { createVideoExporter, type VideoExporter } from '@/lib/export/recorder';
+import { isWebCodecsSupported } from '@/lib/export/webcodecs';
+import { renderOffline } from '@/lib/export/offline-render';
+import { makeFilename } from '@/lib/export/filename';
+import { activeImageClips } from '@/lib/timeline/selectors';
 import type { AudioEngine } from '@/lib/audio/engine';
 
 export interface UseVideoExporterArgs {
   canvas: HTMLCanvasElement | null;
   audioEngine: AudioEngine | null;
+  /** Plan-6-R: offline pipeline borrows the live ImageBitmap cache so it
+   *  doesn't re-fetch + re-decode every image. The page component owns the
+   *  ref and writes into it from useRenderer's return. May read `null` if
+   *  the renderer hasn't mounted yet — the offline path treats that as
+   *  "no bitmaps available" and falls back to the background-only render. */
+  getImageBitmap?: (mediaId: string) => ImageBitmap | undefined;
 }
 
-export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) {
+const REVOKE_DELAY_MS = 10_000;
+const DONE_RESET_MS = 2_000;
+
+function triggerDownload(blob: Blob, ext: 'mp4' | 'webm'): void {
+  const url = URL.createObjectURL(blob);
+  const filename = makeFilename(new Date(), ext);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
+}
+
+export function useVideoExporter({
+  canvas,
+  audioEngine,
+  getImageBitmap
+}: UseVideoExporterArgs) {
   const setExportState = useAppStore((s) => s.setExportState);
   const exporterRef = useRef<VideoExporter | null>(null);
   const codecToastedRef = useRef(false);
+  const offlineAbortRef = useRef<AbortController | null>(null);
+  const offlineModeNoticedRef = useRef(false);
 
-  // Build the exporter when canvas + engine become available.
-  // audioMediaRef is read fresh on each start() via getAudioMediaRef —
-  // capturing it here would freeze at the hook's mount time (when the
-  // user hasn't uploaded any audio yet), guaranteeing the first export
-  // attempt fails with 'no-audio'.
+  // Build the realtime exporter when canvas + engine become available.
   useEffect(() => {
     if (!canvas || !audioEngine) {
       exporterRef.current = null;
@@ -39,13 +66,14 @@ export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) 
     };
   }, [canvas, audioEngine, setExportState]);
 
-  // Elapsed-seconds + progress tick (1 Hz) — only while recording.
+  // Elapsed-seconds tick (realtime only — offline drives progress through onProgress).
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
     const sub = useAppStore.subscribe((state, prev) => {
       const was = prev.ui.exportState.status;
       const is = state.ui.exportState.status;
-      if (is === 'recording' && was !== 'recording') {
+      const mode = state.ui.exportState.mode;
+      if (is === 'recording' && was !== 'recording' && mode === 'realtime') {
         intervalId = setInterval(() => {
           const s = useAppStore.getState().ui.exportState;
           const nextElapsed = s.elapsedSeconds + 1;
@@ -65,7 +93,7 @@ export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) 
     };
   }, [setExportState]);
 
-  // Codec label toast (Spec §8.1.1 — show the user what they got).
+  // Codec label toast (works for both paths).
   useEffect(() => {
     const sub = useAppStore.subscribe((state, prev) => {
       const label = state.ui.exportState.codecLabel;
@@ -81,12 +109,14 @@ export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) 
     return sub;
   }, []);
 
-  // Tab-visibility persistent warning (Spec §8.1.5).
+  // Tab-visibility warning — only matters in realtime mode. Offline rendering
+  // still throttles RAF when backgrounded, but the encoder owns its own
+  // pacing, so the warning isn't useful (the render simply takes longer).
   useEffect(() => {
     let toastId: string | number | null = null;
     const onVis = () => {
-      const status = useAppStore.getState().ui.exportState.status;
-      if (status !== 'recording') return;
+      const state = useAppStore.getState().ui.exportState;
+      if (state.status !== 'recording' || state.mode !== 'realtime') return;
       if (document.hidden) {
         setExportState({ warning: 'tab-hidden' });
         toastId = toast.warning(
@@ -108,29 +138,29 @@ export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) 
     };
   }, [setExportState]);
 
-  // FPS performance monitor — one-shot warning at < 24 fps avg (60-frame window).
+  // FPS monitor — realtime only (offline is FPS-decoupled by construction).
   useEffect(() => {
     let rafId = 0;
     let lastT = performance.now();
-    const window: number[] = [];
+    const fpsWindow: number[] = [];
     let warned = false;
     const tick = () => {
-      const status = useAppStore.getState().ui.exportState.status;
+      const state = useAppStore.getState().ui.exportState;
       const now = performance.now();
       const dt = now - lastT;
       lastT = now;
-      if (status === 'recording') {
-        window.push(dt);
-        if (window.length > 60) window.shift();
-        const avgMs = window.reduce((a, b) => a + b, 0) / window.length;
+      if (state.status === 'recording' && state.mode === 'realtime') {
+        fpsWindow.push(dt);
+        if (fpsWindow.length > 60) fpsWindow.shift();
+        const avgMs = fpsWindow.reduce((a, b) => a + b, 0) / fpsWindow.length;
         const fps = 1000 / avgMs;
-        if (!warned && window.length >= 60 && fps < 24) {
+        if (!warned && fpsWindow.length >= 60 && fps < 24) {
           warned = true;
           setExportState({ warning: 'performance-degraded' });
           toast.warning('Performance dropped — export may have dropped frames');
         }
       } else {
-        window.length = 0;
+        fpsWindow.length = 0;
         warned = false;
       }
       rafId = requestAnimationFrame(tick);
@@ -142,32 +172,126 @@ export function useVideoExporter({ canvas, audioEngine }: UseVideoExporterArgs) 
   const api = useMemo(
     () => ({
       start: async () => {
-        // Pre-start: rewind audio + playhead to beat 0 so the export always
-        // captures the full song from the beginning.
+        // Common pre-roll for both paths: rewind so the export captures from beat 0.
         audioEngine?.pause();
         audioEngine?.seek(0);
         useAppStore.getState().timelineActions.setPlayhead(0);
 
-        // Start the recorder FIRST so we capture frame 0. Then start audio
-        // playback — the MediaRecorder is now live on both tracks.
-        await exporterRef.current?.start();
+        if (isWebCodecsSupported() && audioEngine) {
+          // OFFLINE PATH — Plan 6-R.
+          if (!offlineModeNoticedRef.current) {
+            offlineModeNoticedRef.current = true;
+            toast.info('Offline render via WebCodecs (1080p / 30 fps)');
+          }
 
-        // Kick off audio playback. Without this, the audio stream is silent,
-        // the audio element never reaches 'ended', and the safety interval
-        // polls a currentTime that stays at 0 forever → recording runs
-        // until the user hits Cancel.
-        try {
-          await audioEngine?.play();
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('[useVideoExporter] audio play() failed:', err);
-          // Roll back the recorder so we don't have a silent recording.
-          exporterRef.current?.cancel();
+          const audioBuffer = audioEngine.getDecodedBuffer();
+          if (!audioBuffer) {
+            setExportState({
+              status: 'error',
+              mode: 'offline',
+              errorCode: 'no-audio'
+            });
+            return;
+          }
+          const timeline = useAppStore.getState().timeline;
+          const imageClips = activeImageClips(timeline, 0);
+          if (imageClips.length === 0) {
+            setExportState({
+              status: 'error',
+              mode: 'offline',
+              errorCode: 'no-image'
+            });
+            return;
+          }
+
+          const fps = 30;
+          const totalFrames = Math.ceil(audioBuffer.duration * fps);
+          offlineAbortRef.current = new AbortController();
+          setExportState({
+            status: 'preparing',
+            mode: 'offline',
+            totalSeconds: audioBuffer.duration,
+            totalFrames,
+            currentFrame: 0,
+            progress: 0,
+            elapsedSeconds: 0
+          });
+
+          try {
+            const result = await renderOffline(
+              {
+                timeline,
+                beatGrid: useAppStore.getState().audio.grid,
+                audioBuffer,
+                getImageBitmap: getImageBitmap ?? (() => undefined),
+                flowMode: useAppStore.getState().ui.flowMode
+              },
+              {
+                fps,
+                onProgress: (p) =>
+                  setExportState({
+                    status: 'recording',
+                    mode: 'offline',
+                    currentFrame: p.currentFrame,
+                    totalFrames: p.totalFrames,
+                    etaSeconds: p.etaSeconds,
+                    progress: p.currentFrame / p.totalFrames
+                  }),
+                signal: offlineAbortRef.current.signal
+              }
+            );
+            setExportState({
+              status: 'finalizing',
+              mode: 'offline',
+              codecLabel: result.codecLabel
+            });
+            triggerDownload(result.blob, result.ext);
+            setExportState({ status: 'done', mode: 'offline' });
+            setTimeout(
+              () => setExportState({ status: 'idle', mode: 'offline' }),
+              DONE_RESET_MS
+            );
+          } catch (e) {
+            const err = e as Error & { name?: string };
+            if (err?.name === 'AbortError') {
+              setExportState({ status: 'idle', mode: 'offline' });
+            } else {
+              // eslint-disable-next-line no-console
+              console.warn('[useVideoExporter] offline render failed:', err);
+              setExportState({
+                status: 'error',
+                mode: 'offline',
+                errorCode: 'render-failed'
+              });
+            }
+          } finally {
+            offlineAbortRef.current = null;
+          }
+        } else {
+          // REALTIME PATH — Plan 6.
+          setExportState({ mode: 'realtime' });
+          await exporterRef.current?.start();
+          try {
+            await audioEngine?.play();
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[useVideoExporter] audio play() failed:', err);
+            exporterRef.current?.cancel();
+          }
         }
       },
-      cancel: () => exporterRef.current?.cancel()
+      cancel: () => {
+        const state = useAppStore.getState().ui.exportState;
+        if (state.mode === 'offline') {
+          offlineAbortRef.current?.abort();
+          // The renderOffline promise rejects with AbortError and the
+          // try/catch above flips status back to idle.
+        } else {
+          exporterRef.current?.cancel();
+        }
+      }
     }),
-    [audioEngine]
+    [audioEngine, getImageBitmap, setExportState]
   );
 
   return api;

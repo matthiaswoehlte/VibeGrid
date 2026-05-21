@@ -10,14 +10,17 @@ import type { AudioEngine } from '@/lib/audio/engine';
 
 export function TopBar({
   engine,
-  canvasRef
+  canvasRef,
+  getImageBitmap
 }: {
   engine: AudioEngine | null;
   canvasRef: React.RefObject<HTMLCanvasElement>;
+  getImageBitmap?: (mediaId: string) => ImageBitmap | undefined;
 }) {
   const exporter = useVideoExporter({
     canvas: canvasRef.current,
-    audioEngine: engine
+    audioEngine: engine,
+    getImageBitmap
   });
   return (
     <header className="h-12 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">
