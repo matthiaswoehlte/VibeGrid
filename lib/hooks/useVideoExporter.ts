@@ -43,7 +43,8 @@ function triggerDownload(blob: Blob, ext: 'mp4' | 'webm'): void {
 export function useVideoExporter({
   canvas,
   audioEngine,
-  getImageBitmap
+  getImageBitmap,
+  videoEngine
 }: UseVideoExporterArgs) {
   const setExportState = useAppStore((s) => s.setExportState);
   const exporterRef = useRef<VideoExporter | null>(null);
@@ -229,6 +230,13 @@ export function useVideoExporter({
                 beatGrid: useAppStore.getState().audio.grid,
                 audioBuffer,
                 getImageBitmap: getImageBitmap ?? (() => undefined),
+                // Plan 5.9b — videoEngine is the shared element pool;
+                // getVideoElement is the per-frame source for the renderer's
+                // video draw step. Both stay null in projects without video.
+                videoEngine,
+                getVideoElement: videoEngine
+                  ? (mediaId: string) => videoEngine.getElement(mediaId)
+                  : undefined,
                 flowMode: useAppStore.getState().ui.flowMode
               },
               {
@@ -306,7 +314,7 @@ export function useVideoExporter({
         }
       }
     }),
-    [audioEngine, getImageBitmap, setExportState]
+    [audioEngine, getImageBitmap, videoEngine, setExportState]
   );
 
   return api;

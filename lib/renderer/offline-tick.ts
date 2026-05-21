@@ -11,6 +11,10 @@ export interface OfflineRendererDeps {
   timeline: TimelineState;
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   flowMode: boolean;
+  /** Plan-5.9b — per-mediaId HTMLVideoElement source for video tracks.
+   *  Returns null when the video isn't loaded yet; renderer skips the
+   *  draw for that frame. Pass-through to RendererDeps.getVideoElement. */
+  getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
 }
 
 export interface OfflineRenderer {
@@ -42,6 +46,7 @@ export function makeOfflineRenderer(deps: OfflineRendererDeps): OfflineRenderer 
     getBeatGrid: () => deps.beatGrid,
     getTimelineState: () => deps.timeline,
     getImageBitmap: deps.getImageBitmap,
+    getVideoElement: deps.getVideoElement,
     getFlowMode: () => deps.flowMode
   });
 

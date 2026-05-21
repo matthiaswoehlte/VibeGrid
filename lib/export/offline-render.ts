@@ -33,6 +33,16 @@ export interface OfflineRenderDeps {
   audioBuffer: AudioBuffer;
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   flowMode: boolean;
+  /** Plan-5.9b — optional. When provided, each frame awaits
+   *  `videoEngine.seekAllTo(timeSec)` BEFORE the canvas snapshot so the
+   *  encoded video is frame-accurate against the source clips. Adds
+   *  ~10-100 ms per frame depending on whether the browser implements
+   *  `requestVideoFrameCallback`. Projects without video clips pass
+   *  null and the seek-step is skipped entirely. */
+  videoEngine?: import('@/lib/video/engine').VideoEngine | null;
+  /** Plan-5.9b — optional accessor for the renderer's video draw step.
+   *  Required when videoEngine is set, ignored otherwise. */
+  getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
 }
 
 export interface OfflineRenderResult {
@@ -100,6 +110,7 @@ export async function renderOffline(
     beatGrid: deps.beatGrid,
     timeline: deps.timeline,
     getImageBitmap: deps.getImageBitmap,
+    getVideoElement: deps.getVideoElement,
     flowMode: deps.flowMode
   });
 
@@ -164,6 +175,19 @@ export async function renderOffline(
     throwIfAborted();
     throwIfVideo();
     const timeSec = frameIdx / fps;
+
+    // Plan-5.9b — frame-accurate video sync. Wait until every loaded
+    // video element has settled on the requested frame BEFORE we
+    // snapshot the canvas. Adds ~10-100 ms per frame depending on the
+    // browser (Chrome/Edge: rVFC fast path; Firefox/Safari: seeked
+    // event). Projects without video clips have an empty engine pool
+    // and seekAllTo resolves immediately.
+    if (deps.videoEngine) {
+      await deps.videoEngine.seekAllTo(timeSec);
+      throwIfAborted();
+      throwIfVideo();
+    }
+
     offlineRenderer.renderAt(timeSec);
 
     while (videoEncoder.encodeQueueSize > BACKPRESSURE_QUEUE_HIGH) {
