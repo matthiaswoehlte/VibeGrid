@@ -3,6 +3,7 @@ import { Slider } from './Slider';
 import { Toggle } from './Toggle';
 import { SelectControl } from './SelectControl';
 import { ColorPicker } from './ColorPicker';
+import { TextInputControl } from './TextInputControl';
 
 export function ParamControl({
   paramKey: _paramKey,
@@ -50,6 +51,15 @@ export function ParamControl({
         <Toggle
           checked={typeof value === 'boolean' ? value : schema.default}
           label={schema.label}
+          onChange={onChange}
+        />
+      );
+    case 'text':
+      return (
+        <TextInputControl
+          value={typeof value === 'string' ? value : schema.default}
+          label={schema.label}
+          maxLength={schema.maxLength}
           onChange={onChange}
         />
       );

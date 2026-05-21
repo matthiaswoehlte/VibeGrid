@@ -6,7 +6,8 @@ export type ParamType =
   | { kind: 'slider'; min: number; max: number; step: number; default: number; unit?: string }
   | { kind: 'color'; default: string; palette?: string[] }
   | { kind: 'select'; options: { value: string; label: string }[]; default: string }
-  | { kind: 'toggle'; default: boolean };
+  | { kind: 'toggle'; default: boolean }
+  | { kind: 'text'; default: string; maxLength?: number };
 
 export type ParamSchema = Record<string, ParamType & { label: string }>;
 
@@ -26,6 +27,13 @@ export interface RenderContext {
   /** Identity of the clip currently being rendered. Plugins that hold
    *  per-clip mutable state (e.g. Particles' spawn pool) key off this. */
   clipId: string;
+  /** Plan-5.8a: clip start time in seconds (absolute). `clip.startBeat`
+   *  converted via BPM + `beatGrid.offsetMs`. Plugins use this together
+   *  with `clipDurationSec` to compute clip-relative progress. */
+  clipStartSec: number;
+  /** Plan-5.8a: clip duration in seconds. `clip.lengthBeats` converted
+   *  via BPM — **no** offsetMs term (it's a duration, not a timestamp). */
+  clipDurationSec: number;
   /** Global Beat ↔ Flow toggle. When true, beat-triggered FX (Pulse flash,
    *  ZoomPulse scale, Particles burst) must skip their per-beat work — the
    *  curve interpolation alone carries the motion in Flow Mode. */

@@ -27,6 +27,10 @@ function validateOne(raw: unknown, schema: ParamType & { label: string }): unkno
         : schema.default;
     case 'toggle':
       return Boolean(raw);
+    case 'text': {
+      const s = typeof raw === 'string' ? raw : schema.default;
+      return schema.maxLength !== undefined ? s.slice(0, schema.maxLength) : s;
+    }
     default: {
       const _exhaustive: never = schema;
       void _exhaustive;

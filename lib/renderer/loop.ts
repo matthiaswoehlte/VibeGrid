@@ -170,6 +170,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
         const shouldFire = phase.isOnBeat && guard.shouldFire;
         if (phase.isOnBeat) lastFiredByClip.set(clip.id, guard.nextLastFired);
 
+        // Plan-5.8a: clip-relative timing fields. startBeat is a timestamp
+        // (needs offsetMs), lengthBeats is a duration (no offset term).
+        const clipStartSec =
+          (clip.startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
+        const clipDurationSec = (clip.lengthBeats * 60) / grid.bpm;
+
         const rc: RenderContext = {
           ctx: ctx!,
           width: w,
@@ -180,6 +186,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
           isOnBeat: shouldFire,
           trigger: clip.trigger ?? plugin.defaultTrigger,
           clipId: clip.id,
+          clipStartSec,
+          clipDurationSec,
           flowMode,
           imageBitmap
         };
