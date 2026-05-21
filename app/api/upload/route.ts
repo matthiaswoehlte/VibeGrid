@@ -43,7 +43,11 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof idValue !== 'string' || !UUID_V4_RE.test(idValue)) {
     return errorResponse(400, 'BAD_ID', 'id must be a UUID v4');
   }
-  const kind = kindValue as MediaKind;
+  // After the guard above, kindValue is narrowed to 'image' | 'audio'.
+  // The wider MediaKind cast is for the downstream MediaRef construction
+  // where 'video' is also a valid value (videos go through /api/presign,
+  // not this route).
+  const kind: 'image' | 'audio' = kindValue;
   const id = idValue;
 
   const bytes = new Uint8Array(await file.arrayBuffer());

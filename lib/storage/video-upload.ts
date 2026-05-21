@@ -63,7 +63,7 @@ export async function uploadVideoToR2(
     xhr.open('PUT', presignedUrl);
     xhr.setRequestHeader('Content-Type', file.type);
     if (onProgress) {
-      xhr.upload.onprogress = (e: ProgressEvent<XMLHttpRequestEventTarget>) => {
+      xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
         onProgress({
           loaded: e.loaded,

@@ -1,5 +1,5 @@
 import { fileTypeFromBuffer } from 'file-type';
-import { MIME_WHITELIST, SIZE_LIMITS, type MediaKind } from './types';
+import { MIME_WHITELIST, SIZE_LIMITS } from './types';
 
 export type UploadValidationCode =
   | 'SIZE_EXCEEDED'
@@ -23,7 +23,7 @@ export interface ValidationResult {
 
 export async function validateUpload(
   bytes: Uint8Array,
-  kind: MediaKind
+  kind: 'image' | 'audio'
 ): Promise<ValidationResult> {
   // 1. Size cap first — cheaper than running file-type on huge buffers.
   if (bytes.byteLength > SIZE_LIMITS[kind]) {

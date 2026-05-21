@@ -243,6 +243,46 @@ if (typeof window !== 'undefined') {
     globalThis.EncodedAudioChunk = StubEncodedAudioChunk;
   }
 
+  /**
+   * Plan 5.9b — MockVideoElement for tests that exercise VideoEngine /
+   * useVideoEngine / video upload. Per the architect's W3 feedback this
+   * class is NOT spy-injected globally into `document.createElement`.
+   * Tests opt in per case:
+   *
+   *   const orig = document.createElement.bind(document);
+   *   vi.spyOn(document, 'createElement').mockImplementation((tag) =>
+   *     tag === 'video'
+   *       ? (new MockVideoElement() as unknown as HTMLVideoElement)
+   *       : orig(tag)
+   *   );
+   *
+   * Restored in afterEach via vi.restoreAllMocks().
+   */
+  class MockVideoElement extends EventTarget {
+    currentTime = 0;
+    duration = 60;
+    muted = true;
+    playsInline = true;
+    src = '';
+    preload = '';
+    onloadedmetadata: (() => void) | null = null;
+    onloadeddata: (() => void) | null = null;
+    onseeked: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    async play(): Promise<void> {
+      return undefined;
+    }
+    pause(): void {}
+    load(): void {
+      queueMicrotask(() => {
+        this.onloadedmetadata?.();
+        this.onloadeddata?.();
+      });
+    }
+  }
+  // @ts-expect-error — test-only global.
+  globalThis.MockVideoElement = MockVideoElement;
+
   // jsdom has no MediaStream constructor. VideoExporter calls
   // `new MediaStream([videoTrack, audioTrack])` — a minimal stub satisfies it.
   if (typeof globalThis.MediaStream === 'undefined') {
