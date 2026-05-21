@@ -153,7 +153,14 @@ export async function renderOffline(
       audioError = e;
     }
   });
-  audioEncoder.configure(audioPick.config);
+  // NOTE: audioEncoder.configure() is deferred until just before the
+  // audio loop. Chrome's WebCodecs implementation reclaims an
+  // unused-but-configured encoder after ~10s of inactivity with
+  // `QuotaExceededError: Codec reclaimed due to inactivity`. With
+  // video clips the frame loop spends 5-15× realtime on seeks (see
+  // KNOWN_LIMITATIONS), which easily exceeds that window. Holding off
+  // on configure keeps the audio encoder dormant during the video
+  // loop and avoids the reclaim.
 
   function throwIfVideo(): void {
     if (videoError) throw videoError;
@@ -167,6 +174,50 @@ export async function renderOffline(
     }
   }
 
+  // 4b. DOM-attach the video elements for the duration of the render.
+  //
+  // `VideoEngine` creates `<video>` with `document.createElement` and
+  // never appends them. For LIVE preview this is fine — `play()` keeps
+  // the decoder pipeline pumping new frames into the element's frame
+  // buffer regardless of attachment, and `drawImage` reads from that
+  // buffer.
+  //
+  // For OFFLINE export we don't play, we SEEK once per output frame and
+  // then `drawImage`. On a detached element, Chrome's compositor never
+  // schedules a paint, so:
+  //   - `requestVideoFrameCallback` never fires (it's gated on paint).
+  //   - The decoder is throttled / lazy — the new frame at `currentTime`
+  //     may not be in the drawable buffer when `drawImage` runs, even
+  //     after `seeked` fires + a one-rAF defer.
+  // Net symptom: the encoded MP4 freezes on frame 0 of every video clip
+  // while FX overlays animate normally.
+  //
+  // Fix: park the elements in a 1px, low-opacity container inside
+  // document.body for the lifetime of the render. The compositor now
+  // treats them as visible (not display:none / not visibility:hidden),
+  // rVFC fires per seek, and the decoder pipeline stays hot. Removed
+  // again in `finally` so the live preview returns to its original
+  // detached state.
+  let videoDomContainer: HTMLDivElement | null = null;
+  if (deps.videoEngine && typeof document !== 'undefined') {
+    const ids = deps.videoEngine.loadedIds();
+    if (ids.length > 0) {
+      videoDomContainer = document.createElement('div');
+      videoDomContainer.setAttribute('data-vibegrid-export-video-pool', '');
+      videoDomContainer.style.cssText =
+        'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0.001;pointer-events:none;z-index:-2147483648;';
+      for (const id of ids) {
+        const el = deps.videoEngine.getElement(id);
+        if (!el) continue;
+        el.style.width = '1px';
+        el.style.height = '1px';
+        videoDomContainer.appendChild(el);
+      }
+      document.body.appendChild(videoDomContainer);
+    }
+  }
+
+  try {
   // 5. Frame loop.
   const startTime =
     typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -224,7 +275,9 @@ export async function renderOffline(
   await videoEncoder.flush();
   throwIfVideo();
 
-  // 6. Audio loop.
+  // 6. Audio loop. Configure the encoder NOW — see the note at its
+  //    construction for why this isn't done upfront.
+  audioEncoder.configure(audioPick.config);
   for (const chunk of chunkAudioBuffer(deps.audioBuffer)) {
     throwIfAborted();
     throwIfAudio();
@@ -262,4 +315,12 @@ export async function renderOffline(
   const mime = pair.ext === 'mp4' ? 'video/mp4' : 'video/webm';
   const blob = new Blob([bytes], { type: mime });
   return { blob, ext: pair.ext, codecLabel: pair.label };
+  } finally {
+    // Return video elements to their original detached state so the
+    // live preview path keeps owning them as before. Removing the
+    // container detaches every child element in one DOM mutation.
+    if (videoDomContainer && videoDomContainer.parentNode) {
+      videoDomContainer.parentNode.removeChild(videoDomContainer);
+    }
+  }
 }

@@ -43,19 +43,36 @@ type VideoElementWithFrameCallback = HTMLVideoElement & {
 function seekElement(el: HTMLVideoElement, timeSec: number): Promise<void> {
   if (Math.abs(el.currentTime - timeSec) < SEEK_EPS) return Promise.resolve();
   return new Promise<void>((resolve) => {
+    let done = false;
     const elAny = el as VideoElementWithFrameCallback;
+    // `seeked` always fires after the seek operation completes, but BEFORE
+    // the new frame is composited — using it alone makes `drawImage` pick
+    // up the previous frame ("stuck on first frame" symptom in the offline
+    // export). Defer one rAF tick (or 16 ms fallback) so the decoder has
+    // time to deliver the frame before drawImage reads from the element.
+    const onSeeked = (): void => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => finish());
+      } else {
+        setTimeout(finish, 16);
+      }
+    };
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      el.removeEventListener('seeked', onSeeked);
+      resolve();
+    };
+    // rVFC: paint-accurate, fires AFTER the new frame is composited.
+    // For offline export the orchestrator attaches the element to the
+    // DOM (off-screen but visible to the compositor) so rVFC fires —
+    // see `lib/export/offline-render.ts`. The `seeked` listener is
+    // kept as a defensive fallback for both detached usage and
+    // Firefox/Safari without rVFC.
     if (typeof elAny.requestVideoFrameCallback === 'function') {
-      // Chromium + Firefox 130+: paint-accurate, finishes when the new
-      // frame is actually drawn. Significantly faster than the `seeked`
-      // event in real-world tests.
-      elAny.requestVideoFrameCallback(() => resolve());
-    } else {
-      const onSeeked = () => {
-        el.removeEventListener('seeked', onSeeked);
-        resolve();
-      };
-      el.addEventListener('seeked', onSeeked, { once: true });
+      elAny.requestVideoFrameCallback(() => finish());
     }
+    el.addEventListener('seeked', onSeeked, { once: true });
     el.currentTime = timeSec;
   });
 }
@@ -69,11 +86,19 @@ export function createVideoEngine(): VideoEngine | null {
     async load(mediaId, url) {
       if (elements.has(mediaId)) return;
       const el = document.createElement('video');
-      el.src = url;
+      // `crossOrigin` MUST be set before `src` — the browser starts the
+      // fetch the instant `src` is assigned, and the `Origin` header is
+      // only added when crossOrigin is already configured. Setting it
+      // afterwards yields a no-cors opaque response that taints any
+      // OffscreenCanvas the frame is drawn into, which silently breaks
+      // the WebCodecs `new VideoFrame(canvas)` step in the offline
+      // export (live preview is unaffected because HTMLCanvasElement
+      // only enforces taint on pixel-read operations).
+      el.crossOrigin = 'anonymous'; // R2 GET must allow this Origin
       el.preload = 'auto';
       el.muted = true;
       el.playsInline = true;
-      el.crossOrigin = 'anonymous'; // R2 GET must allow this Origin
+      el.src = url;
       await new Promise<void>((resolve, reject) => {
         el.onloadeddata = () => resolve();
         el.onerror = () => {
