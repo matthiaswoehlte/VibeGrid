@@ -114,12 +114,18 @@ export function createVideoEngine(): VideoEngine | null {
     },
 
     play() {
-      elements.forEach((el) => {
-        // Autoplay can be blocked on first user-gesture-less attempt; the
-        // preview is silent and the user can just hit play again. We
-        // swallow rather than throw so a failing video doesn't tear down
-        // the rest of the engine.
-        el.play().catch(() => { /* autoplay-blocked is OK */ });
+      // eslint-disable-next-line no-console
+      console.info(`[VideoEngine] play() called — ${elements.size} loaded element(s)`);
+      elements.forEach((el, id) => {
+        el.play()
+          .then(() => {
+            // eslint-disable-next-line no-console
+            console.info(`[VideoEngine] play OK for ${id} — paused=${el.paused} readyState=${el.readyState}`);
+          })
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(`[VideoEngine] play() rejected for ${id}:`, err);
+          });
       });
     },
 

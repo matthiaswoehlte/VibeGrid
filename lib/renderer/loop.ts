@@ -125,6 +125,9 @@ export function createRenderer(deps: RendererDeps): Renderer {
   const lastFiredByClip = new Map<string, number | null>();
   let lastSeenSeek = deps.getSeekCounter?.() ?? 0;
   let rafId: number | null = null;
+  // Diagnostic: ONCE-per-clip log of the video-draw branch entry. Cleared
+  // when the diagnostic is removed in a follow-up commit.
+  const loggedVideoDraw = new Set<string>();
 
   function tick(): void {
     // Skip if the canvas has a zero-sized pixel buffer (happens during window
@@ -204,6 +207,21 @@ export function createRenderer(deps: RendererDeps): Renderer {
       } else {
         const el = deps.getVideoElement?.(ic.mediaId);
         if (!el) continue;
+        // Diagnostic: ONCE per (clipId × mediaId) prove the renderer reached
+        // the video-draw branch and the element has decoded data.
+        const key = `${ic.id}:${ic.mediaId}`;
+        if (!loggedVideoDraw.has(key)) {
+          loggedVideoDraw.add(key);
+          // eslint-disable-next-line no-console
+          console.info(
+            `[renderer] video draw for clip=${ic.id} mediaId=${ic.mediaId} ` +
+              `videoWidth=${(el as HTMLVideoElement).videoWidth} ` +
+              `videoHeight=${(el as HTMLVideoElement).videoHeight} ` +
+              `currentTime=${(el as HTMLVideoElement).currentTime} ` +
+              `paused=${(el as HTMLVideoElement).paused} ` +
+              `readyState=${(el as HTMLVideoElement).readyState}`
+          );
+        }
         source = el;
       }
 
