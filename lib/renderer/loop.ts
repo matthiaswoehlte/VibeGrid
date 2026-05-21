@@ -81,6 +81,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
   const lastFiredByClip = new Map<string, number | null>();
   let lastSeenSeek = deps.getSeekCounter?.() ?? 0;
   let rafId: number | null = null;
+  // Diagnostic: prove the hotfix bundle reached the browser. Logs ONCE per
+  // flip. If you toggle the TopBar button and see nothing here, the bundle
+  // is stale — hard-refresh (Ctrl+Shift+R) or restart `npm run dev`.
+  let lastLoggedFlow: boolean | null = null;
 
   function tick(): void {
     // Skip if the canvas has a zero-sized pixel buffer (happens during window
@@ -125,6 +129,11 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const nearestBeatIndex = phase.phase > 0.5 ? phase.beatIndex + 1 : phase.beatIndex;
     // Read once per tick — flips mid-frame would tear the cross-clip frame.
     const flowMode = deps.getFlowMode?.() ?? false;
+    if (flowMode !== lastLoggedFlow) {
+      // eslint-disable-next-line no-console
+      console.log(`[renderer] flowMode = ${flowMode}`);
+      lastLoggedFlow = flowMode;
+    }
 
     const timeline = deps.getTimelineState();
     // Draw EVERY active image clip — overlapping image clips crossfade via
