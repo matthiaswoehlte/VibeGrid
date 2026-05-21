@@ -15,7 +15,11 @@ interface DissolveParams {
   decay: number;
 }
 
-const VEIL_RGB = '12, 13, 18'; // --bg in rgb form
+// Pure black veil — visibly darker than the renderer's #0c0d12 background
+// so the effect is recognisable even without an image clip underneath. The
+// architect-suggested --bg colour was indistinguishable from the canvas
+// clear when there was nothing to veil.
+const VEIL_RGB = '0, 0, 0';
 const BLUR_LAYERS = 5;
 
 /**
@@ -45,11 +49,14 @@ export const dissolvePlugin: FxPlugin<DissolveParams> = {
     dissolveMode: {
       kind: 'select',
       options: [
+        { value: 'reveal-wipe', label: 'Reveal Wipe (one-shot)' },
         { value: 'beat-wipe', label: 'Beat Wipe' },
-        { value: 'directional-blur', label: 'Directional Blur' },
-        { value: 'reveal-wipe', label: 'Reveal Wipe (one-shot)' }
+        { value: 'directional-blur', label: 'Directional Blur' }
       ],
-      default: 'beat-wipe',
+      // reveal-wipe is the most obviously-visible default — runs once
+      // across the entire clip length so users see SOMETHING happen
+      // the moment they drop the clip onto the timeline.
+      default: 'reveal-wipe',
       label: 'Mode'
     },
     direction: {
@@ -63,7 +70,7 @@ export const dissolvePlugin: FxPlugin<DissolveParams> = {
       min: 0,
       max: 1,
       step: 0.05,
-      default: 0.8,
+      default: 1,
       label: 'Intensity'
     },
     softness: {
@@ -84,9 +91,9 @@ export const dissolvePlugin: FxPlugin<DissolveParams> = {
     }
   },
   getDefaultParams: (): DissolveParams => ({
-    dissolveMode: 'beat-wipe',
+    dissolveMode: 'reveal-wipe',
     direction: 'left',
-    intensity: 0.8,
+    intensity: 1,
     softness: 0.5,
     decay: 0.6
   }),
