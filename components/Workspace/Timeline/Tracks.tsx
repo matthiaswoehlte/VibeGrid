@@ -12,6 +12,7 @@ import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import type { FxKind as PluginFxKind } from '@/lib/renderer/types';
 import type { TrackKind } from '@/lib/timeline/types';
+import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
 
@@ -94,6 +95,12 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     const xInArea = e.clientX - rect.left;
     const startBeat = Math.max(0, xInArea / px);
 
+    // Plan 5.9a — multi-track: identify the exact track under the cursor.
+    const droppedTrackId = clipArea.getAttribute('data-track-id');
+    const droppedTrackKind = clipArea.getAttribute('data-track-kind') as
+      | TrackKind
+      | null;
+
     try {
       if (fxId) {
         const plugin = getPlugin(fxId);
@@ -101,16 +108,22 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           toast.error(`FX plugin "${fxId}" not registered`);
           return;
         }
-        const trackKind = PLUGIN_TO_TRACK_KIND[plugin.kind as PluginFxKind];
-        const targetTrack = tracks.find((t) => t.kind === trackKind);
+        const pluginTrackKind = PLUGIN_TO_TRACK_KIND[plugin.kind as PluginFxKind];
+        // Use the dropped track when its kind matches the plugin; otherwise
+        // fall back to the first track of the plugin's kind. With multi-track
+        // this lets the user pick which specific track receives the FX clip.
+        const targetTrack =
+          droppedTrackId && droppedTrackKind === pluginTrackKind
+            ? tracks.find((t) => t.id === droppedTrackId)
+            : tracks.find((t) => t.kind === pluginTrackKind);
         if (!targetTrack) {
-          toast.error(`No "${trackKind}" track found for ${plugin.name}`);
+          toast.error(`No "${pluginTrackKind}" track found for ${plugin.name}`);
           return;
         }
         addClip({
           id: crypto.randomUUID(),
           trackId: targetTrack.id,
-          kind: trackKind,
+          kind: pluginTrackKind,
           fxId,
           startBeat,
           lengthBeats: 4,
@@ -125,7 +138,18 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           toast.error(`Media reference ${mediaIdImage} not found`);
           return;
         }
-        const imageTrack = tracks.find((t) => t.kind === 'image');
+        // Plan 5.9a — validate media-track-kind match. The drop target must
+        // be an image track (could be one of several with multi-track).
+        if (droppedTrackKind && !canDropOnTrack('image', droppedTrackKind)) {
+          toast.error(
+            `Bild kann nicht auf "${droppedTrackKind}"-Track — nur auf Image-Tracks`
+          );
+          return;
+        }
+        const imageTrack =
+          droppedTrackId
+            ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'image')
+            : tracks.find((t) => t.kind === 'image');
         if (!imageTrack) {
           toast.error('No image track found');
           return;
