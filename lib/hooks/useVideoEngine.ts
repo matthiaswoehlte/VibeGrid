@@ -66,10 +66,18 @@ export function useVideoEngine(): UseVideoEngineReturn {
       if (loaded.has(id)) continue;
       const ref = mediaRefs.find((m) => m.id === id && m.kind === 'video');
       if (!ref) continue;
-      void engine.load(id, ref.url).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn(`[useVideoEngine] failed to load ${id}:`, err);
-      });
+      // eslint-disable-next-line no-console
+      console.info(`[useVideoEngine] loading video ${id} from ${ref.url}`);
+      void engine
+        .load(id, ref.url)
+        .then(() => {
+          // eslint-disable-next-line no-console
+          console.info(`[useVideoEngine] loaded video ${id} successfully`);
+        })
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn(`[useVideoEngine] FAILED to load ${id}:`, err);
+        });
     }
     // Unload anything loaded that isn't wanted anymore.
     for (const id of loaded) {

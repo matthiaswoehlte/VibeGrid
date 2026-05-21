@@ -76,7 +76,18 @@ export function createVideoEngine(): VideoEngine | null {
       el.crossOrigin = 'anonymous'; // R2 GET must allow this Origin
       await new Promise<void>((resolve, reject) => {
         el.onloadeddata = () => resolve();
-        el.onerror = () => reject(new Error(`Video load failed: ${url}`));
+        el.onerror = () => {
+          // Report what the browser actually saw — the underlying
+          // MediaError code (1=ABORTED, 2=NETWORK, 3=DECODE,
+          // 4=SRC_NOT_SUPPORTED) tells us if it's CORS / wrong codec /
+          // bad URL. CORS failures usually surface as code 4 because
+          // the response is opaque to the decoder.
+          const err = el.error;
+          const detail = err
+            ? `code=${err.code} (${err.message || 'no message'})`
+            : 'no MediaError';
+          reject(new Error(`Video load failed: ${url} — ${detail}`));
+        };
         el.load();
       });
       // Guard against a double-load race — only the first inflight wins.
