@@ -28,7 +28,10 @@ export const initialTimelineState: TimelineState = {
     // Plan 5.8a — three new tracks. Order continues from existing 0..5.
     { id: 'track-dissolve', kind: 'dissolve', name: 'Dissolve', muted: false, order: 6 },
     { id: 'track-sunray', kind: 'sunray', name: 'Sunray', muted: false, order: 7 },
-    { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 }
+    { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 },
+    // Plan 5.9a — new media-bearing track. `audio` is a stub only — no
+    // default audio track until Multi-Audio lands in v0.2.
+    { id: 'track-video', kind: 'video', name: 'Video', muted: false, order: 9 }
   ],
   clips: [],
   playhead: { beats: 0, playing: false },

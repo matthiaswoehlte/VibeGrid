@@ -47,22 +47,29 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibegrid-store',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       // v1 → v2: ensure all default TrackKind tracks exist (Plan 5 fix).
       // v2 → v3: same merge re-runs after Plan 5.5 adds the zoom-pulse track.
       // v3 → v4: same merge re-runs after Plan 5.8a adds the text /
-      //          dissolve / sunray tracks. Generic diff-against-defaults
-      //          logic stays untouched.
+      //          dissolve / sunray tracks.
+      // v4 → v5: Plan 5.9a — `Track.order` deprecated, array index is
+      //          authoritative. Sort existing tracks by their legacy
+      //          .order field one last time (preserves v1-v4 user order),
+      //          then append missing default tracks (e.g. the new video
+      //          track) at the end.
       migrate: (persistedState, version) => {
         const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
-        if (version < 4 && s?.timeline) {
+        if (version < 5 && s?.timeline) {
           const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
+          // Sort existing by the (deprecated) order field for v1-v4 stability.
+          existing.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
           const existingKinds = new Set(existing.map((t) => t.kind));
-          const missing = initialTimelineState.tracks.filter((t) => !existingKinds.has(t.kind));
-          s.timeline.tracks = [...existing, ...missing].sort(
-            (a, b) => (a.order ?? 0) - (b.order ?? 0)
+          const missing = initialTimelineState.tracks.filter(
+            (t) => !existingKinds.has(t.kind)
           );
+          // Append new tracks at the end — array index now drives render order.
+          s.timeline.tracks = [...existing, ...missing];
         }
         return s;
       },
