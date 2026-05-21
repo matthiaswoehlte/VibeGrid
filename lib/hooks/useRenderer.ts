@@ -11,6 +11,15 @@ export interface UseRendererOptions {
   getSeekCounter?: () => number;
 }
 
+export interface UseRendererReturn {
+  /** Plan-6-R: read-only accessor into the hook's private ImageBitmap cache.
+   *  The offline export pipeline (`useVideoExporter` → `renderOffline`)
+   *  passes this through so the offline render shares the same loaded
+   *  bitmaps as the live preview — no re-fetch from R2, no duplicate
+   *  decode. Returns `undefined` when the bitmap isn't loaded yet. */
+  getBitmap: (mediaId: string) => ImageBitmap | undefined;
+}
+
 /**
  * Mounts a renderer + image cache + DPR observer against `canvasRef`. The hook
  * is intentionally NOT reactive to `getCurrentTime` / `getSeekCounter` — those
@@ -18,8 +27,15 @@ export interface UseRendererOptions {
  * without the effect tearing the renderer down. The renderer is set up exactly
  * once per canvas mount and torn down on unmount.
  */
-export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRendererOptions): void {
+export function useRenderer({
+  canvasRef,
+  getCurrentTime,
+  getSeekCounter
+}: UseRendererOptions): UseRendererReturn {
   const cacheRef = useRef(createImageBitmapCache());
+  const getBitmapRef = useRef<(mediaId: string) => ImageBitmap | undefined>(
+    (mediaId) => cacheRef.current.get(mediaId)
+  );
   const getCurrentTimeRef = useRef(getCurrentTime);
   const getSeekCounterRef = useRef(getSeekCounter);
   // Keep refs in sync with the latest props — runs on every render, no re-mount.
@@ -97,4 +113,9 @@ export function useRenderer({ canvasRef, getCurrentTime, getSeekCounter }: UseRe
     // canvasRef is a stable RefObject; React guarantees its identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Stable identity across renders — the consumer (useVideoExporter via
+  // page.tsx) shouldn't have to re-wire the offline pipeline every time
+  // the parent re-renders.
+  return { getBitmap: getBitmapRef.current };
 }
