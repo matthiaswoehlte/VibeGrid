@@ -44,4 +44,40 @@ describe('exportState store', () => {
     expect(parsed.state.ui?.exportState).toBeUndefined();
     expect(parsed.state.ui?.zoom).toBeDefined();
   });
+
+  it('default mode is realtime', () => {
+    expect(useAppStore.getState().ui.exportState.mode).toBe('realtime');
+  });
+
+  it('offline progress fields (currentFrame, totalFrames, etaSeconds) round-trip', () => {
+    useAppStore.getState().setExportState({
+      status: 'recording',
+      mode: 'offline',
+      currentFrame: 120,
+      totalFrames: 3600,
+      etaSeconds: 47
+    });
+    const s = useAppStore.getState().ui.exportState;
+    expect(s.mode).toBe('offline');
+    expect(s.currentFrame).toBe(120);
+    expect(s.totalFrames).toBe(3600);
+    expect(s.etaSeconds).toBe(47);
+  });
+
+  it('returning to idle clears offline progress fields too', () => {
+    useAppStore.getState().setExportState({
+      status: 'recording',
+      mode: 'offline',
+      currentFrame: 120,
+      totalFrames: 3600,
+      etaSeconds: 47
+    });
+    useAppStore.getState().setExportState({ status: 'idle' });
+    const s = useAppStore.getState().ui.exportState;
+    expect(s.currentFrame).toBeUndefined();
+    expect(s.totalFrames).toBeUndefined();
+    expect(s.etaSeconds).toBeUndefined();
+    // Mode is intentionally preserved across the idle bounce.
+    expect(s.mode).toBe('offline');
+  });
 });
