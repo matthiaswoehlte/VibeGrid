@@ -65,15 +65,16 @@ describe('createVideoEngine', () => {
     await engine.load('m1', 'https://x/v.mp4');
     const el = engine.getElement('m1')!;
     // Inject the optional API to take the fast path.
-    let cb: (() => void) | null = null;
+    let storedCb: (() => void) | null = null;
     (el as unknown as {
       requestVideoFrameCallback: (fn: () => void) => void;
-    }).requestVideoFrameCallback = (fn) => {
-      cb = fn;
+    }).requestVideoFrameCallback = (fn: () => void) => {
+      storedCb = fn;
     };
     const promise = engine.seekTo('m1', 2.5);
     expect(el.currentTime).toBe(2.5);
-    cb?.();
+    expect(storedCb).not.toBeNull();
+    (storedCb as unknown as () => void)();
     await promise; // resolves
   });
 

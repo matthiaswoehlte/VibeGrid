@@ -16,6 +16,10 @@ export interface RendererDeps {
   getBeatGrid: () => BeatGrid;
   getTimelineState: () => TimelineState;
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
+  /** Plan-5.9b: optional video-frame source per video MediaRef id.
+   *  Returns null when the video isn't loaded yet — the renderer skips
+   *  the draw for that frame rather than throwing. */
+  getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
   /** Increments on each seek so the loop can clear lastFired state. */
   getSeekCounter?: () => number;
   /** Optional — when missing, the loop defaults to Beat Mode (false). The
@@ -71,18 +75,42 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
  * leave letterbox bars when aspect ratios differ). Without this, a 4000-
  * wide source would be drawn at its native size and clip everything.
  */
+/** Returns the intrinsic width/height of a Canvas image source. Handles
+ *  ImageBitmap (.width/.height), HTMLVideoElement (.videoWidth/.videoHeight),
+ *  and other CanvasImageSource shapes via duck-typing. Falls back to 0/0
+ *  which causes the contain-fit math to bail. */
+function intrinsicSize(src: CanvasImageSource): { width: number; height: number } {
+  const anySrc = src as {
+    width?: number;
+    height?: number;
+    videoWidth?: number;
+    videoHeight?: number;
+    naturalWidth?: number;
+    naturalHeight?: number;
+  };
+  if (typeof anySrc.videoWidth === 'number' && typeof anySrc.videoHeight === 'number') {
+    return { width: anySrc.videoWidth, height: anySrc.videoHeight };
+  }
+  if (typeof anySrc.naturalWidth === 'number' && typeof anySrc.naturalHeight === 'number') {
+    return { width: anySrc.naturalWidth, height: anySrc.naturalHeight };
+  }
+  return { width: anySrc.width ?? 0, height: anySrc.height ?? 0 };
+}
+
 function drawImageContain(
   ctx: CanvasRenderingContext2D,
-  bitmap: ImageBitmap,
+  src: CanvasImageSource,
   w: number,
   h: number
 ): void {
-  const scale = Math.min(w / bitmap.width, h / bitmap.height);
-  const sw = bitmap.width * scale;
-  const sh = bitmap.height * scale;
+  const { width, height } = intrinsicSize(src);
+  if (width <= 0 || height <= 0) return;
+  const scale = Math.min(w / width, h / height);
+  const sw = width * scale;
+  const sh = height * scale;
   const sx = (w - sw) / 2;
   const sy = (h - sh) / 2;
-  ctx.drawImage(bitmap, sx, sy, sw, sh);
+  ctx.drawImage(src, sx, sy, sw, sh);
 }
 
 export function createRenderer(deps: RendererDeps): Renderer {
@@ -149,21 +177,43 @@ export function createRenderer(deps: RendererDeps): Renderer {
     // the single active clip. Multi-image-tracks crossfade via
     // computeClipAlpha exactly as before; the difference is the
     // back-to-front order is now driven by the user's track arrangement.
+    //
+    // Plan 5.9b — the same loop body handles `kind === 'video'` tracks.
+    // The draw source is a HTMLVideoElement (via deps.getVideoElement)
+    // instead of an ImageBitmap. drawImageContain accepts both as
+    // CanvasImageSource.
     let firstImageBitmap: ImageBitmap | undefined;
     for (const track of timeline.tracks) {
-      if (track.kind !== 'image' || track.muted) continue;
+      const isImage = track.kind === 'image';
+      const isVideo = track.kind === 'video';
+      if (!isImage && !isVideo) continue;
+      if (track.muted) continue;
       const ic = activeClipOnTrack(track.id, timeline.clips, beats);
-      if (!ic) continue;
-      const bitmap = ic.mediaId ? deps.getImageBitmap(ic.mediaId) : undefined;
-      if (!bitmap) continue;
-      if (!firstImageBitmap) firstImageBitmap = bitmap;
+      if (!ic || !ic.mediaId) continue;
+
+      let source: CanvasImageSource | undefined;
+      if (isImage) {
+        const bm = deps.getImageBitmap(ic.mediaId);
+        if (!bm) continue;
+        source = bm;
+        // FX plugins that need a bitmap (Contour edges, ZoomPulse
+        // scale) take whichever was painted first. Video sources are
+        // intentionally NOT considered — those FX have no path to
+        // operate on a HTMLVideoElement in v0.1.
+        if (!firstImageBitmap) firstImageBitmap = bm;
+      } else {
+        const el = deps.getVideoElement?.(ic.mediaId);
+        if (!el) continue;
+        source = el;
+      }
+
       const alpha = computeClipAlpha(timeline, ic, beats);
       const usesAlpha = alpha < 1;
       if (usesAlpha) {
         ctx!.save();
         ctx!.globalAlpha *= alpha;
       }
-      drawImageContain(ctx!, bitmap, w, h);
+      drawImageContain(ctx!, source, w, h);
       if (usesAlpha) ctx!.restore();
     }
 

@@ -9,6 +9,9 @@ export interface UseRendererOptions {
   canvasRef: React.RefObject<HTMLCanvasElement>;
   getCurrentTime: () => number;
   getSeekCounter?: () => number;
+  /** Plan-5.9b — threaded through to createRenderer's RendererDeps so
+   *  the live preview can draw the current frame of each loaded video. */
+  getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
 }
 
 export interface UseRendererReturn {
@@ -30,7 +33,8 @@ export interface UseRendererReturn {
 export function useRenderer({
   canvasRef,
   getCurrentTime,
-  getSeekCounter
+  getSeekCounter,
+  getVideoElement
 }: UseRendererOptions): UseRendererReturn {
   const cacheRef = useRef(createImageBitmapCache());
   const getBitmapRef = useRef<(mediaId: string) => ImageBitmap | undefined>(
@@ -38,9 +42,11 @@ export function useRenderer({
   );
   const getCurrentTimeRef = useRef(getCurrentTime);
   const getSeekCounterRef = useRef(getSeekCounter);
+  const getVideoElementRef = useRef(getVideoElement);
   // Keep refs in sync with the latest props — runs on every render, no re-mount.
   getCurrentTimeRef.current = getCurrentTime;
   getSeekCounterRef.current = getSeekCounter;
+  getVideoElementRef.current = getVideoElement;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -90,6 +96,8 @@ export function useRenderer({
       getBeatGrid: () => useAppStore.getState().audio.grid,
       getTimelineState: () => useAppStore.getState().timeline,
       getImageBitmap: (mediaId) => cache.get(mediaId),
+      getVideoElement: (mediaId) =>
+        getVideoElementRef.current?.(mediaId) ?? null,
       getSeekCounter: () => getSeekCounterRef.current?.() ?? 0,
       getFlowMode: () => useAppStore.getState().ui.flowMode
     });

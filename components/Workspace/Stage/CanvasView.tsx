@@ -6,7 +6,8 @@ import type { AudioEngine } from '@/lib/audio/engine';
 export function CanvasView({
   engine,
   canvasRef,
-  getBitmapRef
+  getBitmapRef,
+  getVideoElement
 }: {
   engine: AudioEngine | null;
   canvasRef: React.RefObject<HTMLCanvasElement>;
@@ -15,10 +16,13 @@ export function CanvasView({
   getBitmapRef?: React.MutableRefObject<
     ((mediaId: string) => ImageBitmap | undefined) | null
   >;
+  /** Plan-5.9b: per-mediaId HTMLVideoElement source for the renderer. */
+  getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
 }) {
   const { getBitmap } = useRenderer({
     canvasRef,
-    getCurrentTime: () => engine?.getState().currentTime ?? 0
+    getCurrentTime: () => engine?.getState().currentTime ?? 0,
+    getVideoElement
   });
 
   useEffect(() => {

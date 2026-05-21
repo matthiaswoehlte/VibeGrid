@@ -8,6 +8,7 @@ import { renderOffline } from '@/lib/export/offline-render';
 import { makeFilename } from '@/lib/export/filename';
 import { activeImageClips } from '@/lib/timeline/selectors';
 import type { AudioEngine } from '@/lib/audio/engine';
+import type { VideoEngine } from '@/lib/video/engine';
 
 export interface UseVideoExporterArgs {
   canvas: HTMLCanvasElement | null;
@@ -18,6 +19,10 @@ export interface UseVideoExporterArgs {
    *  the renderer hasn't mounted yet — the offline path treats that as
    *  "no bitmaps available" and falls back to the background-only render. */
   getImageBitmap?: (mediaId: string) => ImageBitmap | undefined;
+  /** Plan-5.9b: offline pipeline awaits `seekAllTo` per frame so the
+   *  encoded MP4 is frame-accurate against the source videos. Projects
+   *  with no video clips: this is a fast no-op. */
+  videoEngine?: VideoEngine | null;
 }
 
 const REVOKE_DELAY_MS = 10_000;

@@ -7,20 +7,26 @@ import { ClearProjectButton } from './ClearProjectButton';
 import { FlowModeToggle } from './FlowModeToggle';
 import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
 import type { AudioEngine } from '@/lib/audio/engine';
+import type { VideoEngine } from '@/lib/video/engine';
 
 export function TopBar({
   engine,
   canvasRef,
-  getImageBitmap
+  getImageBitmap,
+  videoEngine
 }: {
   engine: AudioEngine | null;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   getImageBitmap?: (mediaId: string) => ImageBitmap | undefined;
+  /** Plan-5.9b — threaded through to renderOffline so each frame's
+   *  video element settles on the right time before encoding. */
+  videoEngine?: VideoEngine | null;
 }) {
   const exporter = useVideoExporter({
     canvas: canvasRef.current,
     audioEngine: engine,
-    getImageBitmap
+    getImageBitmap,
+    videoEngine
   });
   return (
     <header className="h-12 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">

@@ -15,13 +15,15 @@ const DEFAULT_TIMELINE_PX = 256;
 export function Workspace({
   engine,
   canvasRef,
-  getBitmapRef
+  getBitmapRef,
+  getVideoElement
 }: {
   engine: AudioEngine | null;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   getBitmapRef?: React.MutableRefObject<
     ((mediaId: string) => ImageBitmap | undefined) | null
   >;
+  getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
 }) {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_PX);
@@ -57,7 +59,12 @@ export function Workspace({
       </aside>
       <main className="flex-1 flex flex-col min-w-0">
         <div className="flex-1 min-h-0 relative">
-          <Stage engine={engine} canvasRef={canvasRef} getBitmapRef={getBitmapRef} />
+          <Stage
+            engine={engine}
+            canvasRef={canvasRef}
+            getBitmapRef={getBitmapRef}
+            getVideoElement={getVideoElement}
+          />
           <button
             type="button"
             aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}
