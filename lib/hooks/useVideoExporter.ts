@@ -6,7 +6,7 @@ import { createVideoExporter, type VideoExporter } from '@/lib/export/recorder';
 import { isWebCodecsSupported } from '@/lib/export/webcodecs';
 import { renderOffline } from '@/lib/export/offline-render';
 import { makeFilename } from '@/lib/export/filename';
-import { activeImageClips } from '@/lib/timeline/selectors';
+import { hasVisualClipAt } from '@/lib/timeline/selectors';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
 
@@ -200,8 +200,7 @@ export function useVideoExporter({
             return;
           }
           const timeline = useAppStore.getState().timeline;
-          const imageClips = activeImageClips(timeline, 0);
-          if (imageClips.length === 0) {
+          if (!hasVisualClipAt(timeline, 0)) {
             setExportState({
               status: 'error',
               mode: 'offline',

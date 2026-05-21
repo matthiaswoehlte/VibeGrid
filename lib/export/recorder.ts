@@ -1,6 +1,6 @@
 import fixWebmDuration from 'fix-webm-duration';
 import { isClient } from '@/lib/utils/is-client';
-import { activeImageClips } from '@/lib/timeline/selectors';
+import { hasVisualClipAt } from '@/lib/timeline/selectors';
 import { pickCodec } from './codec';
 import { makeFilename } from './filename';
 import type { ExportState } from './types';
@@ -57,8 +57,7 @@ export function createVideoExporter(deps: VideoExporterDeps): VideoExporter | nu
       deps.setExportState({ status: 'error', errorCode: 'no-audio' });
       return;
     }
-    const imageClips = activeImageClips(deps.getTimeline(), 0);
-    if (imageClips.length === 0) {
+    if (!hasVisualClipAt(deps.getTimeline(), 0)) {
       deps.setExportState({ status: 'error', errorCode: 'no-image' });
       return;
     }

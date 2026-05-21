@@ -1,6 +1,6 @@
 'use client';
 import { useAppStore } from '@/lib/store';
-import { activeImageClips } from '@/lib/timeline/selectors';
+import { hasVisualClipAt } from '@/lib/timeline/selectors';
 import { Button } from '@/components/ui/Button';
 
 export function ExportButton({ onStart }: { onStart: () => void }) {
@@ -9,13 +9,13 @@ export function ExportButton({ onStart }: { onStart: () => void }) {
   const timeline = useAppStore((s) => s.timeline);
 
   const hasAudio = mediaRefs.some((m) => m.kind === 'audio' && m.url);
-  const hasImageAtZero = activeImageClips(timeline, 0).length > 0;
+  const hasVisualAtZero = hasVisualClipAt(timeline, 0);
   const busy = status !== 'idle';
-  const disabled = busy || !hasAudio || !hasImageAtZero;
+  const disabled = busy || !hasAudio || !hasVisualAtZero;
 
   let title = 'Export the project as WebM';
   if (!hasAudio) title = 'Upload an audio file first';
-  else if (!hasImageAtZero) title = 'Place an image clip starting at beat 0';
+  else if (!hasVisualAtZero) title = 'Place an image or video clip starting at beat 0';
   else if (busy) title = 'Export in progress';
 
   return (

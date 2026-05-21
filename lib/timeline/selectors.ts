@@ -55,6 +55,21 @@ export function activeImageClips(state: TimelineState, beats: number): Clip[] {
   return out;
 }
 
+/**
+ * Plan 5.9b — Export-gate helper. The export pre-checks need to know
+ * if there's ANY visual source (image OR video) at the given beat —
+ * `activeImageClips` alone misses video clips and locks the Export
+ * button when the user has only video at beat 0.
+ */
+export function hasVisualClipAt(state: TimelineState, beats: number): boolean {
+  return state.clips.some(
+    (c) =>
+      (c.kind === 'image' || c.kind === 'video') &&
+      beats >= c.startBeat &&
+      beats < c.startBeat + c.lengthBeats
+  );
+}
+
 export function activeFxClipsByKind(
   state: TimelineState,
   beats: number
