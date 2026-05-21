@@ -1,7 +1,7 @@
 import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
-import { activeImageClip, activeImageClips, activeFxClipsByKind } from '@/lib/timeline/selectors';
+import { activeClipOnTrack } from '@/lib/timeline/selectors';
 import { resolveClipParams } from '@/lib/automation/resolve';
 import { computeClipAlpha } from './blend';
 import { getPlugin, listPluginsByKind } from './registry';
@@ -143,13 +143,20 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const flowMode = deps.getFlowMode?.() ?? false;
 
     const timeline = deps.getTimelineState();
-    // Draw EVERY active image clip — overlapping image clips crossfade via
-    // computeClipAlpha. FX that need a bitmap (Contour, ZoomPulse) still use
-    // the first active clip's bitmap (`imageBitmap` below).
-    const imageClipsActive = activeImageClips(timeline, beats);
-    for (const ic of imageClipsActive) {
+
+    // Plan 5.9a — iterate `timeline.tracks` in array order (now the
+    // authoritative render order). Per track ask `activeClipOnTrack` for
+    // the single active clip. Multi-image-tracks crossfade via
+    // computeClipAlpha exactly as before; the difference is the
+    // back-to-front order is now driven by the user's track arrangement.
+    let firstImageBitmap: ImageBitmap | undefined;
+    for (const track of timeline.tracks) {
+      if (track.kind !== 'image' || track.muted) continue;
+      const ic = activeClipOnTrack(track.id, timeline.clips, beats);
+      if (!ic) continue;
       const bitmap = ic.mediaId ? deps.getImageBitmap(ic.mediaId) : undefined;
       if (!bitmap) continue;
+      if (!firstImageBitmap) firstImageBitmap = bitmap;
       const alpha = computeClipAlpha(timeline, ic, beats);
       const usesAlpha = alpha < 1;
       if (usesAlpha) {
@@ -160,18 +167,22 @@ export function createRenderer(deps: RendererDeps): Renderer {
       if (usesAlpha) ctx!.restore();
     }
 
-    // FX path still needs a single bitmap reference. Use the first active.
-    const imageClip = activeImageClip(timeline, beats);
-    const imageBitmap = imageClip?.mediaId ? deps.getImageBitmap(imageClip.mediaId) : undefined;
-
-    const fxByKind = activeFxClipsByKind(timeline, beats);
-    const trackMuteMap = new Map(timeline.tracks.map((t) => [t.id, t.muted]));
+    // FX plugins that need a bitmap (Contour edges, ZoomPulse re-draw)
+    // take whichever was painted first — same back-compat semantic as
+    // the single-track world.
+    const imageBitmap = firstImageBitmap;
 
     for (const kind of RENDER_ORDER) {
       const sliceKind = KIND_TO_TRACK_KIND[kind];
-      const clips = fxByKind[sliceKind] ?? [];
-      for (const clip of clips) {
-        if (trackMuteMap.get(clip.trackId)) continue;
+      // Plan 5.9a — multi-track per kind. Within a kind, render order is
+      // the track-array order. Each track contributes at most one clip
+      // (overlap rejection enforced at addClip time).
+      const tracksOfKind = timeline.tracks.filter(
+        (t) => t.kind === sliceKind && !t.muted
+      );
+      for (const track of tracksOfKind) {
+        const clip = activeClipOnTrack(track.id, timeline.clips, beats);
+        if (!clip) continue;
 
         const plugin: FxPlugin<unknown> | undefined =
           (clip.fxId ? getPlugin(clip.fxId) : undefined) ?? listPluginsByKind(kind)[0];

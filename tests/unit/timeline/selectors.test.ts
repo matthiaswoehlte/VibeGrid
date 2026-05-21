@@ -5,9 +5,11 @@ import {
   activeClipsAt,
   activeImageClip,
   activeFxClipsByKind,
+  activeClipOnTrack,
   totalBeats,
   beatsToTimecode
 } from '@/lib/timeline/selectors';
+import type { Clip } from '@/lib/timeline/types';
 import { makeClip, makeState } from './_helpers';
 
 describe('snapBeats', () => {
@@ -217,5 +219,38 @@ describe('beatsToTimecode', () => {
 
   it('handles non-default BPMs', () => {
     expect(beatsToTimecode(60, 60)).toBe('1:00');
+  });
+});
+
+describe('activeClipOnTrack (Plan 5.9a)', () => {
+  const clips: Clip[] = [
+    { id: 'a', trackId: 't-image-1', kind: 'image', startBeat: 0, lengthBeats: 8, label: 'A' },
+    { id: 'b', trackId: 't-image-2', kind: 'image', startBeat: 4, lengthBeats: 4, label: 'B' },
+    { id: 'c', trackId: 't-pulse', kind: 'pulse', fxId: 'pulse', startBeat: 2, lengthBeats: 2, label: 'C' }
+  ];
+
+  it('returns the active clip on the given track', () => {
+    expect(activeClipOnTrack('t-image-1', clips, 5)?.id).toBe('a');
+    expect(activeClipOnTrack('t-image-2', clips, 5)?.id).toBe('b');
+  });
+
+  it('returns undefined when no clip is active on the track at the beat', () => {
+    expect(activeClipOnTrack('t-image-1', clips, 10)).toBeUndefined();
+    expect(activeClipOnTrack('t-image-2', clips, 0)).toBeUndefined();
+  });
+
+  it('ignores clips that belong to other tracks even if the beat matches', () => {
+    expect(activeClipOnTrack('t-pulse', clips, 5)).toBeUndefined();
+    expect(activeClipOnTrack('t-pulse', clips, 3)?.id).toBe('c');
+  });
+
+  it('uses half-open interval [startBeat, startBeat+lengthBeats)', () => {
+    // A spans [0, 8) → beat 8 is NOT active anymore.
+    expect(activeClipOnTrack('t-image-1', clips, 7.999)?.id).toBe('a');
+    expect(activeClipOnTrack('t-image-1', clips, 8)).toBeUndefined();
+  });
+
+  it('returns undefined for an unknown trackId (no throw)', () => {
+    expect(activeClipOnTrack('nope', clips, 5)).toBeUndefined();
   });
 });

@@ -79,6 +79,31 @@ export function activeFxClipsByKind(
   return result;
 }
 
+/**
+ * Plan 5.9a — pure selector for the active clip on a specific track at
+ * a given beat. The render loop iterates `tracks[]` and asks this per
+ * track instead of using the global by-kind selectors. With Multi-Track,
+ * a single beat may have multiple active clips of the same kind across
+ * different tracks; this keeps each track's active clip cleanly
+ * isolated.
+ *
+ * Overlap rule (existing): only one clip can be active per track per
+ * beat — `addClip` rejects overlaps via `lib/timeline/operations.ts`.
+ * The first match wins defensively.
+ */
+export function activeClipOnTrack(
+  trackId: string,
+  clips: Clip[],
+  beat: number
+): Clip | undefined {
+  return clips.find(
+    (c) =>
+      c.trackId === trackId &&
+      beat >= c.startBeat &&
+      beat < c.startBeat + c.lengthBeats
+  );
+}
+
 export function totalBeats(state: TimelineState): number {
   let max = 0;
   for (const c of state.clips) {
