@@ -12,16 +12,20 @@ import { describe, it, expect } from 'vitest';
  * migrator, and asserting that the new tracks were added.
  */
 
-import { initialTimelineState } from '@/lib/store/timeline-slice';
+import { INITIAL_TRACKS_V5 } from '@/lib/store/timeline-slice';
 import type { Track } from '@/lib/timeline/types';
 
-// The migrate function is internal to the persist config. We re-derive
-// its behaviour here against the same `initialTimelineState` source it
-// uses internally so the test stays robust if the function moves.
+/**
+ * The migrate function is internal to the persist config. We re-derive
+ * its behaviour here against the v4-era append source (`INITIAL_TRACKS_V5`
+ * — frozen since Plan 5.9c). Pre-5.9c this used `initialTimelineState`,
+ * which now holds only the 4-lane v6 default and would lose all FX
+ * appends.
+ */
 function migrateV3ToV4(persisted: { timeline: { tracks: Track[]; clips: unknown[] } }) {
   const existing = persisted.timeline.tracks;
   const existingKinds = new Set(existing.map((t) => t.kind));
-  const missing = initialTimelineState.tracks.filter(
+  const missing = INITIAL_TRACKS_V5.filter(
     (t) => !existingKinds.has(t.kind)
   );
   return {
@@ -73,14 +77,12 @@ describe('Store migration v3 → v4 (Plan 5.8a)', () => {
   it('idempotent: running on a v4 snapshot is a no-op for the track count', () => {
     const v4Snapshot = {
       timeline: {
-        tracks: [...initialTimelineState.tracks] as Track[],
+        tracks: [...INITIAL_TRACKS_V5] as Track[],
         clips: []
       }
     };
     const migrated = migrateV3ToV4(v4Snapshot);
-    expect(migrated.timeline.tracks.length).toBe(
-      initialTimelineState.tracks.length
-    );
+    expect(migrated.timeline.tracks.length).toBe(INITIAL_TRACKS_V5.length);
   });
 });
 

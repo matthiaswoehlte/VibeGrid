@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { toast } from 'sonner';
 import type { AppState } from './types';
 import type { TimelineState, Track, TrackKind } from '@/lib/timeline/types';
 import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
@@ -68,24 +69,18 @@ export const INITIAL_TRACKS_V5: ReadonlyArray<Track> = Object.freeze([
   { id: 'track-video', kind: 'video', name: 'Video', muted: false, order: 9 }
 ] as Track[]);
 
-// Default tracks — one per TrackKind per Spec §6. Without these, the timeline
-// renders no lanes and there's nowhere to drop clips. Order matches visual
-// stacking (image at top, FX layered above per RENDER_ORDER).
+// Default tracks — one per TrackKind. Plan 5.9c collapsed eight
+// per-FX-plugin lanes into one generic `'fx'` lane; users can add
+// more FX lanes via "+ Track hinzufügen" if they want visual grouping
+// or separate mute scopes. `audio` is a STUB lane (visible but
+// `addTrack('audio')` rejects with a toast until Multi-Audio lands
+// in Plan 5.9d). Array index drives render order.
 export const initialTimelineState: TimelineState = {
   tracks: [
-    { id: 'track-image', kind: 'image', name: 'Image', muted: false, order: 0 },
-    { id: 'track-contour', kind: 'contour', name: 'Contour', muted: false, order: 1 },
-    { id: 'track-zoom-pulse', kind: 'zoom-pulse', name: 'Zoom Pulse', muted: false, order: 2 },
-    { id: 'track-sweep', kind: 'sweep', name: 'Sweep', muted: false, order: 3 },
-    { id: 'track-particles', kind: 'particles', name: 'Particles', muted: false, order: 4 },
-    { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 5 },
-    // Plan 5.8a — three new tracks. Order continues from existing 0..5.
-    { id: 'track-dissolve', kind: 'dissolve', name: 'Dissolve', muted: false, order: 6 },
-    { id: 'track-sunray', kind: 'sunray', name: 'Sunray', muted: false, order: 7 },
-    { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 },
-    // Plan 5.9a — new media-bearing track. `audio` is a stub only — no
-    // default audio track until Multi-Audio lands in v0.2.
-    { id: 'track-video', kind: 'video', name: 'Video', muted: false, order: 9 }
+    { id: 'track-image', kind: 'image', name: 'Image', muted: false },
+    { id: 'track-video', kind: 'video', name: 'Video', muted: false },
+    { id: 'track-audio', kind: 'audio', name: 'Audio', muted: false },
+    { id: 'track-fx-1', kind: 'fx',    name: 'FX',    muted: false }
   ],
   clips: [],
   playhead: { beats: 0, playing: false },
@@ -164,9 +159,14 @@ export const createTimelineSlice: StateCreator<
         set({ timeline: ops.setMuted(get().timeline, trackId, muted) }),
 
       // Plan 5.9a — dynamic multi-track actions.
+      // Plan 5.9c — `'audio'` now soft-rejects via toast (no throw) so
+      // the UI doesn't have to wrap the call in try/catch. The default
+      // FX lane is mounted by initialTimelineState; subsequent
+      // addTrack('fx') get suffixed labels via defaultLabelFor.
       addTrack: (kind, label) => {
         if (kind === 'audio') {
-          throw new Error('Multi-Audio-Tracks: v0.2 (addTrack rejected)');
+          toast.error('Multi-Audio-Tracks: kommt mit Plan 5.9d');
+          return;
         }
         const id =
           typeof crypto !== 'undefined' && crypto.randomUUID

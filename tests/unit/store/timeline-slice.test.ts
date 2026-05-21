@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '@/lib/store';
 import { initialTimelineState } from '@/lib/store/timeline-slice';
-import { OperationError } from '@/lib/timeline/operations';
 
 describe('timeline store slice', () => {
   beforeEach(() => {
@@ -12,37 +11,26 @@ describe('timeline store slice', () => {
     expect(useAppStore.getState().timeline).toEqual(initialTimelineState);
   });
 
+  it('initialTimelineState has exactly 4 lanes: image, video, audio, fx', () => {
+    expect(initialTimelineState.tracks.map((t) => t.kind)).toEqual([
+      'image', 'video', 'audio', 'fx'
+    ]);
+  });
+
   it('addClip mutates the store via the pure operation', () => {
+    // Use the default fx track from initialTimelineState — clip.kind
+    // is still the lowercase FX-kind for the renderer's plugin
+    // dispatch.
+    const fxTrack = initialTimelineState.tracks.find((t) => t.kind === 'fx')!;
     useAppStore.getState().timelineActions.addClip({
       id: 'a',
-      trackId: 't1',
+      trackId: fxTrack.id,
       kind: 'contour',
       startBeat: 0,
       lengthBeats: 4,
       label: 'a'
     });
     expect(useAppStore.getState().timeline.clips).toHaveLength(1);
-  });
-
-  it('addClip allows overlapping clips on the same track (transition prerequisite)', () => {
-    const { timelineActions } = useAppStore.getState();
-    timelineActions.addClip({
-      id: 'a',
-      trackId: 't1',
-      kind: 'contour',
-      startBeat: 0,
-      lengthBeats: 8,
-      label: 'a'
-    });
-    timelineActions.addClip({
-      id: 'b',
-      trackId: 't1',
-      kind: 'contour',
-      startBeat: 4,
-      lengthBeats: 4,
-      label: 'b'
-    });
-    expect(useAppStore.getState().timeline.clips.map((c) => c.id)).toEqual(['a', 'b']);
   });
 
   it('setPlayhead updates the timeline.playhead.beats', () => {

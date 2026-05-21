@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import { initialTimelineState } from '@/lib/store/timeline-slice';
 
@@ -12,18 +13,30 @@ beforeEach(() => {
   }));
 });
 
-describe('Store Actions — addTrack (Plan 5.9a)', () => {
-  it('adds a new track with auto-generated id and default label', () => {
+describe('Store Actions — addTrack (Plan 5.9a / 5.9c)', () => {
+  it('adds a new fx track with auto-generated id and suffix label', () => {
     const before = useAppStore.getState().timeline.tracks.length;
-    useAppStore.getState().timelineActions.addTrack('contour');
+    useAppStore.getState().timelineActions.addTrack('fx');
     const tracks = useAppStore.getState().timeline.tracks;
     expect(tracks.length).toBe(before + 1);
     const newTrack = tracks[tracks.length - 1];
-    expect(newTrack.kind).toBe('contour');
-    // Default Contour already exists → numbering kicks in for the duplicate.
-    expect(newTrack.name).toBe('Contour 2');
+    expect(newTrack.kind).toBe('fx');
+    // initialTimelineState already has one FX lane named "FX" → suffix kicks in.
+    expect(newTrack.name).toBe('FX 2');
     expect(newTrack.id.length).toBeGreaterThan(0);
     expect(newTrack.muted).toBe(false);
+  });
+
+  it('repeated addTrack("fx") yields FX 2 / FX 3 / FX 4', () => {
+    const { addTrack } = useAppStore.getState().timelineActions;
+    addTrack('fx');
+    addTrack('fx');
+    addTrack('fx');
+    const fxNames = useAppStore
+      .getState()
+      .timeline.tracks.filter((t) => t.kind === 'fx')
+      .map((t) => t.name);
+    expect(fxNames).toEqual(['FX', 'FX 2', 'FX 3', 'FX 4']);
   });
 
   it('uses the explicit label when one is provided', () => {
@@ -32,20 +45,20 @@ describe('Store Actions — addTrack (Plan 5.9a)', () => {
     expect(tracks[tracks.length - 1].name).toBe('Hintergrund');
   });
 
-  it("rejects addTrack('audio') — Multi-Audio is v0.2", () => {
-    expect(() =>
-      useAppStore.getState().timelineActions.addTrack('audio')
-    ).toThrow(/Multi-Audio/);
-    // Track list unchanged.
-    expect(useAppStore.getState().timeline.tracks.length).toBe(
-      initialTimelineState.tracks.length
-    );
+  it('addTrack("audio") soft-rejects via toast — Multi-Audio is v0.2', () => {
+    const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => 'mock');
+    const before = useAppStore.getState().timeline.tracks.length;
+    // Does NOT throw — soft-rejection via toast.
+    useAppStore.getState().timelineActions.addTrack('audio');
+    expect(useAppStore.getState().timeline.tracks.length).toBe(before);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Multi-Audio'));
+    errorSpy.mockRestore();
   });
 
   it('appends new tracks at the end (array index drives render order)', () => {
-    useAppStore.getState().timelineActions.addTrack('text');
+    useAppStore.getState().timelineActions.addTrack('fx');
     const tracks = useAppStore.getState().timeline.tracks;
-    expect(tracks[tracks.length - 1].kind).toBe('text');
+    expect(tracks[tracks.length - 1].kind).toBe('fx');
   });
 });
 
@@ -59,16 +72,16 @@ describe('Store Actions — removeTrack (Plan 5.9a)', () => {
   });
 
   it("throws when the track still has clips — toast.error in UI layer", () => {
-    const pulseTrack = useAppStore
+    const fxTrack = useAppStore
       .getState()
-      .timeline.tracks.find((t) => t.kind === 'pulse')!;
+      .timeline.tracks.find((t) => t.kind === 'fx')!;
     useAppStore.setState((s) => ({
       timeline: {
         ...s.timeline,
         clips: [
           {
             id: 'p1',
-            trackId: pulseTrack.id,
+            trackId: fxTrack.id,
             kind: 'pulse',
             fxId: 'pulse',
             startBeat: 0,
@@ -79,7 +92,7 @@ describe('Store Actions — removeTrack (Plan 5.9a)', () => {
       }
     }));
     expect(() =>
-      useAppStore.getState().timelineActions.removeTrack(pulseTrack.id)
+      useAppStore.getState().timelineActions.removeTrack(fxTrack.id)
     ).toThrow(/Clips/);
   });
 
@@ -101,12 +114,11 @@ describe('Store Actions — reorderTracks (Plan 5.9a)', () => {
 
   it('appends tracks NOT mentioned in the order list at the end', () => {
     const tracks = useAppStore.getState().timeline.tracks;
-    const partial = [tracks[2].id, tracks[0].id]; // Only two of ten
+    const partial = [tracks[2].id, tracks[0].id];
     useAppStore.getState().timelineActions.reorderTracks(partial);
     const after = useAppStore.getState().timeline.tracks;
     expect(after[0].id).toBe(tracks[2].id);
     expect(after[1].id).toBe(tracks[0].id);
-    // The remaining 8 tracks are at indices 2..9, in their original order.
     expect(after.length).toBe(tracks.length);
   });
 
