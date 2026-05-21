@@ -90,3 +90,55 @@ describe('blend lifecycle — removeClip', () => {
     expect(b.params?.[BLEND_KEY]).toBeUndefined();
   });
 });
+
+describe('blend lifecycle — cross-kind overlap on fx tracks (Plan 5.9c)', () => {
+  it('existing __blend is removed when the overlap is cross-kind', () => {
+    // Seed: pulse + contour on the same fx track, overlapping.
+    // The pulse clip carries a stale __blend from when it overlapped
+    // another pulse clip that's since been removed.
+    useAppStore.setState((s) => ({
+      timeline: {
+        ...s.timeline,
+        clips: [
+          {
+            id: 'cross-pulse',
+            trackId: 'track-fx-1',
+            kind: 'pulse',
+            fxId: 'pulse',
+            startBeat: 0,
+            lengthBeats: 8,
+            label: 'pulse',
+            params: {
+              [BLEND_KEY]: {
+                type: 'curve',
+                interpolation: 'linear',
+                points: [
+                  { beat: 4, value: 0 },
+                  { beat: 8, value: 1 }
+                ]
+              }
+            }
+          },
+          {
+            id: 'cross-contour',
+            trackId: 'track-fx-1',
+            kind: 'contour',
+            fxId: 'contour',
+            startBeat: 4,
+            lengthBeats: 8,
+            label: 'contour'
+          }
+        ] as Clip[]
+      }
+    }));
+    // Touch the track via any operation that triggers regeneration —
+    // moveClip on the contour clip suffices.
+    useAppStore.getState().timelineActions.moveClip('cross-contour', 5);
+    const contour = useAppStore.getState().timeline.clips.find((c) => c.id === 'cross-contour')!;
+    expect(contour.params?.[BLEND_KEY]).toBeUndefined();
+    // The pulse clip's stale __blend has also been cleared because the
+    // walk re-evaluates EVERY clip on the affected track.
+    const pulse = useAppStore.getState().timeline.clips.find((c) => c.id === 'cross-pulse')!;
+    expect(pulse.params?.[BLEND_KEY]).toBeUndefined();
+  });
+});

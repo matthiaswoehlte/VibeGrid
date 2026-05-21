@@ -23,7 +23,13 @@ export function regenerateBlendsForTrack(
         ? (existingBlend as AutomationCurve<number>).interpolation
         : 'linear';
 
-    if (!incoming) {
+    // Plan 5.9c — cross-kind overlaps don't crossfade meaningfully.
+    // `params.__blend` interpolates plugin parameters; FX plugins of
+    // different kinds have disjoint parameter sets so any crossfade
+    // would just spread the wrong values across the wrong plugin.
+    // Treat cross-kind overlap like "no incoming": delete any stale
+    // `__blend` and return.
+    if (!incoming || incoming.kind !== c.kind) {
       if (!(BLEND_KEY in existingParams)) return c;
       const nextParams: Record<string, unknown> = { ...existingParams };
       delete nextParams[BLEND_KEY];
