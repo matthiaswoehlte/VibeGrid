@@ -15,6 +15,8 @@ import type { TrackKind } from '@/lib/timeline/types';
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
+import { TrackHeader } from './TrackHeader';
+import { AddTrackButton } from './AddTrackButton';
 
 const TRACK_HEIGHT = 32;
 const BEAT_PX_BASE = 40;
@@ -200,12 +202,7 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
                 className="flex border-b border-[var(--border)]"
                 style={{ height: TRACK_HEIGHT, width: TRACK_LABEL_WIDTH + totalBeats * px }}
               >
-                <div
-                  className="shrink-0 sticky left-0 z-20 bg-[var(--surface-1)] border-r border-[var(--border)] px-2 flex items-center text-[10px] uppercase tracking-wider text-[var(--text-muted)] select-none"
-                  style={{ width: TRACK_LABEL_WIDTH }}
-                >
-                  {t.name}
-                </div>
+                <TrackHeader track={t} width={TRACK_LABEL_WIDTH} />
                 <div
                   className="relative shrink-0"
                   style={{ width: totalBeats * px }}
@@ -232,6 +229,12 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
             </div>
           );
         })}
+        <div
+          className="px-2 py-2 border-b border-[var(--border)]"
+          style={{ width: TRACK_LABEL_WIDTH + totalBeats * px }}
+        >
+          <AddTrackButton />
+        </div>
       </div>
     </DndContext>
   );
