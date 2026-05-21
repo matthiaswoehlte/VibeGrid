@@ -14,7 +14,10 @@ describe('FxPlugin contract', () => {
       expect(typeof plugin.id).toBe('string');
       expect(plugin.id.length).toBeGreaterThan(0);
       expect(typeof plugin.name).toBe('string');
-      expect(['Contour', 'Pulse', 'Sweep', 'Particle', 'ZoomPulse']).toContain(plugin.kind);
+      expect([
+        'Contour', 'Pulse', 'Sweep', 'Particle', 'ZoomPulse',
+        'Text', 'Dissolve', 'Sunray'
+      ]).toContain(plugin.kind);
       expect(['half-bar', 'beat', 'bar', 'two-bar']).toContain(plugin.defaultTrigger);
       expect(typeof plugin.paramSchema).toBe('object');
       expect(typeof plugin.getDefaultParams).toBe('function');
@@ -38,12 +41,23 @@ describe('FxPlugin contract', () => {
     }
   });
 
-  it('registers exactly 5 v0.1 plugins', () => {
-    expect(listPlugins().length).toBe(5);
+  it('registers exactly 8 plugins (v0.1 + Plan 5.8a)', () => {
+    expect(listPlugins().length).toBe(8);
     expect(
       listPlugins()
         .map((p) => p.id)
         .sort()
-    ).toEqual(['contour', 'particles', 'pulse', 'sweep', 'zoom-pulse'].sort());
+    ).toEqual(
+      [
+        'contour',
+        'dissolve',
+        'particles',
+        'pulse',
+        'sunray',
+        'sweep',
+        'text',
+        'zoom-pulse'
+      ].sort()
+    );
   });
 });

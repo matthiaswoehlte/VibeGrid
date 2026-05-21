@@ -4,11 +4,14 @@ import { sweepPlugin } from './sweep';
 import { particlesPlugin } from './particles';
 import { contourPlugin } from './contour';
 import { zoomPulsePlugin } from './zoom-pulse';
+import { textPlugin } from './text';
+import { dissolvePlugin } from './dissolve';
+import { sunrayPlugin } from './sunray';
 
 let registered = false;
 
 /**
- * Registers the five v0.1 plugins. Called once by createRenderer.
+ * Registers the v0.1 + Plan-5.8a plugins. Called once by createRenderer.
  * Idempotent — safe to call multiple times across HMR reloads.
  */
 export function registerBuiltInPlugins(): void {
@@ -18,6 +21,10 @@ export function registerBuiltInPlugins(): void {
   register(particlesPlugin);
   register(contourPlugin);
   register(zoomPulsePlugin);
+  // Plan 5.8a — three new FX plugins.
+  register(textPlugin);
+  register(dissolvePlugin);
+  register(sunrayPlugin);
   registered = true;
 }
 
