@@ -1,18 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { initialTimelineState } from '@/lib/store/timeline-slice';
+import { INITIAL_TRACKS_V5 } from '@/lib/store/timeline-slice';
 import type { Track } from '@/lib/timeline/types';
 
 /**
  * Plan-5.9a Task 2 — verify the v4 → v5 migration adds the new video
- * track without dropping any v4 user state. We re-derive the migrate
- * function locally against the same `initialTimelineState` source it
- * uses so the test stays robust if the function signature shifts.
+ * track without dropping any v4 user state.
+ *
+ * Plan 5.9c migration note: the migration target switched from
+ * `initialTimelineState.tracks` (now 4 lanes after FX consolidation)
+ * to the frozen `INITIAL_TRACKS_V5` constant (the v4-era 10-lane
+ * default). The test continues to verify the v4 → v5 behaviour;
+ * the v5 → v6 FX-kind rewrite is covered separately in
+ * `migration-v5-v6.test.ts`.
  */
 function migrateV4ToV5(persisted: { timeline: { tracks: Track[]; clips: unknown[] } }) {
   const existing = [...persisted.timeline.tracks];
   existing.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const existingKinds = new Set(existing.map((t) => t.kind));
-  const missing = initialTimelineState.tracks.filter(
+  const missing = INITIAL_TRACKS_V5.filter(
     (t) => !existingKinds.has(t.kind)
   );
   return {
@@ -90,13 +95,11 @@ describe('Store migration v4 → v5 (Plan 5.9a)', () => {
   it('idempotent: running on a v5 snapshot is a no-op for track count', () => {
     const v5Snapshot = {
       timeline: {
-        tracks: [...initialTimelineState.tracks] as Track[],
+        tracks: [...INITIAL_TRACKS_V5] as Track[],
         clips: []
       }
     };
     const migrated = migrateV4ToV5(v5Snapshot);
-    expect(migrated.timeline.tracks.length).toBe(
-      initialTimelineState.tracks.length
-    );
+    expect(migrated.timeline.tracks.length).toBe(INITIAL_TRACKS_V5.length);
   });
 });

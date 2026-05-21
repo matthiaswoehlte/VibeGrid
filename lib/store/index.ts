@@ -1,11 +1,47 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { AppState } from './types';
-import { createTimelineSlice, initialTimelineState } from './timeline-slice';
+import { createTimelineSlice, INITIAL_TRACKS_V5 } from './timeline-slice';
 import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
 import type { Track } from '@/lib/timeline/types';
+import { TRACK_FX_KINDS } from '@/lib/timeline/plugin-mapping';
 import { EXPORT_INITIAL_STATE, reduceExportState } from '@/lib/export/state-machine';
+
+/** Plan 5.9c — exported so tests can exercise it without standing up
+ *  the full persisted store. */
+export function migrate(persistedState: unknown, version: number): unknown {
+  const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
+  if (!s?.timeline) return s;
+
+  // v4 → v5: legacy order-sort + append missing default tracks.
+  // GATED so it only fires for genuine v4 snapshots — a fresh v5
+  // snapshot must NOT trigger the append (else after 5.9c shrinks
+  // `initialTimelineState` to 4 lanes, the snapshot already has the
+  // v5 FX tracks and nothing should be appended).
+  if (version < 5) {
+    const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
+    existing.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const existingKinds = new Set(existing.map((t) => t.kind));
+    const missing = (INITIAL_TRACKS_V5 as readonly Track[]).filter(
+      (t) => !existingKinds.has(t.kind)
+    );
+    s.timeline.tracks = [...existing, ...missing];
+  }
+
+  // v5 → v6: rewrite every legacy FX-kind track to `kind: 'fx'`.
+  // Track.name and Track.id preserved (user-renamed lanes survive).
+  // Clips are untouched — `clip.kind` already holds the lowercase
+  // FX-kind that the renderer consumes for plugin dispatch.
+  if (version < 6) {
+    const fxSet = new Set<string>(TRACK_FX_KINDS);
+    s.timeline.tracks = (s.timeline.tracks ?? []).map((t) =>
+      fxSet.has(t.kind) ? { ...t, kind: 'fx' as Track['kind'] } : t
+    );
+  }
+
+  return s;
+}
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -47,7 +83,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibegrid-store',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       // v1 → v2: ensure all default TrackKind tracks exist (Plan 5 fix).
       // v2 → v3: same merge re-runs after Plan 5.5 adds the zoom-pulse track.
@@ -57,22 +93,15 @@ export const useAppStore = create<AppState>()(
       //          authoritative. Sort existing tracks by their legacy
       //          .order field one last time (preserves v1-v4 user order),
       //          then append missing default tracks (e.g. the new video
-      //          track) at the end.
-      migrate: (persistedState, version) => {
-        const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
-        if (version < 5 && s?.timeline) {
-          const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
-          // Sort existing by the (deprecated) order field for v1-v4 stability.
-          existing.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-          const existingKinds = new Set(existing.map((t) => t.kind));
-          const missing = initialTimelineState.tracks.filter(
-            (t) => !existingKinds.has(t.kind)
-          );
-          // Append new tracks at the end — array index now drives render order.
-          s.timeline.tracks = [...existing, ...missing];
-        }
-        return s;
-      },
+      //          track) at the end. GATED with `version < 5` so a fresh
+      //          v5 snapshot does NOT trigger phantom appends now that
+      //          `initialTimelineState` shrinks to 4 lanes.
+      // v5 → v6: Plan 5.9c — collapse the 8 per-FX-plugin track-kinds
+      //          (`contour`, `sweep`, …) to a single `'fx'`. Tracks
+      //          retain their user-set `name` and `id`. Clips are
+      //          untouched — `clip.kind` still carries the specific
+      //          lowercase FX-kind for the renderer's plugin dispatch.
+      migrate: (persistedState, version) => migrate(persistedState, version),
 
       // Deep-merge `ui` so the persisted partial (`{ zoom }` only) doesn't
       // replace the entire `ui` object on rehydrate. Without this, every

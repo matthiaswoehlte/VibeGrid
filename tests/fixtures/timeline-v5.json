@@ -1,0 +1,58 @@
+{
+  "state": {
+    "ui": { "zoom": 1 },
+    "timeline": {
+      "tracks": [
+        { "id": "track-image", "kind": "image", "name": "Image", "muted": false },
+        { "id": "track-contour", "kind": "contour", "name": "Contour", "muted": false },
+        { "id": "track-zoom-pulse", "kind": "zoom-pulse", "name": "Zoom Pulse", "muted": false },
+        { "id": "track-sweep", "kind": "sweep", "name": "Mein Sweep", "muted": false },
+        { "id": "track-particles", "kind": "particles", "name": "Particles", "muted": false },
+        { "id": "track-pulse", "kind": "pulse", "name": "Pulse", "muted": true },
+        { "id": "track-dissolve", "kind": "dissolve", "name": "Dissolve", "muted": false },
+        { "id": "track-sunray", "kind": "sunray", "name": "Sunray", "muted": false },
+        { "id": "track-text", "kind": "text", "name": "Text", "muted": false },
+        { "id": "track-video", "kind": "video", "name": "Video", "muted": false }
+      ],
+      "clips": [
+        {
+          "id": "clip-image-1",
+          "trackId": "track-image",
+          "kind": "image",
+          "mediaId": "media-img-a",
+          "startBeat": 0,
+          "lengthBeats": 32,
+          "label": "joanna-avatar"
+        },
+        {
+          "id": "clip-contour-1",
+          "trackId": "track-contour",
+          "kind": "contour",
+          "fxId": "contour",
+          "startBeat": 4,
+          "lengthBeats": 8,
+          "label": "Contour"
+        },
+        {
+          "id": "clip-sweep-1",
+          "trackId": "track-sweep",
+          "kind": "sweep",
+          "fxId": "sweep",
+          "startBeat": 12,
+          "lengthBeats": 8,
+          "label": "Sweep"
+        }
+      ],
+      "playhead": { "beats": 0, "playing": false },
+      "zoom": 1,
+      "snap": "beat"
+    },
+    "audio": {
+      "grid": { "bpm": 120, "source": "manual", "beatsPerBar": 4, "offsetMs": 0 }
+    },
+    "media": {
+      "mediaRefs": []
+    }
+  },
+  "version": 5
+}

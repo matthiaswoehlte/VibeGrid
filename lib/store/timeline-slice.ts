@@ -44,6 +44,30 @@ function defaultLabelFor(kind: TrackKind | TrackFxKind, existing: Track[]): stri
   return sameKindCount === 0 ? base : `${base} ${sameKindCount + 1}`;
 }
 
+/** Plan 5.9c — frozen copy of the v4-era 10-track default set. The
+ *  v4 → v5 migration appends these to old snapshots that pre-date
+ *  later FX additions (Plan 5.8a's text/dissolve/sunray, Plan 5.9a's
+ *  video). After 5.9c `initialTimelineState.tracks` shrinks to 4
+ *  lanes; without this frozen reference the migration would have
+ *  nothing meaningful to append and v4 users would lose their FX
+ *  lanes on rehydrate.
+ *
+ *  Note: the entries' `kind` values are the LEGACY v5 strings
+ *  ('contour', 'sweep', …). After the v4→v5 append, the v5→v6
+ *  migration in `store/index.ts` rewrites them all to `'fx'`. */
+export const INITIAL_TRACKS_V5: ReadonlyArray<Track> = Object.freeze([
+  { id: 'track-image', kind: 'image', name: 'Image', muted: false, order: 0 },
+  { id: 'track-contour', kind: 'contour', name: 'Contour', muted: false, order: 1 },
+  { id: 'track-zoom-pulse', kind: 'zoom-pulse', name: 'Zoom Pulse', muted: false, order: 2 },
+  { id: 'track-sweep', kind: 'sweep', name: 'Sweep', muted: false, order: 3 },
+  { id: 'track-particles', kind: 'particles', name: 'Particles', muted: false, order: 4 },
+  { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 5 },
+  { id: 'track-dissolve', kind: 'dissolve', name: 'Dissolve', muted: false, order: 6 },
+  { id: 'track-sunray', kind: 'sunray', name: 'Sunray', muted: false, order: 7 },
+  { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 },
+  { id: 'track-video', kind: 'video', name: 'Video', muted: false, order: 9 }
+] as Track[]);
+
 // Default tracks — one per TrackKind per Spec §6. Without these, the timeline
 // renders no lanes and there's nowhere to drop clips. Order matches visual
 // stacking (image at top, FX layered above per RENDER_ORDER).
