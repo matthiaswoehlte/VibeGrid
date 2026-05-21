@@ -77,11 +77,9 @@ export function createVideoEngine(): VideoEngine | null {
       await new Promise<void>((resolve, reject) => {
         el.onloadeddata = () => resolve();
         el.onerror = () => {
-          // Report what the browser actually saw — the underlying
-          // MediaError code (1=ABORTED, 2=NETWORK, 3=DECODE,
-          // 4=SRC_NOT_SUPPORTED) tells us if it's CORS / wrong codec /
-          // bad URL. CORS failures usually surface as code 4 because
-          // the response is opaque to the decoder.
+          // Surface the MediaError detail so a failed load shows up with
+          // an actionable message in the console (code 4 typically means
+          // CORS or unsupported codec).
           const err = el.error;
           const detail = err
             ? `code=${err.code} (${err.message || 'no message'})`
@@ -114,18 +112,12 @@ export function createVideoEngine(): VideoEngine | null {
     },
 
     play() {
-      // eslint-disable-next-line no-console
-      console.info(`[VideoEngine] play() called — ${elements.size} loaded element(s)`);
-      elements.forEach((el, id) => {
-        el.play()
-          .then(() => {
-            // eslint-disable-next-line no-console
-            console.info(`[VideoEngine] play OK for ${id} — paused=${el.paused} readyState=${el.readyState}`);
-          })
-          .catch((err) => {
-            // eslint-disable-next-line no-console
-            console.warn(`[VideoEngine] play() rejected for ${id}:`, err);
-          });
+      elements.forEach((el) => {
+        // Autoplay can be blocked on first user-gesture-less attempt; the
+        // preview is silent and the user can just hit play again. We
+        // swallow rather than throw so a failing video doesn't tear down
+        // the rest of the engine.
+        el.play().catch(() => { /* autoplay-blocked is OK */ });
       });
     },
 
