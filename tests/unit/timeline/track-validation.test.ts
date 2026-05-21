@@ -1,48 +1,49 @@
 import { describe, it, expect } from 'vitest';
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
-import type { TrackKind } from '@/lib/timeline/types';
-import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 
-describe('canDropOnTrack (Plan 5.9a)', () => {
-  it('image media → only image track', () => {
-    expect(canDropOnTrack('image', 'image')).toBe(true);
-    expect(canDropOnTrack('image', 'video')).toBe(false);
-    expect(canDropOnTrack('image', 'audio')).toBe(false);
-    expect(canDropOnTrack('image', 'pulse')).toBe(false);
+describe('canDropOnTrack (Plan 5.9c)', () => {
+  it('contour clip → fx track: true', () => {
+    expect(canDropOnTrack('contour', 'fx')).toBe(true);
   });
 
-  it('video media → only video track', () => {
+  it('zoom-pulse clip (hyphenated lowercase) → fx track: true', () => {
+    expect(canDropOnTrack('zoom-pulse', 'fx')).toBe(true);
+  });
+
+  it('image clip → fx track: false', () => {
+    expect(canDropOnTrack('image', 'fx')).toBe(false);
+  });
+
+  it('contour clip → image track: false', () => {
+    expect(canDropOnTrack('contour', 'image')).toBe(false);
+  });
+
+  it('video clip → video track: true', () => {
     expect(canDropOnTrack('video', 'video')).toBe(true);
-    expect(canDropOnTrack('video', 'image')).toBe(false);
-    expect(canDropOnTrack('video', 'audio')).toBe(false);
-    expect(canDropOnTrack('video', 'contour')).toBe(false);
   });
 
-  it('audio media → only audio track', () => {
+  it('audio clip → audio track: true', () => {
     expect(canDropOnTrack('audio', 'audio')).toBe(true);
-    expect(canDropOnTrack('audio', 'image')).toBe(false);
-    expect(canDropOnTrack('audio', 'video')).toBe(false);
-    expect(canDropOnTrack('audio', 'sweep')).toBe(false);
   });
 
-  it('FX track kinds always reject media drops', () => {
-    // Plan 5.9c transitional: legacy v5 FX-kinds typed via TrackFxKind.
-    // Task 5 rewrites this whole test against the new 4-entry TrackKind.
-    const fxKinds: TrackFxKind[] = [
+  it('all 8 FX kinds are valid on an fx track', () => {
+    const fxKinds = [
       'contour', 'sweep', 'pulse', 'particles', 'zoom-pulse',
       'text', 'dissolve', 'sunray'
     ];
-    for (const fx of fxKinds) {
-      expect(canDropOnTrack('image', fx)).toBe(false);
-      expect(canDropOnTrack('video', fx)).toBe(false);
-      expect(canDropOnTrack('audio', fx)).toBe(false);
+    for (const k of fxKinds) {
+      expect(canDropOnTrack(k, 'fx')).toBe(true);
     }
   });
 
-  it('all 9 combinations of (mediaKind × {image,audio,video}) — matrix sanity', () => {
-    const mediaKinds = ['image', 'audio', 'video'] as const;
-    for (const m of mediaKinds) {
-      for (const t of mediaKinds) {
+  it('unknown clip kind on an fx track: false', () => {
+    expect(canDropOnTrack('bogus-effect', 'fx')).toBe(false);
+  });
+
+  it('media kinds across mismatched media tracks all reject', () => {
+    const media = ['image', 'video', 'audio'] as const;
+    for (const m of media) {
+      for (const t of media) {
         expect(canDropOnTrack(m, t)).toBe(m === t);
       }
     }
