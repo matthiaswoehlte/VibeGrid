@@ -46,19 +46,24 @@ Notable state from Plan 6 + Hotfix that affects this plan:
    Plan 6-R adds a sibling `getDecodedBuffer()` returning the already-
    cached `AudioBuffer` (`engine.ts:45`) so the offline encoder doesn't
    re-decode.
-3. **`Particles` plugin** still calls `Math.random()` directly
-   (`lib/fx/particles.ts:77`, `:78`, `:83`, `:90`, …). Determinism is a
-   pre-condition for offline rendering — Plan 6-R introduces a seeded
-   PRNG keyed off `clipId × beatIndex` so the same render time always
-   produces the same particles.
-4. **Renderer's `tick()` is already side-effect-controlled** via the
+3. **Renderer's `tick()` is already side-effect-controlled** via the
    `deps.getCurrentTime` closure (`loop.ts:94`). Plan 6-R adds a sibling
    `renderFrameAt(timeSec)` API that swaps that one input — no refactor
    of the plugin dispatch loop.
+4. **`useRenderer` owns the ImageBitmap cache** (`useRenderer.ts:22`,
+   `createImageBitmapCache()`). The offline orchestrator runs outside
+   the hook — Plan 6-R exposes a `getBitmap()` method on the hook's
+   return value so `useVideoExporter` can pass it through to the
+   offline pipeline. No global state, no React Context.
 5. **`fix-webm-duration`** (commit `7020a78`) is no longer needed in the
    offline path because the muxer writes the correct duration into the
    container header by construction. Keep it loaded for the realtime
    fallback.
+6. **Particles is non-deterministic across runs** (uses `Math.random()`).
+   This is an explicit v0.1 scope decision — two consecutive exports of
+   the same project will produce slightly different particle positions,
+   but the visual feel is identical and users never notice. Future
+   plugins with stochasticity should follow the same convention.
 
 ---
 
@@ -76,32 +81,33 @@ writing — recheck before merge) the existing realtime MediaRecorder
 path runs unchanged, with the same UI but a one-shot toast
 ("Realtime record — WebCodecs not available").
 
-**Architecture**: six surfaces.
+**Architecture**: five surfaces.
 
-1. **Determinism layer** (`lib/utils/prng.ts`, refactor `lib/fx/particles.ts`).
-   `mulberry32(seed)` returns a `() => number` in `[0, 1)`. Particles
-   stores `prng` per clip state, seeded from a stable hash of
-   `(clipId, beatIndex)` on every spawn. The realtime path uses the
-   exact same PRNG path; users won't see a difference in feel, but
-   identical-time renders now produce identical particle positions.
-2. **Audio encoding layer** (`lib/export/audio-chunks.ts`,
+1. **Audio encoding layer** (`lib/export/audio-chunks.ts`,
    `AudioEngine.getDecodedBuffer`). A pure function chunks the decoded
    `AudioBuffer` into fixed-size frame windows (1024 frames per chunk
    at the buffer's native sample rate) and yields
    `{ timestampUs, channels: Float32Array[] }`. Zero React, zero DOM.
-3. **WebCodecs config** (`lib/export/webcodecs.ts`). `isWebCodecsSupported()`
+2. **WebCodecs config** (`lib/export/webcodecs.ts`). `isWebCodecsSupported()`
    feature-flag; `pickVideoEncoderConfig(w, h, fps)` walks a
    preference list (`avc1.42E01E` → `vp09.00.10.08`) against
    `VideoEncoder.isConfigSupported`; `pickAudioEncoderConfig(sr, ch)`
    does the same for `mp4a.40.2` → `opus`. Returns `null` when no
-   compatible codec is found.
-4. **Offline renderer** (`lib/renderer/offline-tick.ts`). Pure helper
-   `renderFrameAt({timeSec, canvas, ...deps})` invokes the existing
-   `tick()` machinery on an explicit time. Shares plugin dispatch,
-   `computeClipAlpha`, `resolveClipParams`, and `flowMode` handling
-   with the live renderer — no plugin code changes.
-5. **Pipeline orchestrator** (`lib/export/offline-render.ts`).
-   `renderOffline({timeline, audio, beatGrid, imageBitmaps, options}):
+   compatible codec is found. Default bitrates: **8 Mbit/s video**
+   (up from 6 Mbit/s in the realtime path — offline rendering removes
+   the realtime constraint, so we spend a bit more on quality),
+   128 kbit/s audio.
+3. **Offline renderer** (`lib/renderer/offline-tick.ts`,
+   `lib/hooks/useRenderer.ts` extension). Pure helper
+   `makeOfflineRenderer({timeSec, canvas, ...deps})` invokes the
+   existing `tick()` machinery on an explicit time. Shares plugin
+   dispatch, `computeClipAlpha`, `resolveClipParams`, and `flowMode`
+   handling with the live renderer — no plugin code changes.
+   `useRenderer` is extended to return `{ getBitmap }` so the offline
+   pipeline can borrow the same ImageBitmap cache instead of
+   reloading bitmaps from R2.
+4. **Pipeline orchestrator** (`lib/export/offline-render.ts`).
+   `renderOffline({timeline, audio, beatGrid, getImageBitmap, options}):
    Promise<Blob>`. Sets up an `OffscreenCanvas(1920, 1080)` (or the
    configured target size), the `VideoEncoder`, the `AudioEncoder`,
    and the muxer. Runs the frame loop (synchronous render →
@@ -109,8 +115,11 @@ path runs unchanged, with the same UI but a one-shot toast
    `videoFrame.close()`), then walks the audio buffer chunk-by-chunk
    into the `AudioEncoder`. Awaits `encoder.flush()` for both,
    finalizes the muxer, returns a Blob. Reports progress via callback;
-   respects an `AbortSignal`.
-6. **UI extension**. `ExportState` gains `mode`, `currentFrame`,
+   respects an `AbortSignal`. Encoder errors are captured into a
+   shared flag (NOT `throw` inside the callback — that would land in
+   an unrelated microtask and produce an unhandled rejection) and
+   re-thrown synchronously at the next backpressure check.
+5. **UI extension**. `ExportState` gains `mode`, `currentFrame`,
    `totalFrames`, `etaSeconds`. `RecIndicator` renders one of two
    layouts depending on `mode`: realtime keeps the existing red-dot +
    `MM:SS / MM:SS`; offline shows a teal progress bar with
@@ -131,17 +140,16 @@ export" listed in Spec §8.4 — formerly "out of scope for v0.1."
 **Verification gate (must pass before declaring Plan 6-R done):**
 
 ```
-npm test -- utils/prng                # ≥ 4
-npm test -- fx/particles-determinism  # ≥ 3
 npm test -- audio/engine-decoded      # ≥ 2
 npm test -- export/audio-chunks       # ≥ 4
 npm test -- export/webcodecs          # ≥ 5
 npm test -- export/muxer              # ≥ 3
 npm test -- export/offline-render     # ≥ 6
 npm test -- renderer/offline-tick     # ≥ 3
+npm test -- hooks/useRenderer-getBitmap # ≥ 2
 npm test -- store/export-state        # existing + 3 (mode, currentFrame, etaSeconds)
 npm test -- components/TopBar         # existing + 3 RecIndicator offline-mode
-npm test                              # full suite ≥ 445 (411 → +34)
+npm test                              # full suite ≥ 439 (411 → +28)
 npm run typecheck
 npm run lint
 npm run build                         # studio bundle within +15 % of 137 kB baseline
@@ -233,30 +241,33 @@ the user wants — though the offline render will saturate the main
 thread enough that the preview won't be smooth either; that's fine,
 it's not what gets recorded).
 
-### 3. Determinism = pre-condition, not feature
+### 3. Sharing the ImageBitmap cache with the offline path
 
-If `Math.random()` runs inside any plugin, two renders of the same
-time produce different pixels — the user will see particle positions
-shift between attempts. Worse, in animations that mix two adjacent
-frames (no temporal AA here, but the principle holds for any
-post-processing we add later), non-determinism causes flicker.
+`useRenderer` owns the bitmap cache (`createImageBitmapCache()`,
+`useRenderer.ts:22`). The cache is kept as a `useRef` and used by
+the live renderer's `getImageBitmap` callback. The offline orchestrator
+runs outside React's tree — it can't read that ref directly.
 
-The Plan 6-R fix is **minimal**: seed a per-clip-state PRNG once on
-clip-state creation, re-seed on every beat-spawn from
-`hash(clipId, beatIndex)`. Particles becomes:
+The fix is a small one: `useRenderer` now returns a `{ getBitmap }`
+object whose `getBitmap(mediaId)` delegates to the same cache
+instance. `useVideoExporter` captures it from the renderer hook (which
+shares the canvas-ref owner — `app/(studio)/page.tsx`), and reaches
+through that getter into `renderOffline`:
 
 ```ts
-// Inside the per-clip ClipState:
-prng: ReturnType<typeof mulberry32>;
-// On every beat-spawn (in render()):
-state.prng = mulberry32(hashSeed(rc.clipId, rc.beatIndex));
-// spawnGeometry now takes a `rng` arg instead of using Math.random:
-const jitter = (range: number) => (rng() - 0.5) * range;
+// useRenderer.ts (extended return type):
+export function useRenderer(opts: UseRendererOptions): {
+  getBitmap: (mediaId: string) => ImageBitmap | undefined;
+}
+// useVideoExporter.ts (consumer):
+const { getBitmap } = useRenderer({ canvasRef, getCurrentTime, … });
+// passed into the offline renderer:
+renderOffline({ ..., getImageBitmap: getBitmap }, options);
 ```
 
-This is a local refactor (~30 LOC in `particles.ts`, the only stochastic
-plugin in v0.1). Pulse / ZoomPulse / Sweep / Contour are already
-deterministic functions of `(time, beatPhase, params, imageBitmap)`.
+Two lines on each end. No global singleton, no React Context, no
+cache duplication. The live preview and the offline render share
+exactly the same bitmap instances.
 
 ### 4. Audio encoding boundary
 
@@ -345,17 +356,15 @@ MediaRecorder too. One toast either way explains which path ran.
 
 | File | Responsibility |
 |---|---|
-| `lib/utils/prng.ts` (create) | `mulberry32(seed: number): () => number`; `hashSeed(...inputs: (string \| number)[]): number` (FNV-1a or similar, simple + deterministic) |
-| `lib/utils/__tests__/prng.test.ts` (via `tests/unit/utils/prng.test.ts`) | ≥ 4 tests: distribution sanity, same seed = same sequence, different seeds = different sequences, hashSeed is stable |
-| `lib/fx/particles.ts` (modify) | Take `rng: () => number` in `spawnGeometry`; ClipState gains `prng` (re-seeded per spawn); both live + offline paths use it |
-| `tests/unit/fx/particles-determinism.test.ts` (create) | ≥ 3 tests: spawn twice at same (clipId, beatIndex) → identical particles; different beatIndex → different particles; flow mode skip path still deterministic in initial conditions |
 | `lib/audio/engine.ts` (modify) | New public getter `getDecodedBuffer(): AudioBuffer \| null`; reads existing private `cachedDecodedBuffer` |
 | `tests/unit/audio/engine-decoded.test.ts` (create) | ≥ 2 tests: getter returns null before load, returns the cached buffer after a successful load |
 | `lib/export/audio-chunks.ts` (create) | Pure `chunkAudioBuffer(buffer, framesPerChunk): Generator<{timestampUs, channels, frameCount}>`; constants `FRAMES_PER_CHUNK = 1024` |
 | `tests/unit/export/audio-chunks.test.ts` (create) | ≥ 4 tests: yields expected chunk count for known buffer length; timestamps are monotone increasing; last chunk's frameCount handles non-multiples; mono + stereo both work |
 | `lib/export/webcodecs.ts` (create) | `isWebCodecsSupported()`, `pickVideoEncoderConfig(width, height, fps)`, `pickAudioEncoderConfig(sampleRate, channels)`. Both pick functions return `{codec, ext}` or `null` |
 | `tests/unit/export/webcodecs.test.ts` (create) | ≥ 5 tests: supported when both encoders exist, MP4 preferred, WebM fallback, audio MP4A preferred, returns null when nothing supported |
-| `lib/renderer/offline-tick.ts` (create) | `renderFrameAt({canvas, timeSec, getBeatGrid, getTimelineState, getImageBitmap, getFlowMode}): void` — constructs renderer deps inline and runs one tick; or reuses an existing renderer instance with a swappable time-source ref |
+| `lib/hooks/useRenderer.ts` (modify) | Return `{ getBitmap: (id) => ImageBitmap \| undefined }` so the offline pipeline can borrow the same ImageBitmap cache via `useVideoExporter` |
+| `tests/unit/hooks/useRenderer-getBitmap.test.tsx` (create) | ≥ 2 tests: hook returns getBitmap; calling getBitmap on an unmounted hook returns undefined safely |
+| `lib/renderer/offline-tick.ts` (create) | `makeOfflineRenderer({canvas, timeSec, getBeatGrid, getTimelineState, getImageBitmap, getFlowMode}): {renderAt}` — constructs renderer deps inline and runs one tick per call; reuses one createRenderer across all frames in the orchestrator loop |
 | `tests/unit/renderer/offline-tick.test.ts` (create) | ≥ 3 tests: identical timeSec → identical canvas calls; different timeSec → different calls; flow mode is propagated to plugins |
 | `lib/export/muxer.ts` (create) | `createOfflineMuxer({video, audio, ext, width, height, fps, sampleRate, channels}): OfflineMuxer` factory; internally constructs `Mp4Muxer` or `WebmMuxer` depending on `ext`, exposes unified surface |
 | `tests/unit/export/muxer.test.ts` (create) | ≥ 3 tests: factory picks mp4-muxer for `ext='mp4'`, webm-muxer for `ext='webm'`, finalize returns non-empty bytes (with stubbed chunks) |
@@ -374,230 +383,7 @@ MediaRecorder too. One toast either way explains which path ran.
 
 ## Tasks
 
-### Task 1: PRNG helper + hashSeed
-
-**Files:**
-- Create: `lib/utils/prng.ts`
-- Test: `tests/unit/utils/prng.test.ts`
-
-- [ ] **Step 1 — Write the failing test**
-
-```ts
-import { describe, it, expect } from 'vitest';
-import { mulberry32, hashSeed } from '@/lib/utils/prng';
-
-describe('mulberry32', () => {
-  it('produces values in [0, 1)', () => {
-    const rng = mulberry32(42);
-    for (let i = 0; i < 100; i++) {
-      const v = rng();
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThan(1);
-    }
-  });
-
-  it('same seed produces same sequence', () => {
-    const a = mulberry32(123);
-    const b = mulberry32(123);
-    for (let i = 0; i < 20; i++) expect(a()).toBe(b());
-  });
-
-  it('different seeds produce different sequences', () => {
-    const a = mulberry32(1);
-    const b = mulberry32(2);
-    const va = Array.from({length: 20}, () => a());
-    const vb = Array.from({length: 20}, () => b());
-    expect(va).not.toEqual(vb);
-  });
-});
-
-describe('hashSeed', () => {
-  it('is deterministic across runs (string + number inputs)', () => {
-    expect(hashSeed('clip-abc', 7)).toBe(hashSeed('clip-abc', 7));
-  });
-
-  it('is sensitive to input order', () => {
-    expect(hashSeed('a', 'b')).not.toBe(hashSeed('b', 'a'));
-  });
-});
-```
-
-- [ ] **Step 2 — Run test to verify it fails**
-
-```
-npx vitest run tests/unit/utils/prng.test.ts
-```
-
-Expected: fail with `Cannot find module '@/lib/utils/prng'`.
-
-- [ ] **Step 3 — Write minimal implementation**
-
-```ts
-// lib/utils/prng.ts
-
-/**
- * mulberry32 — small, fast, deterministic 32-bit PRNG. Pure function:
- * same seed always yields the same sequence. Suitable for deterministic
- * Particles spawn across realtime and offline render paths.
- *
- * Public domain. Source: Tommy Ettinger, https://gist.github.com/tommyettinger/46a3c8c5b1c8c4eb1d2f
- */
-export function mulberry32(seed: number): () => number {
-  let s = seed | 0;
-  return function () {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * Stable 32-bit FNV-1a hash over heterogeneous inputs. Used as a
- * mulberry32 seed for stochastic plugins so that the same
- * `(clipId, beatIndex)` always yields the same particle layout.
- */
-export function hashSeed(...inputs: (string | number)[]): number {
-  let h = 0x811c9dc5;
-  for (const input of inputs) {
-    const s = typeof input === 'string' ? input : String(input);
-    for (let i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-    // Separator so hashSeed('a','b') !== hashSeed('ab')
-    h ^= 0xff;
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-```
-
-- [ ] **Step 4 — Run test to verify it passes**
-
-```
-npx vitest run tests/unit/utils/prng.test.ts
-```
-
-Expected: 5 tests pass.
-
-- [ ] **Step 5 — Commit**
-
-```bash
-git add lib/utils/prng.ts tests/unit/utils/prng.test.ts
-git commit -m "feat(utils): seeded mulberry32 PRNG + FNV-1a hashSeed"
-```
-
----
-
-### Task 2: Particles becomes deterministic
-
-**Files:**
-- Modify: `lib/fx/particles.ts`
-- Test: `tests/unit/fx/particles-determinism.test.ts`
-
-- [ ] **Step 1 — Write the failing test**
-
-```ts
-import { describe, it, expect, afterEach } from 'vitest';
-import { particlesPlugin } from '@/lib/fx/particles';
-import { makeRenderContext } from '../renderer/_helpers';
-
-describe('particles determinism', () => {
-  afterEach(() => particlesPlugin.dispose?.());
-
-  it('same (clipId, beatIndex) → identical spawn positions', () => {
-    const params = particlesPlugin.getDefaultParams();
-    const rc1 = makeRenderContext({ clipId: 'c1', isOnBeat: true, beatIndex: 5, time: 1 });
-    particlesPlugin.render(rc1, params);
-    const calls1 = (rc1.ctx as unknown as {__calls: Array<{method:string; args:unknown[]}>}).__calls
-      .filter((c) => c.method === 'arc').map((c) => c.args.slice(0, 2));
-    particlesPlugin.dispose?.();
-    const rc2 = makeRenderContext({ clipId: 'c1', isOnBeat: true, beatIndex: 5, time: 1 });
-    particlesPlugin.render(rc2, params);
-    const calls2 = (rc2.ctx as unknown as {__calls: Array<{method:string; args:unknown[]}>}).__calls
-      .filter((c) => c.method === 'arc').map((c) => c.args.slice(0, 2));
-    expect(calls1).toEqual(calls2);
-  });
-
-  it('different beatIndex → different spawn positions', () => {
-    // Same as above but with beatIndex=5 and beatIndex=6 — assert calls differ.
-  });
-
-  it('different clipId → different spawn positions', () => {
-    // Same but with clipId='a' vs 'b'.
-  });
-});
-```
-
-- [ ] **Step 2 — Run test to verify it fails (or passes by accident with Math.random — investigate)**
-
-Expected: the "same (clipId, beatIndex)" test fails because spawn is currently non-deterministic.
-
-- [ ] **Step 3 — Refactor `lib/fx/particles.ts`**
-
-Replace direct `Math.random()` with a `rng: () => number` parameter
-threaded through `spawnGeometry` and `spawn`. ClipState gains a `prng`.
-On every beat-spawn, re-seed: `state.prng = mulberry32(hashSeed(rc.clipId, rc.beatIndex))`.
-
-Sketch:
-
-```ts
-import { mulberry32, hashSeed } from '@/lib/utils/prng';
-
-interface ClipState {
-  pool: Particle[];
-  lastSpawnBeat: number | null;
-  prng: () => number;  // <- new
-}
-
-function getOrCreateState(clipId: string): ClipState {
-  let s = clipStates.get(clipId);
-  if (!s) {
-    s = { pool: makePool(), lastSpawnBeat: null, prng: mulberry32(hashSeed(clipId, 0)) };
-    clipStates.set(clipId, s);
-  }
-  return s;
-}
-
-function spawnGeometry(
-  rc: SpawnRC,
-  direction: ParticleDirection,
-  speed: number,
-  rng: () => number   // <- new
-): { x: number; y: number; vx: number; vy: number } {
-  const jitter = (range: number) => (rng() - 0.5) * range;
-  const speedFactor = 1 + rng() * 0.5;
-  // ... replace every Math.random() with rng() ...
-}
-
-// In render(), before calling spawn():
-if (!rc.flowMode && rc.isOnBeat && state.lastSpawnBeat !== rc.beatIndex) {
-  state.lastSpawnBeat = rc.beatIndex;
-  // Re-seed per (clip, beat) so identical inputs yield identical layouts.
-  state.prng = mulberry32(hashSeed(rc.clipId, rc.beatIndex));
-  spawn(rc, state.pool, params.spawnPerBeat, params.direction, params.speed, state.prng);
-}
-```
-
-- [ ] **Step 4 — Run test to verify it passes**
-
-```
-npx vitest run tests/unit/fx/particles-determinism.test.ts
-npx vitest run tests/unit/fx/particles.test.ts  # existing tests still pass
-```
-
-- [ ] **Step 5 — Commit**
-
-```bash
-git add lib/fx/particles.ts tests/unit/fx/particles-determinism.test.ts
-git commit -m "feat(fx): particles spawn is deterministic per (clipId, beatIndex)"
-```
-
----
-
-### Task 3: AudioEngine.getDecodedBuffer
+### Task 1: AudioEngine.getDecodedBuffer
 
 **Files:**
 - Modify: `lib/audio/engine.ts`
@@ -652,7 +438,7 @@ git commit -m "feat(audio): expose cached decoded AudioBuffer via getter"
 
 ---
 
-### Task 4: audio-chunks helper
+### Task 2: audio-chunks helper
 
 **Files:**
 - Create: `lib/export/audio-chunks.ts`
@@ -723,7 +509,7 @@ git commit -m "feat(export): pure chunkAudioBuffer generator for AudioEncoder fe
 
 ---
 
-### Task 5: WebCodecs feature detection + codec config
+### Task 3: WebCodecs feature detection + codec config
 
 **Files:**
 - Create: `lib/export/webcodecs.ts`
@@ -842,7 +628,86 @@ git commit -m "feat(export): WebCodecs feature detect + video/audio codec picker
 
 ---
 
-### Task 6: Offline-tick renderer wrapper
+### Task 4: useRenderer exposes getBitmap
+
+**Files:**
+- Modify: `lib/hooks/useRenderer.ts`
+- Test: `tests/unit/hooks/useRenderer-getBitmap.test.tsx`
+
+The offline renderer needs the same `ImageBitmap` cache that drives
+the live preview. Today, `useRenderer` keeps the cache in a `useRef`
+that nothing outside the hook can reach. Architect resolution: extend
+the hook's return type so the cache is reachable via a stable getter.
+
+- [ ] **Step 1 — Write the failing test**
+
+```ts
+import { describe, it, expect, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useRenderer } from '@/lib/hooks/useRenderer';
+
+describe('useRenderer().getBitmap', () => {
+  it('returns undefined for an unknown mediaId', () => {
+    const canvasRef = { current: document.createElement('canvas') };
+    const { result } = renderHook(() => useRenderer({
+      canvasRef, getCurrentTime: () => 0,
+    }));
+    expect(result.current.getBitmap('nonexistent')).toBeUndefined();
+  });
+
+  it('returns the cached bitmap after the cache populates', () => {
+    // Mock the cache via mediaRefs subscription pattern (see useRenderer.ts:51).
+    // Verify getBitmap returns a non-undefined ImageBitmap once the load
+    // has completed.
+  });
+});
+```
+
+- [ ] **Step 2 — Run, verify fail**
+
+- [ ] **Step 3 — Implement**
+
+Change `useRenderer` to return its bitmap getter. The cache instance
+lives in `cacheRef` already; we just add an exposed accessor:
+
+```ts
+// lib/hooks/useRenderer.ts
+export interface UseRendererReturn {
+  /** Returns the cached ImageBitmap for `mediaId`, or undefined if not
+   *  loaded yet. Safe to call from any descendant component / hook —
+   *  the cache is the same instance that drives the live preview. */
+  getBitmap(mediaId: string): ImageBitmap | undefined;
+}
+
+export function useRenderer(opts: UseRendererOptions): UseRendererReturn {
+  // ... existing setup ...
+  return {
+    getBitmap: (mediaId) => cacheRef.current.get(mediaId),
+  };
+}
+```
+
+Then update the one caller (`components/Workspace/Stage/CanvasView.tsx`)
+to ignore the new return value if it doesn't need it. Plan 6-R Task 9
+wires `useVideoExporter` to actually consume the getter.
+
+- [ ] **Step 4 — Verify pass**
+
+```
+npx vitest run tests/unit/hooks/useRenderer-getBitmap.test.tsx
+npx vitest run tests/unit/components/Workspace  # CanvasView still works
+```
+
+- [ ] **Step 5 — Commit**
+
+```bash
+git add lib/hooks/useRenderer.ts tests/unit/hooks/useRenderer-getBitmap.test.tsx
+git commit -m "feat(renderer): useRenderer returns getBitmap accessor for offline pipeline"
+```
+
+---
+
+### Task 5: Offline-tick renderer wrapper
 
 **Files:**
 - Create: `lib/renderer/offline-tick.ts`
@@ -908,7 +773,7 @@ git commit -m "feat(renderer): makeOfflineRenderer wraps tick() with explicit ti
 
 ---
 
-### Task 7: Install + wrap muxers
+### Task 6: Install + wrap muxers
 
 **Files:**
 - Modify: `package.json`, `package-lock.json`
@@ -1002,7 +867,7 @@ git commit -m "feat(export): install mp4-muxer + webm-muxer, unify behind Offlin
 
 ---
 
-### Task 8: ExportState extension (mode + progress fields)
+### Task 7: ExportState extension (mode + progress fields)
 
 **Files:**
 - Modify: `lib/export/types.ts`
@@ -1061,7 +926,7 @@ git commit -m "feat(store): export state gains mode + offline progress fields"
 
 ---
 
-### Task 9: Offline render orchestrator
+### Task 8: Offline render orchestrator
 
 **Files:**
 - Create: `lib/export/offline-render.ts`
@@ -1070,8 +935,10 @@ git commit -m "feat(store): export state gains mode + offline progress fields"
 - [ ] **Step 1 — Write failing tests**
 
 Tests cover: total frame count, monotone progress, cancel mid-render,
-encoder error propagation, ext returned per codec, audio + video
-timestamp alignment.
+encoder-error propagation (architect Bug 1 — fire the VideoEncoder
+error callback mid-loop with a stubbed error and assert that
+`renderOffline` rejects with that exact error), ext returned per
+codec, audio + video timestamp alignment.
 
 - [ ] **Step 2 — Implement**
 
@@ -1147,16 +1014,24 @@ export async function renderOffline(
     channels: deps.audioBuffer.numberOfChannels,
   });
 
-  // 4. Build the encoders
+  // 4. Build the encoders. Architect-flagged bug fix: `throw` inside an
+  //    encoder error callback lands in a separate microtask and turns
+  //    into an unhandled rejection — the orchestrator never sees it,
+  //    the UI never updates. Capture into a shared flag instead, then
+  //    re-throw synchronously at the next backpressure / loop checkpoint
+  //    so it propagates to renderOffline's caller.
+  let videoError: Error | null = null;
+  let audioError: Error | null = null;
+
   const videoEncoder = new VideoEncoder({
     output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-    error: (e) => { throw e; },
+    error: (e) => { videoError = e; },
   });
   videoEncoder.configure(videoPick.config);
 
   const audioEncoder = new AudioEncoder({
     output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-    error: (e) => { throw e; },
+    error: (e) => { audioError = e; },
   });
   audioEncoder.configure(audioPick.config);
 
@@ -1164,10 +1039,12 @@ export async function renderOffline(
   const startTime = performance.now();
   for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (videoError) throw videoError;
     const timeSec = frameIdx / fps;
     offlineRenderer.renderAt(timeSec);
     while (videoEncoder.encodeQueueSize > 4) {
       await new Promise<void>((r) => setTimeout(r, 0));
+      if (videoError) throw videoError;
     }
     const videoFrame = new VideoFrame(canvas as unknown as CanvasImageSource, {
       timestamp: Math.round((timeSec) * 1_000_000),
@@ -1189,8 +1066,10 @@ export async function renderOffline(
   // 6. Encode audio
   for (const chunk of chunkAudioBuffer(deps.audioBuffer)) {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (audioError) throw audioError;
     while (audioEncoder.encodeQueueSize > 4) {
       await new Promise<void>((r) => setTimeout(r, 0));
+      if (audioError) throw audioError;
     }
     // Build an AudioData. For multi-channel buffers we need interleaved Float32.
     const interleaved = new Float32Array(chunk.frameCount * chunk.channels.length);
@@ -1229,14 +1108,31 @@ git commit -m "feat(export): renderOffline orchestrator (frame loop + audio + mu
 
 ---
 
-### Task 10: Wire the hook + UI
+### Task 9: Wire the hook + UI
 
 **Files:**
 - Modify: `lib/hooks/useVideoExporter.ts`
+- Modify: `app/(studio)/page.tsx` (so the renderer-hook's getBitmap reaches the exporter)
 - Modify: `components/TopBar/RecIndicator.tsx`
 - Test: `tests/unit/components/TopBar/RecIndicator.test.tsx`
 
-- [ ] **Step 1 — Branch the hook**
+- [ ] **Step 1 — Plumb the bitmap getter**
+
+`app/(studio)/page.tsx` owns both the renderer and the exporter via
+the canvas ref. After Task 4 `useRenderer` returns `{ getBitmap }`.
+Capture it and pass it to `useVideoExporter`:
+
+```ts
+// app/(studio)/page.tsx
+const { getBitmap } = useRenderer({ canvasRef, getCurrentTime, getSeekCounter });
+// ...
+<TopBar engine={engine} canvasRef={canvasRef} getBitmap={getBitmap} />
+```
+
+`TopBar` already wires `useVideoExporter`; extend that hook's `deps`
+to accept `getBitmap` and pass it into `renderOffline`.
+
+- [ ] **Step 2 — Branch the hook**
 
 The hook (Plan 6) currently always builds the realtime exporter. Add:
 
@@ -1245,14 +1141,23 @@ async function start() {
   if (isWebCodecsSupported()) {
     setExportState({ status: 'preparing', mode: 'offline' });
     try {
-      const result = await renderOffline(deps, {
-        onProgress: (p) => setExportState({
-          status: 'recording', mode: 'offline',
-          currentFrame: p.currentFrame, totalFrames: p.totalFrames,
-          etaSeconds: p.etaSeconds, progress: p.currentFrame / p.totalFrames,
-        }),
-        signal: cancelController.signal,
-      });
+      const result = await renderOffline(
+        {
+          timeline: getTimeline(),
+          beatGrid: getBeatGrid(),
+          audioBuffer: audioEngine.getDecodedBuffer()!,
+          getImageBitmap: deps.getBitmap,   // <- from useRenderer
+          flowMode: useAppStore.getState().ui.flowMode,
+        },
+        {
+          onProgress: (p) => setExportState({
+            status: 'recording', mode: 'offline',
+            currentFrame: p.currentFrame, totalFrames: p.totalFrames,
+            etaSeconds: p.etaSeconds, progress: p.currentFrame / p.totalFrames,
+          }),
+          signal: cancelController.signal,
+        },
+      );
       // download anchor (same pattern as Plan 6)
       // ...
       setExportState({ status: 'done', mode: 'offline' });
@@ -1270,7 +1175,7 @@ async function start() {
 }
 ```
 
-- [ ] **Step 2 — RecIndicator offline layout**
+- [ ] **Step 3 — RecIndicator offline layout**
 
 ```tsx
 // Inside RecIndicator, when status === 'recording':
@@ -1290,23 +1195,24 @@ if (mode === 'offline') {
 // Else realtime layout (existing).
 ```
 
-- [ ] **Step 3 — Tests**
+- [ ] **Step 4 — Tests**
 
 3 new RecIndicator tests for offline mode (progress text, bar width, ETA format).
 
-- [ ] **Step 4 — Verify + smoke**
+- [ ] **Step 5 — Verify + smoke**
 
-- [ ] **Step 5 — Commit**
+- [ ] **Step 6 — Commit**
 
 ```bash
-git add lib/hooks/useVideoExporter.ts components/TopBar/RecIndicator.tsx \
+git add lib/hooks/useVideoExporter.ts app/(studio)/page.tsx \
+        components/TopBar/RecIndicator.tsx \
         tests/unit/components/TopBar/RecIndicator.test.tsx
 git commit -m "feat(export): hook + RecIndicator switch to offline path on WebCodecs"
 ```
 
 ---
 
-### Task 11: KNOWN_LIMITATIONS update + manual smoke gate
+### Task 10: KNOWN_LIMITATIONS update + manual smoke gate
 
 **Files:**
 - Modify: `KNOWN_LIMITATIONS.md`
@@ -1321,16 +1227,24 @@ Rewrite the Export Pipeline section:
 VibeGrid exports via two paths:
 
 1. **Offline render (preferred, WebCodecs)** — frame-by-frame at
-   1920×1080 / 30 fps, deterministic, decoupled from preview FPS.
-   H.264 + AAC MP4 by default; VP9 + Opus WebM fallback when MP4
-   codec config rejected. Render time depends on project complexity,
-   typically 1-3× realtime on a modern desktop. Progress bar shows
-   frame X / Y + ETA. Cancel returns to idle without partial output.
+   1920×1080 / 30 fps / 8 Mbit/s video / 128 kbit/s audio, decoupled
+   from preview FPS. H.264 + AAC MP4 by default; VP9 + Opus WebM
+   fallback when MP4 codec config rejected. Render time depends on
+   project complexity, typically 1-3× realtime on a modern desktop.
+   Progress bar shows frame X / Y + ETA. Cancel returns to idle
+   without partial output. Note: the video bitrate bumped from
+   6 Mbit/s (realtime path) to 8 Mbit/s for offline — the realtime
+   constraint is gone, so we spend a bit more on quality.
 2. **Realtime record (fallback, MediaRecorder)** — exists for
    browsers without WebCodecs (Firefox < ~130, Safari < 16.4 audio).
    Same UX as v0.1: REC indicator with timecode, dual-trigger stop,
    `fix-webm-duration` patches the EBML header. Bound to preview
-   FPS — a 24fps preview produces a 24fps video.
+   FPS — a 24fps preview produces a 24fps video. 6 Mbit/s video.
+
+Particles spawn positions are **non-deterministic across runs** —
+two consecutive exports of the same project produce slightly different
+particle layouts. Visually imperceptible; intentional v0.1 scope
+decision to keep `Math.random()` rather than seeding a per-clip PRNG.
 
 Both paths download the result automatically with a timestamped
 filename. The browser must stay in the foreground; backgrounded tabs
@@ -1370,27 +1284,28 @@ git commit -m "docs(limitations): describe offline + realtime export paths"
    short. Both muxers handle this; we just need to make sure our
    `chunkAudioBuffer` reports the actual `frameCount` (not
    `FRAMES_PER_CHUNK`) for the last chunk so the muxer knows to pad.
-3. **OffscreenCanvas + image bitmap cache.** The bitmap cache lives in
-   `useRenderer`; the offline path doesn't run inside the hook. The
-   orchestrator needs its own `getImageBitmap` — easy if we pass the
-   same cache instance through (`useVideoExporter` already has access
-   via the store's mediaRefs + a cache singleton, or we just reuse the
-   one that `useRenderer` built). Reviewer feedback welcome on whether
-   to lift `imageBitmapCache` out of `useRenderer` into the store, or
-   thread it as a new dep.
+3. **ImageBitmap cache shared with the offline path.** Resolved per
+   architect: `useRenderer` now returns `{ getBitmap }`; the page
+   component captures it and threads it through `useVideoExporter`
+   into `renderOffline`. No global state, no Context. Implemented in
+   Task 4 + plumbed through Task 9.
 4. **Firefox WebCodecs status circa 2026-05-21.** Spec landed in
    Firefox 130 (October 2024). Safari WebCodecs Audio came in 17.4.
    Confirm current latest-release coverage before merge; if Firefox
    still lacks something, the feature-detect handles it cleanly.
-5. **Determinism of `Math.random` elsewhere.** Particles is the only
-   stochastic plugin in v0.1. If future plugins add stochasticity,
-   they MUST follow the same pattern (seed-per-frame PRNG). Document
-   in the plugin-author guide.
+5. **Particles spawn non-deterministic across multiple renders —
+   intentional v0.1 scope decision, visually imperceptible.**
+   `Math.random()` stays in `spawnGeometry`. Two consecutive exports
+   of the same project produce slightly different particle layouts;
+   nobody notices. If we ever add post-processing that needs frame-
+   to-frame stability (motion blur, temporal AA, deflicker), revisit
+   in a future plan with seed-per-frame PRNG.
 6. **Tests using global `VideoEncoder` / `AudioEncoder` mocks.**
    `vitest.setup.ts` already stubs `MediaRecorder`. We'll add
-   minimal mocks for both WebCodecs encoders — the determinism /
-   muxer tests will exercise the orchestrator with fakes that capture
-   the configure/encode call sequence.
+   minimal mocks for both WebCodecs encoders — the orchestrator tests
+   will exercise the pipeline with fakes that capture the
+   configure/encode call sequence, including a stub that triggers the
+   error callback for the architect-Bug-1 propagation test.
 
 ---
 
