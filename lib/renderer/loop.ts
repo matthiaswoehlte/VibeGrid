@@ -69,6 +69,51 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
   Sunray: 'sunray'
 };
 
+// Plan 5.9b hotfix: turn the current video frame into an ImageBitmap so
+// FX plugins that consume `rc.imageBitmap` (ZoomPulse, Contour) operate
+// on the video the same way they do on still images.
+//
+// Strategy: a single module-scoped OffscreenCanvas at the source video's
+// intrinsic size. Per tick we drawImage(videoEl) into it, then
+// `transferToImageBitmap()` — synchronous, no Promise chain to thread
+// through the RAF loop. The captured bitmap lives for ONE tick and is
+// closed at the end of `tick()` so we don't leak ~8 MB of GPU memory
+// per frame.
+//
+// Plugin behaviour:
+//   - ZoomPulse: fresh bitmap each tick → animates the live video frame.
+//   - Contour: ImageBitmap-keyed WeakMap → cache miss every tick, async
+//     preload triggered but the bitmap is closed before the preload
+//     finishes its `getImageData`. Net effect: Contour silently doesn't
+//     render for video. Acceptable trade-off; per-frame edge extraction
+//     would cost 50-200 ms per call (10x realtime). Future work.
+let frameCaptureCanvas: OffscreenCanvas | null = null;
+
+function captureVideoFrame(el: HTMLVideoElement): ImageBitmap | undefined {
+  if (typeof OffscreenCanvas === 'undefined') return undefined;
+  const vw = el.videoWidth;
+  const vh = el.videoHeight;
+  if (!vw || !vh) return undefined;
+  if (typeof el.readyState === 'number' && el.readyState < 2) return undefined;
+  if (!frameCaptureCanvas) {
+    frameCaptureCanvas = new OffscreenCanvas(vw, vh);
+  } else if (frameCaptureCanvas.width !== vw || frameCaptureCanvas.height !== vh) {
+    frameCaptureCanvas.width = vw;
+    frameCaptureCanvas.height = vh;
+  }
+  const fctx = frameCaptureCanvas.getContext('2d');
+  if (!fctx) return undefined;
+  try {
+    fctx.drawImage(el, 0, 0);
+  } catch {
+    return undefined;
+  }
+  if (typeof frameCaptureCanvas.transferToImageBitmap !== 'function') {
+    return undefined;
+  }
+  return frameCaptureCanvas.transferToImageBitmap();
+}
+
 /**
  * Draw an image to the canvas with `object-fit: contain` semantics —
  * maintains aspect ratio, fits the entire image inside the canvas (may
@@ -183,6 +228,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
     // instead of an ImageBitmap. drawImageContain accepts both as
     // CanvasImageSource.
     let firstImageBitmap: ImageBitmap | undefined;
+    // Track whether we OWN the bitmap (created via `captureVideoFrame`)
+    // vs whether it came from the media slice (owned by the store and
+    // outlives the tick). We close at end of tick only when owned.
+    let ownsFirstImageBitmap = false;
     for (const track of timeline.tracks) {
       const isImage = track.kind === 'image';
       const isVideo = track.kind === 'video';
@@ -197,14 +246,25 @@ export function createRenderer(deps: RendererDeps): Renderer {
         if (!bm) continue;
         source = bm;
         // FX plugins that need a bitmap (Contour edges, ZoomPulse
-        // scale) take whichever was painted first. Video sources are
-        // intentionally NOT considered — those FX have no path to
-        // operate on a HTMLVideoElement in v0.1.
+        // scale) take whichever was painted first.
         if (!firstImageBitmap) firstImageBitmap = bm;
       } else {
         const el = deps.getVideoElement?.(ic.mediaId);
         if (!el) continue;
         source = el;
+        // Plan 5.9b hotfix: capture the current video frame as an
+        // ImageBitmap so ZoomPulse / Contour can operate on it via
+        // `rc.imageBitmap`, same as for image clips. Falls back to
+        // undefined when OffscreenCanvas / transferToImageBitmap isn't
+        // available (jsdom test env) — the existing skip-guard at
+        // line 244 then bypasses the bitmap-consuming FX silently.
+        if (!firstImageBitmap) {
+          const snap = captureVideoFrame(el);
+          if (snap) {
+            firstImageBitmap = snap;
+            ownsFirstImageBitmap = true;
+          }
+        }
       }
 
       const alpha = computeClipAlpha(timeline, ic, beats);
@@ -303,6 +363,14 @@ export function createRenderer(deps: RendererDeps): Renderer {
           if (usesAlpha) ctx!.restore();
         }
       }
+    }
+
+    // Plan 5.9b hotfix: release the per-tick video-frame ImageBitmap so
+    // we don't leak ~8 MB per frame at 30-60 fps. Bitmaps from the
+    // media slice (image clips) are owned by the store — never close
+    // those. `close()` is a no-op if not supported.
+    if (ownsFirstImageBitmap && firstImageBitmap && typeof firstImageBitmap.close === 'function') {
+      firstImageBitmap.close();
     }
   }
 
