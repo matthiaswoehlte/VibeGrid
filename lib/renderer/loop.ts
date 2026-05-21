@@ -81,18 +81,6 @@ export function createRenderer(deps: RendererDeps): Renderer {
   const lastFiredByClip = new Map<string, number | null>();
   let lastSeenSeek = deps.getSeekCounter?.() ?? 0;
   let rafId: number | null = null;
-  // Diagnostic: prove the hotfix bundle reached the browser. Logs ONCE per
-  // flip. If you toggle the TopBar button and see nothing here, the bundle
-  // is stale — hard-refresh (Ctrl+Shift+R) or restart `npm run dev`.
-  let lastLoggedFlow: boolean | null = null;
-  // FPS counter — buckets every frame, reports once per second. 60 fps is
-  // smooth, < 50 is "I notice it stuttering," < 30 is "playhead jumps."
-  let fpsFrames = 0;
-  let fpsWindowStart = 0;
-  // Trace: was the ZoomPulse plugin invoked at all this frame, and what did
-  // it see for rc.flowMode? Logs ONCE per (clipId × flowMode) pair so we
-  // don't spam.
-  const tracedZoomPulse = new Set<string>();
 
   function tick(): void {
     // Skip if the canvas has a zero-sized pixel buffer (happens during window
@@ -137,25 +125,6 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const nearestBeatIndex = phase.phase > 0.5 ? phase.beatIndex + 1 : phase.beatIndex;
     // Read once per tick — flips mid-frame would tear the cross-clip frame.
     const flowMode = deps.getFlowMode?.() ?? false;
-    if (flowMode !== lastLoggedFlow) {
-      // eslint-disable-next-line no-console
-      console.log(`[renderer] flowMode = ${flowMode}`);
-      lastLoggedFlow = flowMode;
-      // Clear the per-flip trace set so we get a fresh ZoomPulse log per mode.
-      tracedZoomPulse.clear();
-    }
-
-    // FPS counter — 1 Hz report. performance.now is monotonic across tabs.
-    fpsFrames++;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (fpsWindowStart === 0) fpsWindowStart = now;
-    if (now - fpsWindowStart >= 1000) {
-      const fps = Math.round((fpsFrames * 1000) / (now - fpsWindowStart));
-      // eslint-disable-next-line no-console
-      console.log(`[renderer] fps = ${fps}`);
-      fpsFrames = 0;
-      fpsWindowStart = now;
-    }
 
     const timeline = deps.getTimelineState();
     // Draw EVERY active image clip — overlapping image clips crossfade via
@@ -214,21 +183,6 @@ export function createRenderer(deps: RendererDeps): Renderer {
           flowMode,
           imageBitmap
         };
-
-        // Trace: did a ZoomPulse plugin actually get invoked, and what did
-        // it see for rc.flowMode? If we see this log with flowMode=true but
-        // the zoom is still happening on screen, the plugin module itself
-        // is stale (HMR didn't pick up the hotfix).
-        if (plugin.kind === 'ZoomPulse') {
-          const key = `${clip.id}:${flowMode}`;
-          if (!tracedZoomPulse.has(key)) {
-            // eslint-disable-next-line no-console
-            console.log(
-              `[renderer] ZoomPulse invoked for clip=${clip.id} flowMode=${flowMode}`
-            );
-            tracedZoomPulse.add(key);
-          }
-        }
 
         // Merge defaults with clip overrides. Without the spread, a clip with
         // partial params (e.g. only `{__blend: ...}` added by the lifecycle)
