@@ -19,6 +19,15 @@ export function makeMockCtx(): CanvasRenderingContext2D & {
     globalAlpha: 1,
     lineWidth: 1,
     lineDashOffset: 0,
+    font: '10px sans-serif',
+    textAlign: 'start' as CanvasTextAlign,
+    textBaseline: 'alphabetic' as CanvasTextBaseline,
+    measureText: vi.fn((s: string) => ({ width: s.length * 6 } as TextMetrics)),
+    fillText: stub('fillText'),
+    strokeText: stub('strokeText'),
+    createLinearGradient: vi.fn(() => ({
+      addColorStop: vi.fn()
+    })),
     clearRect: stub('clearRect'),
     fillRect: stub('fillRect'),
     beginPath: stub('beginPath'),
