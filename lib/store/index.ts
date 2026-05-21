@@ -60,7 +60,9 @@ export const useAppStore = create<AppState>()(
           const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
           const existingKinds = new Set(existing.map((t) => t.kind));
           const missing = initialTimelineState.tracks.filter((t) => !existingKinds.has(t.kind));
-          s.timeline.tracks = [...existing, ...missing].sort((a, b) => a.order - b.order);
+          s.timeline.tracks = [...existing, ...missing].sort(
+            (a, b) => (a.order ?? 0) - (b.order ?? 0)
+          );
         }
         return s;
       },

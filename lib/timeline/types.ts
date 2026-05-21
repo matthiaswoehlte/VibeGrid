@@ -9,9 +9,20 @@ export type TrackKind =
   // consistent with the existing naming (`contour`, `pulse`, …).
   | 'text'
   | 'dissolve'
-  | 'sunray';
+  | 'sunray'
+  // Plan 5.9a — two more. `'audio'` is a STUB only — TrackKind already
+  // accepts it so the type system is forward-compatible, but
+  // `addTrack('audio')` rejects at runtime ("Multi-Audio-Tracks: v0.2").
+  // `'video'` is wired through Plan 5.9b.
+  | 'audio'
+  | 'video';
 
-export type FxKind = Exclude<TrackKind, 'image'>;
+/** Media-bearing kinds (carry their own media reference; not FX plugins). */
+export type MediaTrackKind = 'image' | 'audio' | 'video';
+
+/** FX-plugin track kinds — everything that draws via the renderer's plugin
+ *  dispatch loop. Excludes the media-bearing kinds. */
+export type FxKind = Exclude<TrackKind, MediaTrackKind>;
 
 /** Trigger cadence for FX. Defined here (not in renderer) because clips own a trigger. */
 export type TriggerMode = 'half-bar' | 'beat' | 'bar' | 'two-bar';
@@ -23,7 +34,11 @@ export interface Track {
   kind: TrackKind;
   name: string;
   muted: boolean;
-  order: number;
+  /** @deprecated Plan 5.9a: array position in `TimelineState.tracks` is
+   *  now authoritative for render order. Existing snapshots still carry
+   *  the field; new code MUST NOT rely on it. Tolerated as optional so
+   *  the migrate-hook can read & strip it on v4 → v5 upgrade. */
+  order?: number;
 }
 
 export interface Clip {

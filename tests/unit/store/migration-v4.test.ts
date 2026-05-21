@@ -28,7 +28,9 @@ function migrateV3ToV4(persisted: { timeline: { tracks: Track[]; clips: unknown[
     ...persisted,
     timeline: {
       ...persisted.timeline,
-      tracks: [...existing, ...missing].sort((a, b) => a.order - b.order)
+      tracks: [...existing, ...missing].sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0)
+      )
     }
   };
 }

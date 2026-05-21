@@ -71,7 +71,8 @@ export function activeFxClipsByKind(
     sunray: []
   };
   for (const c of state.clips) {
-    if (c.kind === 'image') continue;
+    // Skip media-bearing clips — they're handled outside this selector.
+    if (c.kind === 'image' || c.kind === 'audio' || c.kind === 'video') continue;
     if (beats < c.startBeat || beats >= c.startBeat + c.lengthBeats) continue;
     result[c.kind].push(c);
   }

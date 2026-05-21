@@ -18,7 +18,10 @@ const KIND_COLOR: Record<TrackKind, string> = {
   // Plan 5.8a — three new FX kinds.
   text: '#e8eaf0',      // off-white (matches --text)
   dissolve: '#6b7088',  // muted slate (matches --text-muted)
-  sunray: '#fffbe6'     // warm white — matches Sunray plugin default color
+  sunray: '#fffbe6',    // warm white — matches Sunray plugin default color
+  // Plan 5.9a — media-bearing track kinds.
+  audio: '#3a3f55',     // muted blue-grey (stub, never user-visible in v0.1)
+  video: '#7a4dff'      // saturated purple — distinct from image (blue)
 };
 
 export function Clip({ clip }: { clip: ClipT }) {
