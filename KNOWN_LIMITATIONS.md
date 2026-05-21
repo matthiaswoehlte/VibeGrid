@@ -2,44 +2,66 @@
 
 This file is the canonical reference for v0.1 caveats. Each section is filled in by the plan that lands the corresponding feature.
 
-## Export (Plan 6)
+## Export (Plan 6 + Plan 6-R)
 
-- **Realtime constraint.** Export plays the entire audio through and records
-  in real time — a 3-minute song takes 3 minutes to export. There is no
-  faster-than-realtime offline render in v0.1.
-- **Tab focus required.** When the browser tab is in the background, the
-  browser throttles `requestAnimationFrame` to ~1 Hz. We detect this with
-  `visibilitychange` and surface a persistent warning toast, but the
-  export keeps running and will likely have dropped frames. Keep the tab
-  active for clean output.
-- **Codec varies by browser.** Preference list, picked at start: MP4
-  (H.264 + AAC) → WebM (VP9 + Opus) → WebM (VP8 + Opus) → WebM (default).
-  Chrome 122+, Safari 14.1+, and Edge produce MP4 directly via
-  MediaRecorder — playable in iOS Safari, every social-platform upload
-  pipeline, and macOS Quick Look without re-encoding. Firefox falls
-  through to WebM. The UI toasts the selected codec at the start of
-  every export so the user knows what they have.
-- **No WebCodecs / re-encoding.** When the browser can't produce MP4 via
-  MediaRecorder (Firefox today), the output is WebM. There's no
-  client-side re-encode-to-MP4 path in v0.1 — that's WebCodecs +
-  mp4-muxer territory, parked for v0.2.
+VibeGrid exports via two paths, auto-selected by browser capability.
+
+### Offline render (preferred, Plan 6-R, WebCodecs)
+
+- **Frame-by-frame at 1920×1080 / 30 fps / 8 Mbit/s video / 128 kbit/s
+  audio.** Decoupled from preview FPS — a 24 fps preview still produces
+  a buttery-smooth 30 fps output. Render time depends on project
+  complexity, typically 1–3× realtime on a modern desktop.
+- **Codec preference:** H.264 + AAC MP4 (`avc1.42E01E`) → VP9 + Opus
+  WebM (`vp09.00.10.08`). Codec is picked once at start via
+  `VideoEncoder.isConfigSupported`; the UI toasts the selection.
+- **Video bitrate bump from 6 → 8 Mbit/s** compared to the realtime
+  path. The realtime constraint is gone in offline mode, so we spend
+  a bit more on quality.
+- **Browser support:** Chrome 94+, Edge 94+, Safari 17.4+ (older Safari
+  has VideoEncoder but missing AudioEncoder), Firefox 130+. Anything
+  older falls back to the realtime path automatically.
+- **Progress UI:** `Rendering X / Y (Z%) · ETA M:SS` + teal progress
+  bar + ✕ Cancel. Cancel aborts the encoder synchronously; no partial
+  file is written.
+- **Memory:** `mp4-muxer` keeps the entire output in RAM (`fastStart:
+  'in-memory'`) until finalize. ~300 MB peak for a 5-minute 1080p clip.
+  Acceptable for v0.1; switch to `StreamTarget` if longer projects
+  become routine.
+- **Particles spawn non-deterministic across runs** — two consecutive
+  offline exports of the same project produce slightly different
+  particle layouts. Intentional v0.1 scope decision; visually
+  imperceptible. Future plugins with stochasticity should follow the
+  same convention or revisit with seed-per-frame PRNG.
+
+### Realtime record (fallback, Plan 6, MediaRecorder)
+
+- **Realtime constraint.** Plays the entire audio through and records
+  in real time — a 3-minute song takes 3 minutes to export. Bound to
+  preview FPS: a 24 fps preview produces a 24 fps video. Used when
+  WebCodecs is unavailable (Firefox < 130, very old Safari).
+- **Tab focus required.** When the browser tab is in the background,
+  RAF is throttled to ~1 Hz. We surface a persistent warning toast,
+  but the export keeps running and will likely drop frames. Keep the
+  tab active for clean output. (Offline rendering has the same RAF
+  throttle but the encoder owns pacing — render just takes longer.)
+- **Codec preference:** MP4 (H.264 + AAC) → WebM (VP9 + Opus) →
+  WebM (VP8 + Opus) → WebM (default), 6 Mbit/s video + 128 kbit/s audio.
 - **WebM duration patched via `fix-webm-duration`, MP4 unpatched.**
-  MediaRecorder writes the EBML Duration element BEFORE it knows how
-  long the recording will run, so the raw WebM has 0:00 in the header.
-  We post-process the Blob to rewrite that field with the actual length.
-  MP4 from modern Chromium / Safari has a correctly-finalised moov atom
-  out of the box — no patching needed. If a future MediaRecorder shipping
-  malformed MP4 surfaces, the fix is `mp4box.js` or `mp4-muxer` —
-  heavier than `fix-webm-duration` (~3 KB), would land as a v0.2 chore.
-- **No quality / bitrate UI.** Bitrate is fixed at 6 Mbps video +
-  128 Kbps audio in v0.1. The exporter records at 30 fps regardless of
-  zoom or device-pixel-ratio.
+  MediaRecorder writes the EBML Duration element before it knows how
+  long the recording will run; we rewrite that field after Blob
+  assembly. MP4 from modern Chromium / Safari has a correctly-
+  finalised moov atom out of the box.
+
+### Both paths
+
 - **Single-image-clip-at-beat-0 requirement.** The Export button is
-  disabled when no image clip starts at beat 0. The exporter would
+  disabled when no image clip starts at beat 0 — the export would
   otherwise produce a black opening frame.
-- **No progress percentage.** The REC indicator shows `MM:SS / MM:SS`
-  (elapsed / total). A percent bar would just be `elapsed / total` —
-  redundant. v0.2 may add one if a faster-than-realtime path lands.
+- **No quality / bitrate UI.** Fixed-quality presets for v0.1.
+- **Filename:** `vibegrid_export_<ISO without colons>.<mp4|webm>`.
+  Auto-downloads via an anchor element; the object URL is revoked
+  after 10 s.
 
 ## Dev Dependencies — accepted vulnerabilities (Plan 0)
 
