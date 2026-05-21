@@ -115,6 +115,49 @@ client-side debounce, no server-side rate-limit. Each call costs a few
 cents at current pricing. v0.2 will add a 2-second debounce on the ✨
 button and an optional per-session ceiling.
 
+## Video clips (Plan 5.9b)
+
+- **Max. 5 Minuten pro Video-Clip** — client-side pre-check rejects
+  longer files before upload starts (`getVideoDuration` reads
+  metadata, no bandwidth wasted).
+- **Unterstützte Formate**: MP4 (H.264) and WebM (VP9). MOV is
+  rejected — its codec landscape (ProRes, HEVC variants, …) breaks
+  browser decoding too often to support in v0.1.
+- **Max. 500 MB upload size** — server-side check in `/api/presign`.
+- **Video-Audio wird ignoriert**. The `<video>` element runs muted
+  (`muted: true`); audio comes exclusively from the AudioEngine. The
+  user has to add the audio track separately if they want the
+  video's soundtrack.
+- **Contour and ZoomPulse FX skip video tracks**. Both need an
+  `ImageBitmap` from the live image cache; the video element doesn't
+  provide one without expensive offscreen extraction. A project with
+  ONLY video clips active and a Contour / ZoomPulse clip on top
+  renders those FX as no-ops.
+- **Offline export with video is 5-15× slower than realtime**. Each
+  frame must `await videoEngine.seekAllTo(timeSec)` so the video
+  element settles on the exact frame before the canvas snapshot.
+  `requestVideoFrameCallback` on Chrome / Edge / Firefox 130+ keeps
+  it at the lower end of the range; older Safari / Firefox use the
+  `seeked` event and are noticeably slower.
+- **R2 CORS must allow PUT** for the browser origin (Presigned
+  upload). The existing image-CORS only includes GET. Add the
+  origin to the Cloudflare R2 bucket's CORS settings under
+  AllowedMethods.
+- **Auto-Preset (✨) ignores video clips**. The Claude system prompt
+  has no awareness of video; it only suggests FX for image clips.
+- **Video-Audio extraction** to a separate audio track is a v0.2
+  feature.
+- **Video trimming / in-out points** is a v0.2 feature. The clip
+  uses the full source from t=0; lengthening is via the
+  `lengthBeats` resize handle like any other clip.
+- **4K video** is not tested in v0.1 — the pipeline is resolution-
+  agnostic but the smoke gate is 1080p only.
+- **Multi-Audio-Tracks** are a v0.2 feature. The `'audio'` TrackKind
+  exists in the type system (Plan 5.9a stub) but `addTrack('audio')`
+  rejects with a toast.
+- **Reorder-UI for tracks** is a v0.2 feature. The `reorderTracks`
+  store action exists but no drag-rearrange in the lane header.
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
