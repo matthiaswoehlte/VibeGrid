@@ -1,5 +1,5 @@
 import { makeOfflineRenderer } from '@/lib/renderer/offline-tick';
-import { pickVideoEncoderConfig, pickAudioEncoderConfig } from './webcodecs';
+import { pickCodecPair } from './webcodecs';
 import { chunkAudioBuffer } from './audio-chunks';
 import { createOfflineMuxer } from './muxer';
 import type { TimelineState } from '@/lib/timeline/types';
@@ -76,14 +76,22 @@ export async function renderOffline(
   const durationSec = deps.audioBuffer.duration;
   const totalFrames = Math.ceil(durationSec * fps);
 
-  // 1. Pick codecs.
-  const videoPick = await pickVideoEncoderConfig(width, height, fps);
-  if (!videoPick) throw new Error('No supported video codec');
-  const audioPick = await pickAudioEncoderConfig(
+  // 1. Pick a codec PAIR (video + audio + container) — never independent.
+  //    Independent picks would let us mux Opus into an MP4 container or
+  //    AAC into a WebM container; both libraries reject the mismatch and
+  //    we'd get a corrupted file. `pickCodecPair` walks preference order
+  //    MP4 (Baseline → Main → High) → WebM and only returns a pair when
+  //    both video and audio are accepted together.
+  const pair = await pickCodecPair(
+    width,
+    height,
+    fps,
     deps.audioBuffer.sampleRate,
     deps.audioBuffer.numberOfChannels
   );
-  if (!audioPick) throw new Error('No supported audio codec');
+  if (!pair) throw new Error('No supported codec pair');
+  const videoPick = pair.video;
+  const audioPick = pair.audio;
 
   // 2. Render target — fresh OffscreenCanvas at the export resolution.
   const canvas = new OffscreenCanvas(width, height);
@@ -227,7 +235,7 @@ export async function renderOffline(
 
   // 7. Finalise.
   const bytes = muxer.finalize();
-  const mime = videoPick.ext === 'mp4' ? 'video/mp4' : 'video/webm';
+  const mime = pair.ext === 'mp4' ? 'video/mp4' : 'video/webm';
   const blob = new Blob([bytes], { type: mime });
-  return { blob, ext: videoPick.ext, codecLabel: videoPick.label };
+  return { blob, ext: pair.ext, codecLabel: pair.label };
 }

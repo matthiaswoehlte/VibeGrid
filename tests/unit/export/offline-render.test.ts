@@ -332,7 +332,7 @@ describe('renderOffline — error + cancel', () => {
     ).rejects.toThrow('synthetic encoder fail');
   });
 
-  it('throws when no supported video codec is found', async () => {
+  it('throws when no supported codec pair is found', async () => {
     installWebCodecsMocks({ pickVideoSupported: false });
     await expect(
       renderOffline(
@@ -345,7 +345,7 @@ describe('renderOffline — error + cancel', () => {
         },
         { fps: 30 }
       )
-    ).rejects.toThrow('No supported video codec');
+    ).rejects.toThrow('No supported codec pair');
   });
 });
 

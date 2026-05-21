@@ -245,6 +245,16 @@ export function useVideoExporter({
               mode: 'offline',
               codecLabel: result.codecLabel
             });
+            if (result.ext === 'webm') {
+              // Browser couldn't do any of the MP4 H.264 profiles via
+              // WebCodecs — warn the user before the download arrives so
+              // they don't open it in Windows Media Player and wonder why.
+              toast.warning(
+                'MP4 (H.264) wird nicht unterstützt — exportiert als WebM. ' +
+                  'In VLC / Chrome / Firefox abspielbar; Windows Media Player nicht.',
+                { duration: 8000 }
+              );
+            }
             triggerDownload(result.blob, result.ext);
             setExportState({ status: 'done', mode: 'offline' });
             setTimeout(
