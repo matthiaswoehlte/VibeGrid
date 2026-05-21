@@ -24,7 +24,11 @@ export const initialTimelineState: TimelineState = {
     { id: 'track-zoom-pulse', kind: 'zoom-pulse', name: 'Zoom Pulse', muted: false, order: 2 },
     { id: 'track-sweep', kind: 'sweep', name: 'Sweep', muted: false, order: 3 },
     { id: 'track-particles', kind: 'particles', name: 'Particles', muted: false, order: 4 },
-    { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 5 }
+    { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 5 },
+    // Plan 5.8a — three new tracks. Order continues from existing 0..5.
+    { id: 'track-dissolve', kind: 'dissolve', name: 'Dissolve', muted: false, order: 6 },
+    { id: 'track-sunray', kind: 'sunray', name: 'Sunray', muted: false, order: 7 },
+    { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 }
   ],
   clips: [],
   playhead: { beats: 0, playing: false },

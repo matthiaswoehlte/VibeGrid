@@ -1,4 +1,15 @@
-export type TrackKind = 'image' | 'contour' | 'sweep' | 'pulse' | 'particles' | 'zoom-pulse';
+export type TrackKind =
+  | 'image'
+  | 'contour'
+  | 'sweep'
+  | 'pulse'
+  | 'particles'
+  | 'zoom-pulse'
+  // Plan 5.8a — three new FX track kinds. No `fx-` prefix to stay
+  // consistent with the existing naming (`contour`, `pulse`, …).
+  | 'text'
+  | 'dissolve'
+  | 'sunray';
 
 export type FxKind = Exclude<TrackKind, 'image'>;
 

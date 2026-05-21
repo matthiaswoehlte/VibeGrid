@@ -14,7 +14,11 @@ const KIND_COLOR: Record<TrackKind, string> = {
   sweep: '#ff6b9d',     // pink
   particles: '#2ee0d0', // teal (matches --a3)
   pulse: '#ffd166',     // amber
-  'zoom-pulse': '#ff9f43' // orange — distinct from the other five
+  'zoom-pulse': '#ff9f43', // orange
+  // Plan 5.8a — three new FX kinds.
+  text: '#e8eaf0',      // off-white (matches --text)
+  dissolve: '#6b7088',  // muted slate (matches --text-muted)
+  sunray: '#fffbe6'     // warm white — matches Sunray plugin default color
 };
 
 export function Clip({ clip }: { clip: ClipT }) {

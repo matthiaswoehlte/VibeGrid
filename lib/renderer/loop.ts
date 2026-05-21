@@ -32,9 +32,21 @@ export interface Renderer {
   tick(): void;
 }
 
-// Image transforms apply BEFORE overlay FX. Order: Contour (edge detection) →
-// ZoomPulse (image scale punch) → Sweep → Particle → Pulse (flash overlay).
-const RENDER_ORDER: FxKind[] = ['Contour', 'ZoomPulse', 'Sweep', 'Particle', 'Pulse'];
+// Plan 5.8a — render order (bottom-up):
+// Dissolve manipulates the image directly (first overlay). Image-FX
+// (Contour edges, ZoomPulse scale) come next. Sweep + Particle + Pulse
+// are visual flashes. Sunray = directional light, sits above flashes.
+// Text is always on top.
+const RENDER_ORDER: FxKind[] = [
+  'Dissolve',
+  'Contour',
+  'ZoomPulse',
+  'Sweep',
+  'Particle',
+  'Pulse',
+  'Sunray',
+  'Text'
+];
 
 /**
  * Map FX plugin `kind` (PascalCase) to the corresponding key in `activeFxClipsByKind`'s
@@ -46,7 +58,11 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
   ZoomPulse: 'zoom-pulse',
   Pulse: 'pulse',
   Sweep: 'sweep',
-  Particle: 'particles'
+  Particle: 'particles',
+  // Plan 5.8a — new kinds, lowercase TrackKind names match 1:1.
+  Text: 'text',
+  Dissolve: 'dissolve',
+  Sunray: 'sunray'
 };
 
 /**

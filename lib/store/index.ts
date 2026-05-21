@@ -47,13 +47,16 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibegrid-store',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       // v1 → v2: ensure all default TrackKind tracks exist (Plan 5 fix).
       // v2 → v3: same merge re-runs after Plan 5.5 adds the zoom-pulse track.
+      // v3 → v4: same merge re-runs after Plan 5.8a adds the text /
+      //          dissolve / sunray tracks. Generic diff-against-defaults
+      //          logic stays untouched.
       migrate: (persistedState, version) => {
         const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
-        if (version < 3 && s?.timeline) {
+        if (version < 4 && s?.timeline) {
           const existing: Track[] = Array.isArray(s.timeline.tracks) ? s.timeline.tracks : [];
           const existingKinds = new Set(existing.map((t) => t.kind));
           const missing = initialTimelineState.tracks.filter((t) => !existingKinds.has(t.kind));

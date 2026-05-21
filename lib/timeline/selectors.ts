@@ -64,7 +64,11 @@ export function activeFxClipsByKind(
     sweep: [],
     pulse: [],
     particles: [],
-    'zoom-pulse': []
+    'zoom-pulse': [],
+    // Plan 5.8a — three new FX kinds.
+    text: [],
+    dissolve: [],
+    sunray: []
   };
   for (const c of state.clips) {
     if (c.kind === 'image') continue;

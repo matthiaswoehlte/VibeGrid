@@ -30,7 +30,11 @@ const PLUGIN_TO_TRACK_KIND: Record<PluginFxKind, TrackKind> = {
   Pulse: 'pulse',
   Sweep: 'sweep',
   Particle: 'particles',
-  ZoomPulse: 'zoom-pulse'
+  ZoomPulse: 'zoom-pulse',
+  // Plan 5.8a — new kinds, lowercase TrackKind names match 1:1.
+  Text: 'text',
+  Dissolve: 'dissolve',
+  Sunray: 'sunray'
 };
 
 export function Tracks({ totalBeats }: { totalBeats: number }) {

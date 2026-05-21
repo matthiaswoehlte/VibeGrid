@@ -13,7 +13,16 @@ export type ParamSchema = Record<string, ParamType & { label: string }>;
 
 export type PreloadState = 'idle' | 'loading' | 'ready' | 'error';
 
-export type FxKind = 'Contour' | 'Pulse' | 'Sweep' | 'Particle' | 'ZoomPulse';
+export type FxKind =
+  | 'Contour'
+  | 'Pulse'
+  | 'Sweep'
+  | 'Particle'
+  | 'ZoomPulse'
+  // Plan 5.8a — three new FX kinds.
+  | 'Text'
+  | 'Dissolve'
+  | 'Sunray';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;
