@@ -69,6 +69,13 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
   Sunray: 'sunray'
 };
 
+/** Plan 5.9b hotfix: Contour bucket size for video clips. Edge paths
+ *  are re-extracted only when the video crosses into a new bucket.
+ *  At 500 ms a 30 fps video extracts ~2 times/sec (50-200 ms each) —
+ *  CPU-tolerable, visually refreshed often enough that contours track
+ *  the moving subject reasonably. */
+const CONTOUR_VIDEO_BUCKET_SEC = 0.5;
+
 // Plan 5.9b hotfix: turn the current video frame into an ImageBitmap so
 // FX plugins that consume `rc.imageBitmap` (ZoomPulse, Contour) operate
 // on the video the same way they do on still images.
@@ -80,13 +87,10 @@ const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
 // closed at the end of `tick()` so we don't leak ~8 MB of GPU memory
 // per frame.
 //
-// Plugin behaviour:
-//   - ZoomPulse: fresh bitmap each tick → animates the live video frame.
-//   - Contour: ImageBitmap-keyed WeakMap → cache miss every tick, async
-//     preload triggered but the bitmap is closed before the preload
-//     finishes its `getImageData`. Net effect: Contour silently doesn't
-//     render for video. Acceptable trade-off; per-frame edge extraction
-//     would cost 50-200 ms per call (10x realtime). Future work.
+// Pairs with `imageBitmapKey` on RenderContext — Contour caches edges
+// by that string key (image: mediaId, video: `mediaId|500ms-bucket`)
+// instead of by bitmap identity, so Contour can re-use extraction
+// results across the per-tick bitmaps that ZoomPulse needs fresh.
 let frameCaptureCanvas: OffscreenCanvas | null = null;
 
 function captureVideoFrame(el: HTMLVideoElement): ImageBitmap | undefined {
@@ -228,6 +232,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
     // instead of an ImageBitmap. drawImageContain accepts both as
     // CanvasImageSource.
     let firstImageBitmap: ImageBitmap | undefined;
+    // Stable string key paired with `firstImageBitmap` so plugins that
+    // cache derived data (Contour edge paths) can key by a string that
+    // survives across per-frame bitmap allocations on video clips.
+    let firstImageBitmapKey: string | undefined;
     // Track whether we OWN the bitmap (created via `captureVideoFrame`)
     // vs whether it came from the media slice (owned by the store and
     // outlives the tick). We close at end of tick only when owned.
@@ -247,7 +255,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
         source = bm;
         // FX plugins that need a bitmap (Contour edges, ZoomPulse
         // scale) take whichever was painted first.
-        if (!firstImageBitmap) firstImageBitmap = bm;
+        if (!firstImageBitmap) {
+          firstImageBitmap = bm;
+          firstImageBitmapKey = ic.mediaId;
+        }
       } else {
         const el = deps.getVideoElement?.(ic.mediaId);
         if (!el) continue;
@@ -263,6 +274,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
           if (snap) {
             firstImageBitmap = snap;
             ownsFirstImageBitmap = true;
+            // ~500 ms bucket: Contour re-extracts only when the video
+            // crosses into a new bucket. Within a bucket, plugins that
+            // cache by this key hit on every tick.
+            const t = typeof el.currentTime === 'number' ? el.currentTime : 0;
+            const bucket = Math.floor(t / CONTOUR_VIDEO_BUCKET_SEC);
+            firstImageBitmapKey = `${ic.mediaId}|${bucket}`;
           }
         }
       }
@@ -326,7 +343,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
           clipStartSec,
           clipDurationSec,
           flowMode,
-          imageBitmap
+          imageBitmap,
+          imageBitmapKey: firstImageBitmapKey
         };
 
         // Merge defaults with clip overrides. Without the spread, a clip with

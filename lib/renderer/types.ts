@@ -53,6 +53,16 @@ export interface RenderContext {
    * without an active image clip.
    */
   imageBitmap?: ImageBitmap;
+  /**
+   * Plan 5.9b hotfix: stable identity for `imageBitmap`, so plugins that
+   * extract + cache derived data (e.g. Contour's edge paths) can key by
+   * a string instead of by per-frame bitmap identity.
+   *
+   * - Image clip: `mediaId`. Stable across the lifetime of the bitmap.
+   * - Video clip: `${mediaId}|${500ms-bucket}`. Re-extraction happens
+   *   when the video advances into a new bucket, every ~500 ms.
+   */
+  imageBitmapKey?: string;
 }
 
 export interface FxPlugin<Params = Record<string, unknown>> {

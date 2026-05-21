@@ -12,13 +12,60 @@ interface ContourParams {
   sweepSpeed: number;
 }
 
-const cache = new WeakMap<ImageBitmap, ContourPath[]>();
-const inflight = new WeakSet<ImageBitmap>();
+/** String-keyed cache. The key is `rc.imageBitmapKey` (provided by the
+ *  renderer: `mediaId` for image clips, `${mediaId}|${500ms-bucket}`
+ *  for video clips). Falls back to a bitmap-derived id when no key is
+ *  provided — keeps existing tests / direct callers working. */
+const cache = new Map<string, ContourPath[]>();
+const inflight = new Set<string>();
+/** Cap on cache size — protects against unbounded growth when a long
+ *  video sweeps through many 500 ms buckets. FIFO eviction. */
+const MAX_CACHE_ENTRIES = 128;
+
+/** Mint a stable string id for an ImageBitmap that has no `imageBitmapKey`
+ *  context (direct `preload()` calls in tests, future API consumers).
+ *  WeakMap-backed so entries are GC'd with the bitmap. */
+const bitmapKeyById = new WeakMap<ImageBitmap, string>();
+let nextBitmapId = 0;
+function getBitmapKey(bm: ImageBitmap): string {
+  let k = bitmapKeyById.get(bm);
+  if (!k) {
+    k = `bm-${++nextBitmapId}`;
+    bitmapKeyById.set(bm, k);
+  }
+  return k;
+}
+
+function evictIfFull(): void {
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 /** Edge-detection threshold for extractContours. */
 const CONTOUR_THRESHOLD = 0.3;
 /** Paths shorter than this point count are dropped as noise. */
 const MIN_PATH_POINTS = 8;
+
+/** Synchronous edge extraction from an ImageBitmap. Used by both the
+ *  public `preload()` (warm the cache ahead of render) and `render()`
+ *  (extract on cache miss for video bucket transitions). */
+function extractFromBitmap(bm: ImageBitmap): ContourPath[] {
+  const off = new OffscreenCanvas(bm.width, bm.height);
+  const offCtx = off.getContext('2d');
+  if (!offCtx) throw new Error('OffscreenCanvas 2d context unavailable');
+  offCtx.drawImage(bm as unknown as CanvasImageSource, 0, 0);
+  const img = (offCtx as unknown as CanvasRenderingContext2D).getImageData(
+    0,
+    0,
+    bm.width,
+    bm.height
+  );
+  const allPaths = extractContours(img, CONTOUR_THRESHOLD);
+  return allPaths.filter((p) => p.points.length >= MIN_PATH_POINTS);
+}
 
 /**
  * Normalized progress (0..1) for a point at (x, y) under the given sweep
@@ -119,26 +166,13 @@ export const contourPlugin: FxPlugin<ContourParams> = {
     if (!isClient()) return;
     contourPlugin.preloadState = 'loading';
     try {
-      const off = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
-      const offCtx = off.getContext('2d');
-      if (!offCtx) throw new Error('OffscreenCanvas 2d context unavailable');
-      offCtx.drawImage(imageBitmap as unknown as CanvasImageSource, 0, 0);
-      const img = (offCtx as unknown as CanvasRenderingContext2D).getImageData(
-        0,
-        0,
-        imageBitmap.width,
-        imageBitmap.height
-      );
+      const paths = extractFromBitmap(imageBitmap);
       if (signal.aborted) {
         contourPlugin.preloadState = 'idle';
         return;
       }
-      const allPaths = extractContours(img, CONTOUR_THRESHOLD);
-      // Drop short paths — they're almost always single-pixel noise that
-      // produces the "edges everywhere" look on busy images. Keeps the
-      // contour overlay tight to actual structural lines.
-      const paths = allPaths.filter((p) => p.points.length >= MIN_PATH_POINTS);
-      cache.set(imageBitmap, paths);
+      cache.set(getBitmapKey(imageBitmap), paths);
+      evictIfFull();
       contourPlugin.preloadState = 'ready';
     } catch {
       contourPlugin.preloadState = 'error';
@@ -146,16 +180,30 @@ export const contourPlugin: FxPlugin<ContourParams> = {
   },
   render(rc, params) {
     if (!rc.imageBitmap) return;
-    const paths = cache.get(rc.imageBitmap);
+    // Renderer provides `imageBitmapKey` for normal flow (image: mediaId,
+    // video: `${mediaId}|${500ms-bucket}`). Direct callers without a
+    // RenderContext from the loop (tests, future) fall back to a bitmap-
+    // derived id so caching still works per-bitmap.
+    const key = rc.imageBitmapKey ?? getBitmapKey(rc.imageBitmap);
+    let paths = cache.get(key);
     if (!paths) {
-      if (!inflight.has(rc.imageBitmap)) {
-        inflight.add(rc.imageBitmap);
-        const ctrl = new AbortController();
-        contourPlugin.preload(rc.imageBitmap, ctrl.signal).catch(() => {
-          /* swallow — preloadState reflects errors */
-        });
+      // Cache miss → extract synchronously. Blocks the RAF for 50-200 ms
+      // (the cost of getImageData + Canny). For video clips this hits
+      // once per 500 ms bucket transition; for images this hits once on
+      // first render. The inflight guard collapses concurrent miss
+      // attempts on the same key during the same call stack — paranoia,
+      // since extraction is synchronous.
+      if (inflight.has(key)) return;
+      inflight.add(key);
+      try {
+        paths = extractFromBitmap(rc.imageBitmap);
+        cache.set(key, paths);
+        evictIfFull();
+      } catch {
+        return;
+      } finally {
+        inflight.delete(key);
       }
-      return;
     }
     if (paths.length === 0) return;
 
