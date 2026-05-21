@@ -1,7 +1,9 @@
 'use client';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { createVideoEngine, type VideoEngine } from '@/lib/video/engine';
+import type { TimelineState, Clip } from '@/lib/timeline/types';
+import type { MediaRef } from '@/lib/storage/types';
 
 export interface UseVideoEngineReturn {
   /** Stable accessor across re-renders. Returns `null` when the
@@ -14,86 +16,94 @@ export interface UseVideoEngineReturn {
 
 /**
  * Plan 5.9b — owns a `VideoEngine` and keeps its element pool in sync
- * with the timeline:
+ * with the timeline.
  *
- *  1. **Lazy load reconciler** — every store update that changes the
- *     set of video mediaIds referenced by active clips triggers an
- *     engine.load for new ids and engine.unload for removed ids. We
- *     never preload the entire media library (a single 1080p video
- *     can be 100+ MB of decoded buffer).
+ * **Strict-Mode lifecycle fix**: in dev, React mounts an effect, runs
+ * its cleanup, then mounts it again — WITHOUT re-running the
+ * component body. An older version of this hook split the engine
+ * creation into the component body (`if (engineRef.current === null)
+ * engineRef.current = createVideoEngine()`) and the subscription into
+ * a separate `useEffect([])`. The cleanup nulled out the ref; the
+ * remount of the subscription effect then ran with a stale null
+ * engine reference and never subscribed. Result: `engine.play()` was
+ * never called when the user hit Play — the video stayed paused at
+ * frame 0 even though the loaded element was visible in the live
+ * preview's first-frame draw.
  *
- *  2. **Playback sync** — store subscription watches `playhead.playing`
- *     and `playhead.beats`. Play/pause toggles propagate to every
- *     loaded element. A beat change WHILE paused triggers
- *     `seekAllTo(secFromBeat)` so a manual scrub updates the video
- *     frame in the preview.
- *
- *  3. **Cleanup on unmount** — `engine.destroy()` releases all
- *     elements + their decoded buffers.
+ * Fix: ONE master `useEffect` that owns the full lifecycle — engine
+ * creation, the store subscription that drives lazy load / play
+ * sync / seek-while-paused, and the cleanup that destroys the engine.
+ * Strict Mode now safely creates → destroys → re-creates without
+ * stranding a subscription on a dead reference.
  */
 export function useVideoEngine(): UseVideoEngineReturn {
   const engineRef = useRef<VideoEngine | null>(null);
-  if (engineRef.current === null && typeof window !== 'undefined') {
-    engineRef.current = createVideoEngine();
-  }
+  // Reactive engine reference so consumers re-render once the engine is
+  // actually available. The `engineRef` is kept in parallel so the
+  // stable `getElement` closure can read the latest engine without
+  // capturing a stale value through the React state.
+  const [engine, setEngine] = useState<VideoEngine | null>(null);
 
-  // Stable key for the active video mediaId set — used as a dependency
-  // for the reconciler effect below.
-  const activeIdsKey = useAppStore((s) =>
-    [
-      ...new Set(
-        s.timeline.clips
-          .filter((c) => c.kind === 'video' && typeof c.mediaId === 'string')
-          .map((c) => c.mediaId as string)
-      )
-    ]
-      .sort()
-      .join(',')
-  );
-
-  const mediaRefs = useAppStore((s) => s.media.mediaRefs);
-
-  // Reconciler: load newly-referenced videos, unload removed ones.
   useEffect(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
+    if (typeof window === 'undefined') return;
+    const newEngine = createVideoEngine();
+    if (!newEngine) return;
+    engineRef.current = newEngine;
+    setEngine(newEngine);
 
-    const wanted = new Set(activeIdsKey.split(',').filter((s) => s.length > 0));
-    const loaded = new Set(engine.loadedIds());
+    /** Diff the desired video-element set against the loaded set and
+     *  call `engine.load/unload` to match. Runs at mount + on every
+     *  relevant store change. */
+    function reconcile(timeline: TimelineState, mediaRefs: MediaRef[]): void {
+      if (!newEngine) return;
+      const wanted = new Set(
+        timeline.clips
+          .filter((c: Clip) => c.kind === 'video' && typeof c.mediaId === 'string')
+          .map((c: Clip) => c.mediaId as string)
+      );
+      const loaded = new Set(newEngine.loadedIds());
 
-    // Load anything wanted that isn't loaded yet.
-    for (const id of wanted) {
-      if (loaded.has(id)) continue;
-      const ref = mediaRefs.find((m) => m.id === id && m.kind === 'video');
-      if (!ref) continue;
-      // eslint-disable-next-line no-console
-      console.info(`[useVideoEngine] loading video ${id} from ${ref.url}`);
-      void engine
-        .load(id, ref.url)
-        .then(() => {
-          // eslint-disable-next-line no-console
-          console.info(`[useVideoEngine] loaded video ${id} successfully`);
-        })
-        .catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn(`[useVideoEngine] FAILED to load ${id}:`, err);
-        });
+      for (const id of wanted) {
+        if (loaded.has(id)) continue;
+        const ref = mediaRefs.find((m) => m.id === id && m.kind === 'video');
+        if (!ref) continue;
+        // eslint-disable-next-line no-console
+        console.info(`[useVideoEngine] loading video ${id} from ${ref.url}`);
+        void newEngine
+          .load(id, ref.url)
+          .then(() => {
+            // eslint-disable-next-line no-console
+            console.info(`[useVideoEngine] loaded video ${id} successfully`);
+          })
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(`[useVideoEngine] FAILED to load ${id}:`, err);
+          });
+      }
+      for (const id of loaded) {
+        if (!wanted.has(id)) newEngine.unload(id);
+      }
     }
-    // Unload anything loaded that isn't wanted anymore.
-    for (const id of loaded) {
-      if (!wanted.has(id)) engine.unload(id);
-    }
-  }, [activeIdsKey, mediaRefs]);
 
-  // Playback + seek sync.
-  useEffect(() => {
-    const engine = engineRef.current;
-    if (!engine) return;
+    // Initial reconcile — load anything already in the rehydrated store.
+    const initial = useAppStore.getState();
+    reconcile(initial.timeline, initial.media.mediaRefs);
+
+    // ONE subscription handles both reconciler updates AND playback sync.
     const unsub = useAppStore.subscribe((state, prev) => {
+      // Reconciler — only re-diff when clips or mediaRefs actually changed.
+      if (
+        state.timeline.clips !== prev.timeline.clips ||
+        state.media.mediaRefs !== prev.media.mediaRefs
+      ) {
+        reconcile(state.timeline, state.media.mediaRefs);
+      }
+
+      // Play / pause sync.
       const wasPlaying = prev.timeline.playhead.playing;
       const isPlaying = state.timeline.playhead.playing;
-      if (isPlaying && !wasPlaying) engine.play();
-      if (!isPlaying && wasPlaying) engine.pause();
+      if (isPlaying && !wasPlaying) newEngine.play();
+      if (!isPlaying && wasPlaying) newEngine.pause();
 
       // Seek-while-paused: user is scrubbing.
       if (
@@ -104,17 +114,15 @@ export function useVideoEngine(): UseVideoEngineReturn {
         const sec =
           (state.timeline.playhead.beats * 60) / grid.bpm +
           grid.offsetMs / 1000;
-        void engine.seekAllTo(sec);
+        void newEngine.seekAllTo(sec);
       }
     });
-    return unsub;
-  }, []);
 
-  // Cleanup on unmount.
-  useEffect(() => {
     return () => {
-      engineRef.current?.destroy();
+      unsub();
+      newEngine.destroy();
       engineRef.current = null;
+      setEngine(null);
     };
   }, []);
 
@@ -129,7 +137,7 @@ export function useVideoEngine(): UseVideoEngineReturn {
   );
 
   return useMemo(
-    () => ({ getElement, engine: engineRef.current }),
-    [getElement]
+    () => ({ getElement, engine }),
+    [getElement, engine]
   );
 }
