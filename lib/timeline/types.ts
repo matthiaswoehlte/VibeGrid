@@ -1,28 +1,15 @@
-export type TrackKind =
-  | 'image'
-  | 'contour'
-  | 'sweep'
-  | 'pulse'
-  | 'particles'
-  | 'zoom-pulse'
-  // Plan 5.8a — three new FX track kinds. No `fx-` prefix to stay
-  // consistent with the existing naming (`contour`, `pulse`, …).
-  | 'text'
-  | 'dissolve'
-  | 'sunray'
-  // Plan 5.9a — two more. `'audio'` is a STUB only — TrackKind already
-  // accepts it so the type system is forward-compatible, but
-  // `addTrack('audio')` rejects at runtime ("Multi-Audio-Tracks: v0.2").
-  // `'video'` is wired through Plan 5.9b.
-  | 'audio'
-  | 'video';
+/** Plan 5.9c — TrackKind collapsed to the four lane-types. FX-specific
+ *  kinds (contour / sweep / …) live on `clip.kind` only; the track
+ *  carrying them is `kind: 'fx'`. */
+export type TrackKind = 'image' | 'video' | 'audio' | 'fx';
 
 /** Media-bearing kinds (carry their own media reference; not FX plugins). */
 export type MediaTrackKind = 'image' | 'audio' | 'video';
 
-/** FX-plugin track kinds — everything that draws via the renderer's plugin
- *  dispatch loop. Excludes the media-bearing kinds. */
-export type FxKind = Exclude<TrackKind, MediaTrackKind>;
+// Plan 5.9c — `FxKind` is gone. Callers import `TrackFxKind` from
+// `@/lib/timeline/plugin-mapping` (re-exported below for transitional
+// imports that already pointed at this module).
+export type { TrackFxKind } from './plugin-mapping';
 
 /** Trigger cadence for FX. Defined here (not in renderer) because clips own a trigger. */
 export type TriggerMode = 'half-bar' | 'beat' | 'bar' | 'two-bar';
@@ -31,7 +18,16 @@ export type SnapMode = 'beat' | 'half' | 'quarter' | 'off';
 
 export interface Track {
   id: string;
-  kind: TrackKind;
+  /**
+   * Plan 5.9c — **transitional widening** during the v5 → v6 migration
+   * window. After the v5→v6 migrate runs, runtime values are always in
+   * the 4-entry `TrackKind` (`image`|`video`|`audio`|`fx`). Test
+   * fixtures and the migrate-input path still construct Track objects
+   * with the legacy v5 FX-kinds (`'contour'`, `'pulse'`, …), so this
+   * union has to admit them until those callers migrate. The final
+   * cleanup task of Plan 5.9c narrows this back to `TrackKind`.
+   */
+  kind: TrackKind | import('./plugin-mapping').TrackFxKind;
   name: string;
   muted: boolean;
   /** @deprecated Plan 5.9a: array position in `TimelineState.tracks` is
@@ -44,7 +40,11 @@ export interface Track {
 export interface Clip {
   id: string;
   trackId: string;
-  kind: TrackKind;
+  /** Plan 5.9c — widened to `TrackKind | TrackFxKind`. FX clips carry a
+   *  lowercase FX-kind here (e.g. `'contour'`, `'zoom-pulse'`) while
+   *  their parent track is `kind: 'fx'`. Image/video/audio clips carry
+   *  the matching media kind. */
+  kind: TrackKind | import('./plugin-mapping').TrackFxKind;
   startBeat: number;
   lengthBeats: number;
   mediaId?: string;

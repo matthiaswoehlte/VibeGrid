@@ -6,7 +6,8 @@ import { resolveClipParams } from '@/lib/automation/resolve';
 import { computeClipAlpha } from './blend';
 import { getPlugin, listPluginsByKind } from './registry';
 import { registerBuiltInPlugins } from '@/lib/fx';
-import type { FxKind as TrackFxKind, TimelineState } from '@/lib/timeline/types';
+import type { TimelineState } from '@/lib/timeline/types';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 import type { BeatGrid } from '@/lib/audio/types';
 import type { FxKind, FxPlugin, RenderContext } from './types';
 

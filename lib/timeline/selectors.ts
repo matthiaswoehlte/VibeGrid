@@ -1,10 +1,10 @@
 import {
   SNAP_TO_BEATS,
   type Clip,
-  type FxKind,
   type SnapMode,
   type TimelineState
 } from './types';
+import type { TrackFxKind } from './plugin-mapping';
 
 export function snapBeats(beats: number, mode: SnapMode): number {
   if (mode === 'off') return beats;
@@ -73,14 +73,13 @@ export function hasVisualClipAt(state: TimelineState, beats: number): boolean {
 export function activeFxClipsByKind(
   state: TimelineState,
   beats: number
-): Record<FxKind, Clip[]> {
-  const result: Record<FxKind, Clip[]> = {
+): Record<TrackFxKind, Clip[]> {
+  const result: Record<TrackFxKind, Clip[]> = {
     contour: [],
     sweep: [],
     pulse: [],
     particles: [],
     'zoom-pulse': [],
-    // Plan 5.8a — three new FX kinds.
     text: [],
     dissolve: [],
     sunray: []
@@ -88,8 +87,10 @@ export function activeFxClipsByKind(
   for (const c of state.clips) {
     // Skip media-bearing clips — they're handled outside this selector.
     if (c.kind === 'image' || c.kind === 'audio' || c.kind === 'video') continue;
+    // After Plan 5.9c, c.kind for FX clips is TrackFxKind; the early
+    // returns above guarantee that path here.
     if (beats < c.startBeat || beats >= c.startBeat + c.lengthBeats) continue;
-    result[c.kind].push(c);
+    result[c.kind as TrackFxKind].push(c);
   }
   return result;
 }

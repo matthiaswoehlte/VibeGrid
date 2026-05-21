@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import type { TrackKind } from '@/lib/timeline/types';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 
 describe('canDropOnTrack (Plan 5.9a)', () => {
   it('image media → only image track', () => {
@@ -25,7 +26,9 @@ describe('canDropOnTrack (Plan 5.9a)', () => {
   });
 
   it('FX track kinds always reject media drops', () => {
-    const fxKinds: TrackKind[] = [
+    // Plan 5.9c transitional: legacy v5 FX-kinds typed via TrackFxKind.
+    // Task 5 rewrites this whole test against the new 4-entry TrackKind.
+    const fxKinds: TrackFxKind[] = [
       'contour', 'sweep', 'pulse', 'particles', 'zoom-pulse',
       'text', 'dissolve', 'sunray'
     ];

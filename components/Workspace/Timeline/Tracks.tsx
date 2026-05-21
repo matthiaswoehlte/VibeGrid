@@ -12,6 +12,7 @@ import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import type { FxKind as PluginFxKind } from '@/lib/renderer/types';
 import type { TrackKind } from '@/lib/timeline/types';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
@@ -25,16 +26,22 @@ const BEAT_PX_BASE = 40;
 // happens to the RIGHT of this column.
 export const TRACK_LABEL_WIDTH = 80;
 
-// PluginFxKind (PascalCase, used by FxPlugin.kind) → TrackKind (slice key).
-// Mirrors the same map in lib/renderer/loop.ts — kept local to avoid an
-// import cycle through the renderer.
-const PLUGIN_TO_TRACK_KIND: Record<PluginFxKind, TrackKind> = {
+// PluginFxKind (PascalCase, used by FxPlugin.kind) → lowercase clip-kind
+// (the legacy TrackKind values for FX). Mirrors the same map in
+// lib/renderer/loop.ts — kept local to avoid an import cycle through
+// the renderer.
+//
+// Plan 5.9c — Task 8 replaces this with `PLUGIN_KIND_TO_TRACK_KIND`
+// from `@/lib/timeline/plugin-mapping` (single source of truth) and
+// switches the drop-routing to `canDropOnTrack`. Until then the
+// value-type widening to `TrackKind | TrackFxKind` keeps typecheck
+// green during the v5 → v6 transition.
+const PLUGIN_TO_TRACK_KIND: Record<PluginFxKind, TrackKind | TrackFxKind> = {
   Contour: 'contour',
   Pulse: 'pulse',
   Sweep: 'sweep',
   Particle: 'particles',
   ZoomPulse: 'zoom-pulse',
-  // Plan 5.8a — new kinds, lowercase TrackKind names match 1:1.
   Text: 'text',
   Dissolve: 'dissolve',
   Sunray: 'sunray'

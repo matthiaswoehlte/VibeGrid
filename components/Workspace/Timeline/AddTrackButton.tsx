@@ -3,14 +3,19 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import type { TrackKind } from '@/lib/timeline/types';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 
 /**
  * Plan 5.9a — "+ Track hinzufügen" button with a dropdown picker.
  * 'audio' is intentionally excluded — Multi-Audio is parked for v0.2
  * (the store action would throw if called with it).
+ *
+ * Plan 5.9c — Task 10 shrinks this to 3 options (Image / Video / FX).
+ * Until then the option-kind type is widened to admit the legacy
+ * v5 FX-kinds so existing entries still typecheck.
  */
 const PICKER_OPTIONS: ReadonlyArray<{
-  kind: TrackKind;
+  kind: TrackKind | TrackFxKind;
   label: string;
   group: 'media' | 'fx';
 }> = [
@@ -40,7 +45,7 @@ export function AddTrackButton() {
     return () => document.removeEventListener('pointerdown', onPointer);
   }, [open]);
 
-  const handlePick = (kind: TrackKind) => {
+  const handlePick = (kind: TrackKind | TrackFxKind) => {
     setOpen(false);
     try {
       addTrack(kind);

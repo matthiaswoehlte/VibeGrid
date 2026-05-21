@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import type { AppState } from './types';
 import type { TimelineState, Track, TrackKind } from '@/lib/timeline/types';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 import * as ops from '@/lib/timeline/operations';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import {
@@ -16,11 +17,17 @@ import { BLEND_KEY } from '@/lib/timeline/blend';
 
 /** Plan 5.9a — title-case mapping for default track labels when the user
  *  hits "+ Track" without typing a name. Multiple tracks of the same kind
- *  get numbered (`Contour`, `Contour 2`, …). */
-const KIND_LABEL: Record<TrackKind, string> = {
+ *  get numbered (`Contour`, `Contour 2`, …).
+ *
+ *  Plan 5.9c transitional: Record key widened to admit the legacy v5
+ *  FX-kinds for the duration of the migration. Task 4 rewrites this
+ *  whole map to 4-entry shape.
+ */
+const KIND_LABEL: Record<TrackKind | TrackFxKind, string> = {
   image: 'Image',
   audio: 'Audio',
   video: 'Video',
+  fx: 'FX',
   contour: 'Contour',
   sweep: 'Sweep',
   pulse: 'Pulse',
@@ -31,7 +38,7 @@ const KIND_LABEL: Record<TrackKind, string> = {
   sunray: 'Sunray'
 };
 
-function defaultLabelFor(kind: TrackKind, existing: Track[]): string {
+function defaultLabelFor(kind: TrackKind | TrackFxKind, existing: Track[]): string {
   const base = KIND_LABEL[kind];
   const sameKindCount = existing.filter((t) => t.kind === kind).length;
   return sameKindCount === 0 ? base : `${base} ${sameKindCount + 1}`;

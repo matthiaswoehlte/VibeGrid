@@ -2,13 +2,17 @@
 import { useDraggable } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
 import type { Clip as ClipT, TrackKind } from '@/lib/timeline/types';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 
 const BEAT_PX_BASE = 40;
 
-// Per-TrackKind accent. Aligns with plugin defaults where possible
-// (sweep uses --a1 purple, particles uses --a3 teal). Image gets blue,
-// pulse + contour get distinct hues so all five lanes read at a glance.
-const KIND_COLOR: Record<TrackKind, string> = {
+// Per-clip-kind accent. Aligns with plugin defaults where possible
+// (sweep uses --a1 purple, particles uses --a3 teal). Image gets blue.
+//
+// Plan 5.9c — Task 9 replaces this with an `FX_CLIP_COLORS` fallback
+// from plugin-mapping. Until then key-type widened to admit the
+// legacy v5 FX-kinds present here.
+const KIND_COLOR: Record<TrackKind | TrackFxKind, string> = {
   image: '#5a8fff',     // blue (matches --a2)
   contour: '#a86bff',   // purple (matches --a1)
   sweep: '#ff6b9d',     // pink
@@ -21,7 +25,10 @@ const KIND_COLOR: Record<TrackKind, string> = {
   sunray: '#fffbe6',    // warm white — matches Sunray plugin default color
   // Plan 5.9a — media-bearing track kinds.
   audio: '#3a3f55',     // muted blue-grey (stub, never user-visible in v0.1)
-  video: '#7a4dff'      // saturated purple — distinct from image (blue)
+  video: '#7a4dff',     // saturated purple — distinct from image (blue)
+  // Plan 5.9c — generic FX track-kind. Used when a clip on an 'fx'
+  // track has no per-kind color override.
+  fx: 'var(--surface-3)'
 };
 
 export function Clip({ clip }: { clip: ClipT }) {

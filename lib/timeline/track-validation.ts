@@ -1,21 +1,19 @@
 import type { TrackKind, MediaTrackKind } from './types';
+import type { TrackFxKind } from './plugin-mapping';
 
 /**
  * Plan 5.9a — pure validation: which media kinds may be dropped on a
- * given track kind. Media-bearing kinds must match exactly:
+ * given track kind.
  *
- *   image media  → only image tracks
- *   audio media  → only audio tracks
- *   video media  → only video tracks
- *
- * FX-clip drops (the ⚡ Auto-Preset path / drag-from-plugin-palette) are
- * NOT covered here — they target their own per-kind tracks via the
- * existing fxId-routing in `Tracks.tsx`. This helper is specifically
- * for the Mediathek → Timeline drop path.
+ * Plan 5.9c — Task 5 rewrites this function to also handle FX-clip
+ * drops on `'fx'`-kind tracks (lowercase clip-kinds match the
+ * `TRACK_FX_KINDS` set). The signature widens transitionally so the
+ * existing track-validation.test.ts cases still typecheck during the
+ * v5 → v6 transition window.
  */
 export function canDropOnTrack(
-  mediaKind: MediaTrackKind,
-  trackKind: TrackKind
+  mediaKind: MediaTrackKind | TrackFxKind,
+  trackKind: TrackKind | TrackFxKind
 ): boolean {
   return mediaKind === trackKind;
 }

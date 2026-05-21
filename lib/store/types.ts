@@ -35,8 +35,16 @@ export interface TimelineActions {
   setMuted(trackId: string, muted: boolean): void;
   /** Plan 5.9a — dynamic multi-track actions. `addTrack('audio')` throws
    *  at runtime; UI must call this only with kinds returned by the
-   *  "add track" picker (which excludes 'audio'). */
-  addTrack(kind: TrackKind, label?: string): void;
+   *  "add track" picker (which excludes 'audio').
+   *
+   *  Plan 5.9c transitional: accepts the legacy FX-kind strings during
+   *  the v5 → v6 transition so the existing AddTrackButton picker and
+   *  track-actions tests still typecheck. Task 4 narrows back.
+   */
+  addTrack(
+    kind: TrackKind | import('@/lib/timeline/plugin-mapping').TrackFxKind,
+    label?: string
+  ): void;
   /** Removes a track. Throws if any clip has `trackId === id`. */
   removeTrack(trackId: string): void;
   /** Reorders `tracks[]` to match the given id sequence. Unknown ids are
