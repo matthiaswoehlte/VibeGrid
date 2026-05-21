@@ -1,4 +1,4 @@
-import type { TimelineState, Clip } from '@/lib/timeline/types';
+import type { TimelineState, Clip, TrackKind } from '@/lib/timeline/types';
 import type { BeatGrid } from '@/lib/audio/types';
 import type { MediaRef } from '@/lib/storage/types';
 import type { AutomationPoint, Interpolation } from '@/lib/automation/types';
@@ -33,6 +33,17 @@ export interface TimelineActions {
   setClipParams(clipId: string, params: Record<string, unknown>): void;
   setPlayhead(beats: number): void;
   setMuted(trackId: string, muted: boolean): void;
+  /** Plan 5.9a — dynamic multi-track actions. `addTrack('audio')` throws
+   *  at runtime; UI must call this only with kinds returned by the
+   *  "add track" picker (which excludes 'audio'). */
+  addTrack(kind: TrackKind, label?: string): void;
+  /** Removes a track. Throws if any clip has `trackId === id`. */
+  removeTrack(trackId: string): void;
+  /** Reorders `tracks[]` to match the given id sequence. Unknown ids are
+   *  ignored, missing ids retain their relative order at the end. */
+  reorderTracks(orderedIds: string[]): void;
+  /** Plan 5.9a — inline label edit. */
+  setTrackLabel(trackId: string, label: string): void;
   setClipParam(clipId: string, key: string, value: unknown): void;
   convertParamToAutomation(clipId: string, key: string, beat: number, initialValue?: unknown): void;
   convertParamToStatic(clipId: string, key: string): void;

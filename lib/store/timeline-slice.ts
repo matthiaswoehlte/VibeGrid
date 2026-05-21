@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { AppState } from './types';
-import type { TimelineState } from '@/lib/timeline/types';
+import type { TimelineState, Track, TrackKind } from '@/lib/timeline/types';
 import * as ops from '@/lib/timeline/operations';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import {
@@ -13,6 +13,29 @@ import {
 import type { AutomationCurve, AutomationPoint } from '@/lib/automation/types';
 import { regenerateBlendsForTrack } from '@/lib/timeline/blend-lifecycle';
 import { BLEND_KEY } from '@/lib/timeline/blend';
+
+/** Plan 5.9a — title-case mapping for default track labels when the user
+ *  hits "+ Track" without typing a name. Multiple tracks of the same kind
+ *  get numbered (`Contour`, `Contour 2`, …). */
+const KIND_LABEL: Record<TrackKind, string> = {
+  image: 'Image',
+  audio: 'Audio',
+  video: 'Video',
+  contour: 'Contour',
+  sweep: 'Sweep',
+  pulse: 'Pulse',
+  particles: 'Particles',
+  'zoom-pulse': 'Zoom Pulse',
+  text: 'Text',
+  dissolve: 'Dissolve',
+  sunray: 'Sunray'
+};
+
+function defaultLabelFor(kind: TrackKind, existing: Track[]): string {
+  const base = KIND_LABEL[kind];
+  const sameKindCount = existing.filter((t) => t.kind === kind).length;
+  return sameKindCount === 0 ? base : `${base} ${sameKindCount + 1}`;
+}
 
 // Default tracks — one per TrackKind per Spec §6. Without these, the timeline
 // renders no lanes and there's nowhere to drop clips. Order matches visual
@@ -108,6 +131,71 @@ export const createTimelineSlice: StateCreator<
       setPlayhead: (beats) => set({ timeline: ops.setPlayhead(get().timeline, beats) }),
       setMuted: (trackId, muted) =>
         set({ timeline: ops.setMuted(get().timeline, trackId, muted) }),
+
+      // Plan 5.9a — dynamic multi-track actions.
+      addTrack: (kind, label) => {
+        if (kind === 'audio') {
+          throw new Error('Multi-Audio-Tracks: v0.2 (addTrack rejected)');
+        }
+        const id =
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `track-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const finalLabel = label ?? defaultLabelFor(kind, get().timeline.tracks);
+        set((s) => ({
+          timeline: {
+            ...s.timeline,
+            tracks: [
+              ...s.timeline.tracks,
+              { id, kind, name: finalLabel, muted: false }
+            ]
+          }
+        }));
+      },
+      removeTrack: (trackId) => {
+        const t = get().timeline;
+        const hasClips = t.clips.some((c) => c.trackId === trackId);
+        if (hasClips) {
+          throw new Error('Track enthält Clips — erst leeren');
+        }
+        set((s) => ({
+          timeline: {
+            ...s.timeline,
+            tracks: s.timeline.tracks.filter((tr) => tr.id !== trackId)
+          }
+        }));
+      },
+      reorderTracks: (orderedIds) => {
+        set((s) => {
+          const byId = new Map(s.timeline.tracks.map((tr) => [tr.id, tr]));
+          const next: typeof s.timeline.tracks = [];
+          for (const id of orderedIds) {
+            const tr = byId.get(id);
+            if (tr) {
+              next.push(tr);
+              byId.delete(id);
+            }
+          }
+          // Append leftovers (unknown ids in `orderedIds` ignored; tracks
+          // not mentioned keep their original relative order at the end).
+          for (const tr of s.timeline.tracks) {
+            if (byId.has(tr.id)) next.push(tr);
+          }
+          return { timeline: { ...s.timeline, tracks: next } };
+        });
+      },
+      setTrackLabel: (trackId, label) => {
+        const trimmed = label.trim();
+        if (!trimmed) return;
+        set((s) => ({
+          timeline: {
+            ...s.timeline,
+            tracks: s.timeline.tracks.map((tr) =>
+              tr.id === trackId ? { ...tr, name: trimmed } : tr
+            )
+          }
+        }));
+      },
       setClipParam: (clipId, key, value) => {
         set((s) => ({
           timeline: {
