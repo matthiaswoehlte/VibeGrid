@@ -22,13 +22,6 @@ interface DissolveParams {
 const VEIL_RGB = '0, 0, 0';
 const BLUR_LAYERS = 5;
 
-// Diagnostic — logs ONCE per (clipId × mode) pair to prove Dissolve.render
-// is reached at all and what params it sees. If you toggle to a clip and
-// see nothing here, the renderer never invokes the plugin (clip kind /
-// fxId / track mute / something upstream). If you see the log but the
-// stage stays unchanged, the bug is inside this plugin.
-const loggedDissolve = new Set<string>();
-
 /**
  * Plan 5.8a Task 5 — directional dissolve overlay. Source-over, NEVER
  * destination-out (the Plan-6 opaque background would expose `#0c0d12`
@@ -106,22 +99,6 @@ export const dissolvePlugin: FxPlugin<DissolveParams> = {
   }),
   async preload() {},
   render(rc: RenderContext, params: DissolveParams): void {
-    const traceKey = `${rc.clipId}:${params.dissolveMode}`;
-    if (!loggedDissolve.has(traceKey)) {
-      loggedDissolve.add(traceKey);
-      const t =
-        rc.clipDurationSec > 0
-          ? Math.max(0, Math.min(1, (rc.time - rc.clipStartSec) / rc.clipDurationSec))
-          : 1;
-      // eslint-disable-next-line no-console
-      console.log(
-        `[dissolve] render clipId=${rc.clipId} mode=${params.dissolveMode} ` +
-          `intensity=${params.intensity} direction=${params.direction} ` +
-          `time=${rc.time.toFixed(2)}s clipStart=${rc.clipStartSec.toFixed(2)}s ` +
-          `clipDur=${rc.clipDurationSec.toFixed(2)}s t=${t.toFixed(2)}`
-      );
-    }
-
     const origin = directionToOrigin(params.direction, rc.width, rc.height);
     const end = { x: rc.width - origin.x, y: rc.height - origin.y };
     // If origin == end (center direction), bail — there's nothing to wipe.
