@@ -14,6 +14,10 @@ export interface AudioEngine {
   getAnalyser(): AnalyserNode | null;
   getAudioStream(): MediaStream | null;
   getAudioElement(): HTMLAudioElement | null;
+  /** Plan-6-R: the cached AudioBuffer from the most recent successful load
+   *  (already used internally for BPM detection). Returned as-is so the
+   *  offline render pipeline can chunk it without re-decoding. */
+  getDecodedBuffer(): AudioBuffer | null;
   getState(): AudioEngineState;
   onStateChange(cb: (s: AudioEngineState) => void): () => void;
   destroy(): void;
@@ -235,6 +239,10 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
 
     getAudioElement(): HTMLAudioElement | null {
       return audioEl;
+    },
+
+    getDecodedBuffer(): AudioBuffer | null {
+      return cachedDecodedBuffer;
     },
 
     getState(): AudioEngineState {
