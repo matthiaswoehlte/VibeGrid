@@ -250,6 +250,13 @@ export function createRenderer(deps: RendererDeps): Renderer {
         const el = deps.getVideoElement?.(ic.mediaId);
         if (!el) continue;
         source = el;
+        // Plan 5.9d — opt-in video audio. Default behaviour (param
+        // absent or `false`) is muted, matching the pre-5.9d wire-up
+        // in `lib/video/engine.ts`. Param is treated as static —
+        // automating audioEnabled per beat isn't supported in v0.1
+        // (see KNOWN_LIMITATIONS).
+        const audioEnabledRaw = (ic.params as { audioEnabled?: unknown } | undefined)?.audioEnabled;
+        el.muted = audioEnabledRaw !== true;
         // Plan 5.9b hotfix: capture the current video frame as an
         // ImageBitmap so ZoomPulse / Contour can operate on it via
         // `rc.imageBitmap`, same as for image clips. Falls back to

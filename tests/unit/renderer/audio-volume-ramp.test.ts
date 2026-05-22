@@ -115,3 +115,58 @@ describe('Renderer — audio clip volume ramp (Plan 5.9d)', () => {
     expect(() => renderer.tick()).not.toThrow();
   });
 });
+
+describe('Renderer — video-audio toggle (Plan 5.9d)', () => {
+  function videoTimeline(audioEnabled: boolean | undefined): TimelineState {
+    return {
+      tracks: [
+        { id: 'track-video', kind: 'video', name: 'Video', muted: false }
+      ],
+      clips: [
+        {
+          id: 'v1',
+          trackId: 'track-video',
+          kind: 'video',
+          mediaId: 'm-v1',
+          startBeat: 0,
+          lengthBeats: 16,
+          label: 'video',
+          ...(audioEnabled !== undefined ? { params: { audioEnabled } } : {})
+        }
+      ],
+      playhead: { beats: 0, playing: false },
+      zoom: 1,
+      snap: 'beat'
+    };
+  }
+
+  function fakeVideoEl(): HTMLVideoElement {
+    return {
+      videoWidth: 1920,
+      videoHeight: 1080,
+      muted: false // start un-muted to detect the renderer's set
+    } as unknown as HTMLVideoElement;
+  }
+
+  it('audioEnabled=true → videoEl.muted = false', () => {
+    const el = fakeVideoEl();
+    const deps = makeRendererDeps({
+      getTimelineState: () => videoTimeline(true),
+      getVideoElement: () => el
+    });
+    const renderer = createRenderer(deps);
+    renderer.tick();
+    expect(el.muted).toBe(false);
+  });
+
+  it('audioEnabled absent (default) → videoEl.muted = true', () => {
+    const el = fakeVideoEl();
+    const deps = makeRendererDeps({
+      getTimelineState: () => videoTimeline(undefined),
+      getVideoElement: () => el
+    });
+    const renderer = createRenderer(deps);
+    renderer.tick();
+    expect(el.muted).toBe(true);
+  });
+});
