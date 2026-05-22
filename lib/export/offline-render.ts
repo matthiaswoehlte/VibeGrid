@@ -234,6 +234,8 @@ export async function renderOffline(
   let videoDomContainer: HTMLDivElement | null = null;
   if (deps.videoEngine && typeof document !== 'undefined') {
     const ids = deps.videoEngine.loadedIds();
+    // eslint-disable-next-line no-console
+    console.log('[offline-render] videoEngine present, loaded ids:', ids);
     if (ids.length > 0) {
       videoDomContainer = document.createElement('div');
       videoDomContainer.setAttribute('data-vibegrid-export-video-pool', '');
@@ -241,13 +243,35 @@ export async function renderOffline(
         'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0.001;pointer-events:none;z-index:-2147483648;';
       for (const id of ids) {
         const el = deps.videoEngine.getElement(id);
-        if (!el) continue;
+        if (!el) {
+          // eslint-disable-next-line no-console
+          console.warn('[offline-render] getElement returned null for id:', id);
+          continue;
+        }
         el.style.width = '1px';
         el.style.height = '1px';
         videoDomContainer.appendChild(el);
+        // eslint-disable-next-line no-console
+        console.log('[offline-render] DOM-attached video', id, {
+          currentTime: el.currentTime,
+          duration: el.duration,
+          readyState: el.readyState,
+          paused: el.paused,
+          videoWidth: el.videoWidth,
+          videoHeight: el.videoHeight
+        });
       }
       document.body.appendChild(videoDomContainer);
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn('[offline-render] videoEngine has 0 loaded ids — no DOM-attach, no per-frame seek');
     }
+  } else if (deps.videoEngine) {
+    // eslint-disable-next-line no-console
+    console.warn('[offline-render] document undefined — skipping DOM-attach');
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('[offline-render] no videoEngine — projects without video');
   }
 
   try {
@@ -270,6 +294,24 @@ export async function renderOffline(
       await deps.videoEngine.seekAllTo(timeSec);
       throwIfAborted();
       throwIfVideo();
+      // Diag: log first 3 + last 3 frame seek results to verify the
+      // video element's currentTime is actually advancing per frame.
+      // High-frequency log would flood; bookend is enough to confirm
+      // the seek pipeline is working end-to-end.
+      if (frameIdx < 3 || frameIdx >= totalFrames - 3) {
+        const ids = deps.videoEngine.loadedIds();
+        const samples = ids.map((id) => {
+          const el = deps.videoEngine!.getElement(id);
+          return el
+            ? { id, ct: Number(el.currentTime.toFixed(3)), rs: el.readyState }
+            : { id, missing: true };
+        });
+        // eslint-disable-next-line no-console
+        console.log(
+          `[offline-render] frame ${frameIdx} timeSec=${timeSec.toFixed(3)} →`,
+          samples
+        );
+      }
     }
 
     offlineRenderer.renderAt(timeSec);
