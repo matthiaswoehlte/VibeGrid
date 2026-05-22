@@ -239,6 +239,59 @@ button and an optional per-session ceiling.
 
 ---
 
+## Mobile (Plan 5.10) — Responsive Layout
+
+Plan 5.10 ships a Mobile-first layout (≤ 768 px viewport) that runs
+alongside the locked Desktop tree. Six known limitations that don't
+block the v0.1 Mobile experience but matter for the v0.2 / Capacitor
+roadmap:
+
+- **iOS Safari MediaLibrary drag-to-timeline is broken.** The
+  `MediaLibrary` component (and its Mobile wrapper `MediaDrawer`)
+  uses native HTML5 `draggable=` + `dataTransfer` for drag-to-
+  timeline. Native HTML5 drag is not implemented on iOS Safari and
+  inconsistent on Chrome Mobile. **Workaround on iOS**: use the
+  file-picker buttons (`+ Image`, `+ Audio`, `+ Video`) to add media
+  refs — once the MediaRef exists, you can drag from the drawer to
+  the timeline only on Android Chrome. **Follow-up**: migrate
+  MediaLibrary items to `@dnd-kit` (Option A in CC1's addendum) OR
+  add a tap-to-add-at-playhead button per Mobile media item analogous
+  to the FXDrawer's tap-to-add (Option B). FXDrawer already uses
+  tap-to-add — only Media is affected.
+
+- **Virtual keyboard layout-shift not handled.** Opening the iOS /
+  Android virtual keyboard (e.g. tapping the BPM input) shrinks the
+  viewport without notifying matchMedia, so `useIsMobile()` doesn't
+  re-evaluate and the fixed-position drawers / sheets may overlap the
+  keyboard. v0.2 with Capacitor adds the platform-level
+  `visualViewport` API listener.
+
+- **Landscape orientation untested.** The smoke gate targets iPhone
+  15 Pro portrait (393 × 852 px). Landscape puts the Stage at 40 vw
+  which is too narrow for the 16:9 canvas. Orientation-lock or a
+  separate landscape layout is v0.2 + App Store work.
+
+- **Pinch-zoom does not pivot on the touch center.** The
+  `useTimelinePinchZoom` hook updates `timeline.zoom` correctly but
+  does NOT re-anchor `scrollLeft` so the pixel under the user's
+  fingers stays under their fingers across the zoom. Current
+  behavior anchors zoom to the left edge of the visible area —
+  pinch FEELS like a slider, not a true map-style pinch. v0.2
+  computes the pinch-center pixel coordinate and adjusts `scrollLeft`
+  per zoom delta to compensate.
+
+- **Capacitor iOS / Android build deferred to v0.2.** The Mobile
+  layout is a web-only responsive layer. App Store / Play Store
+  packaging via Capacitor (with the native bridge to filesystem,
+  audio session, background mode) is its own plan.
+
+- **No Mobile-specific onboarding.** A first-time Mobile user sees
+  the same empty Timeline + media-upload buttons a Desktop user
+  does. A guided "tap +Image, tap +Audio, tap an FX, tap Play"
+  onboarding flow is UX-polish for v0.2.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
