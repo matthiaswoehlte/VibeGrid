@@ -32,30 +32,27 @@ export const TRACK_LABEL_WIDTH = 80;
  * Manual auto-scroll while a clip is dragged.
  *
  * dnd-kit's built-in `autoScroll` config didn't engage reliably for
- * our `flex-1 overflow-auto` timeline container — probably its
- * scrollable-ancestor detection runs before our layout settles, or
- * the DraggableRect-based activator doesn't trigger when the
- * draggable's visible bounds stay outside the threshold zone.
- * Whatever the reason: explicit pointer-tracking + rAF is bombproof
- * and only ~25 lines.
+ * our `flex-1 overflow-auto` timeline container. The first manual
+ * attempt used a window-level `pointermove` listener, but those
+ * don't fire reliably during a dnd-kit drag — pointer capture on
+ * the dragged element redirects pointer events, and outside-window
+ * cursor positions stop generating events at all.
  *
- * The component renders nothing; it lives inside `<DndContext>` so
- * `useDndMonitor` can listen for drag-lifecycle events. While a
- * drag is active, a window-level `pointermove` listener records
- * the cursor's `clientX`, and a rAF loop scrolls the timeline
- * container leftward / rightward when the cursor is within
- * `EDGE` pixels of the container's left / right viewport edge.
+ * This version reads cursor position from dnd-kit's OWN events:
+ * `onDragStart` captures the activator's `clientX`, then every
+ * `onDragMove` adds `event.delta.x` to get the current cursor X.
+ * dnd-kit guarantees these fire as long as the drag is active.
+ *
+ * A separate rAF loop ticks continuously so the scroll keeps
+ * progressing even when the cursor sits still at the edge.
  */
 function ClipDragAutoScroll(): null {
   const stateRef = useRef({
     active: false,
+    activatorX: 0,
     lastClientX: 0,
     rafId: null as number | null
   });
-
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    stateRef.current.lastClientX = e.clientX;
-  }, []);
 
   const tick = useCallback((): void => {
     const s = stateRef.current;
@@ -63,46 +60,62 @@ function ClipDragAutoScroll(): null {
     const container = document.querySelector(
       '[data-timeline-scroll]'
     ) as HTMLElement | null;
-    if (!container) {
-      s.rafId = requestAnimationFrame(tick);
-      return;
-    }
-    const rect = container.getBoundingClientRect();
-    const EDGE = 80; // px from the container's left/right edge that triggers scroll
-    const STEP = 12; // px scrolled per frame — ~720 px/s at 60 fps
-    const x = s.lastClientX;
-    if (x < rect.left + EDGE && container.scrollLeft > 0) {
-      container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
-    } else if (x > rect.right - EDGE) {
-      const max = container.scrollWidth - container.clientWidth;
-      if (container.scrollLeft < max) {
-        container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const EDGE = 80; // px from the container's left/right edge that triggers scroll
+      const STEP = 12; // px scrolled per frame — ~720 px/s at 60 fps
+      const x = s.lastClientX;
+      if (x < rect.left + EDGE && container.scrollLeft > 0) {
+        container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
+      } else if (x > rect.right - EDGE) {
+        const max = container.scrollWidth - container.clientWidth;
+        if (container.scrollLeft < max) {
+          container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
+        }
       }
     }
     s.rafId = requestAnimationFrame(tick);
   }, []);
 
-  const startTracking = useCallback((): void => {
-    const s = stateRef.current;
-    s.active = true;
-    window.addEventListener('pointermove', onPointerMove);
-    s.rafId = requestAnimationFrame(tick);
-  }, [onPointerMove, tick]);
-
-  const stopTracking = useCallback((): void => {
-    const s = stateRef.current;
-    s.active = false;
-    window.removeEventListener('pointermove', onPointerMove);
-    if (s.rafId !== null) {
-      cancelAnimationFrame(s.rafId);
-      s.rafId = null;
-    }
-  }, [onPointerMove]);
-
   useDndMonitor({
-    onDragStart: startTracking,
-    onDragEnd: stopTracking,
-    onDragCancel: stopTracking
+    onDragStart: (event) => {
+      const activator = event.activatorEvent;
+      // `activatorEvent` is the ORIGINAL pointer/mouse event that
+      // crossed the activation threshold. Its clientX is our anchor.
+      const x =
+        activator instanceof PointerEvent || activator instanceof MouseEvent
+          ? activator.clientX
+          : 0;
+      const s = stateRef.current;
+      s.activatorX = x;
+      s.lastClientX = x;
+      s.active = true;
+      s.rafId = requestAnimationFrame(tick);
+    },
+    onDragMove: (event) => {
+      // dnd-kit's `delta.x` is the cumulative drag offset from the
+      // activator point. Re-derive current cursor X from it — this
+      // is more reliable than a window pointermove listener which
+      // can be swallowed by pointer-capture on the dragged element.
+      stateRef.current.lastClientX =
+        stateRef.current.activatorX + event.delta.x;
+    },
+    onDragEnd: () => {
+      const s = stateRef.current;
+      s.active = false;
+      if (s.rafId !== null) {
+        cancelAnimationFrame(s.rafId);
+        s.rafId = null;
+      }
+    },
+    onDragCancel: () => {
+      const s = stateRef.current;
+      s.active = false;
+      if (s.rafId !== null) {
+        cancelAnimationFrame(s.rafId);
+        s.rafId = null;
+      }
+    }
   });
 
   return null;
