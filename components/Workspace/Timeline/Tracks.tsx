@@ -10,9 +10,11 @@ import {
 } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
-import type { FxKind as PluginFxKind } from '@/lib/renderer/types';
 import type { TrackKind } from '@/lib/timeline/types';
-import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
+import {
+  PLUGIN_KIND_TO_TRACK_KIND,
+  type PluginFxKind
+} from '@/lib/timeline/plugin-mapping';
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
@@ -26,26 +28,11 @@ const BEAT_PX_BASE = 40;
 // happens to the RIGHT of this column.
 export const TRACK_LABEL_WIDTH = 80;
 
-// PluginFxKind (PascalCase, used by FxPlugin.kind) → lowercase clip-kind
-// (the legacy TrackKind values for FX). Mirrors the same map in
-// lib/renderer/loop.ts — kept local to avoid an import cycle through
-// the renderer.
-//
-// Plan 5.9c — Task 8 replaces this with `PLUGIN_KIND_TO_TRACK_KIND`
-// from `@/lib/timeline/plugin-mapping` (single source of truth) and
-// switches the drop-routing to `canDropOnTrack`. Until then the
-// value-type widening to `TrackKind | TrackFxKind` keeps typecheck
-// green during the v5 → v6 transition.
-const PLUGIN_TO_TRACK_KIND: Record<PluginFxKind, TrackKind | TrackFxKind> = {
-  Contour: 'contour',
-  Pulse: 'pulse',
-  Sweep: 'sweep',
-  Particle: 'particles',
-  ZoomPulse: 'zoom-pulse',
-  Text: 'text',
-  Dissolve: 'dissolve',
-  Sunray: 'sunray'
-};
+// Plan 5.9c — local PLUGIN_TO_TRACK_KIND map gone; use the SSOT
+// `PLUGIN_KIND_TO_TRACK_KIND` from `@/lib/timeline/plugin-mapping`.
+// Drop-routing also switches from "find track of the plugin's
+// per-FX kind" to "find an fx track that accepts this clip-kind"
+// (via canDropOnTrack), since all FX clips now live on 'fx' tracks.
 
 export function Tracks({ totalBeats }: { totalBeats: number }) {
   const tracks = useAppStore((s) => s.timeline.tracks);
@@ -119,22 +106,28 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           toast.error(`FX plugin "${fxId}" not registered`);
           return;
         }
-        const pluginTrackKind = PLUGIN_TO_TRACK_KIND[plugin.kind as PluginFxKind];
-        // Use the dropped track when its kind matches the plugin; otherwise
-        // fall back to the first track of the plugin's kind. With multi-track
-        // this lets the user pick which specific track receives the FX clip.
+        const clipKind = PLUGIN_KIND_TO_TRACK_KIND[plugin.kind as PluginFxKind];
+        // Plan 5.9c — drop routes to an 'fx' track. Prefer the lane
+        // the user actually dropped on; fall back to the first
+        // non-muted fx track. With multiple fx tracks (FX, FX 2, …)
+        // this lets users group clips visually.
+        // `t.kind` is transitionally widened to `TrackKind | TrackFxKind`
+        // (Task 2). After Task 3's v5→v6 migrate runs, runtime values
+        // are always in the narrow `TrackKind`; the cast bridges the
+        // gap until Task 12 narrows the type back.
         const targetTrack =
-          droppedTrackId && droppedTrackKind === pluginTrackKind
-            ? tracks.find((t) => t.id === droppedTrackId)
-            : tracks.find((t) => t.kind === pluginTrackKind);
+          (droppedTrackId && droppedTrackKind === 'fx'
+            ? tracks.find((t) => t.id === droppedTrackId && canDropOnTrack(clipKind, t.kind as TrackKind) && !t.muted)
+            : undefined)
+          ?? tracks.find((t) => canDropOnTrack(clipKind, t.kind as TrackKind) && !t.muted);
         if (!targetTrack) {
-          toast.error(`No "${pluginTrackKind}" track found for ${plugin.name}`);
+          toast.error(`No fx track available for ${plugin.name}`);
           return;
         }
         addClip({
           id: crypto.randomUUID(),
           trackId: targetTrack.id,
-          kind: pluginTrackKind,
+          kind: clipKind,
           fxId,
           startBeat,
           lengthBeats: 4,
