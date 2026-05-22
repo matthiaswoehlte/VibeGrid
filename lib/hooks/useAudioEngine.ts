@@ -2,6 +2,49 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { createAudioEngine, type AudioEngine } from '@/lib/audio/engine';
+import type { TimelineState, Clip } from '@/lib/timeline/types';
+import type { MediaRef } from '@/lib/storage/types';
+
+/** Web Audio scheduler slack — clips that should "play now" are
+ *  scheduled this many seconds in the future so the scheduler can
+ *  align all of them on the same `whenSec`. 50 ms is the textbook
+ *  value; smaller → underrun risk on slow machines, larger →
+ *  perceptible play-button latency. */
+const LOOKAHEAD = 0.05;
+
+function isAudioClip(c: Clip): boolean {
+  return c.kind === 'audio' && typeof c.mediaId === 'string';
+}
+
+/** Start every audio clip that's currently active at the playhead.
+ *  Clips already mid-playback (currentBeat ≥ startBeat) start with
+ *  the appropriate `offsetSec`; clips that begin in the future start
+ *  with `offsetSec=0` and a delayed `whenSec`. All clips share the
+ *  same `whenBase` so their playback is sample-aligned on the
+ *  AudioContext clock. */
+function startAllActiveClips(
+  timeline: TimelineState,
+  engine: AudioEngine,
+  bpm: number,
+  lookahead: number
+): void {
+  const currentBeat = timeline.playhead.beats;
+  const whenBase = engine.getContextTime() + lookahead;
+  for (const clip of timeline.clips) {
+    if (!isAudioClip(clip)) continue;
+    // Past the clip's end — skip.
+    if (currentBeat >= clip.startBeat + clip.lengthBeats) continue;
+    const clipStartSec = (clip.startBeat * 60) / bpm;
+    const currentSec = (currentBeat * 60) / bpm;
+    if (currentBeat >= clip.startBeat) {
+      // Already playing — start mid-buffer.
+      engine.playClip(clip.id, currentSec - clipStartSec, whenBase);
+    } else {
+      // Future start — no offset, delay `whenSec` by the gap.
+      engine.playClip(clip.id, 0, whenBase + (clipStartSec - currentSec));
+    }
+  }
+}
 
 export interface UseAudioEngine {
   engine: AudioEngine | null;
@@ -91,6 +134,87 @@ export function useAudioEngine(): UseAudioEngine {
         });
       }
     });
+    return unsub;
+  }, [engine]);
+
+  // Plan 5.9d — multi-clip reconciler. Modeled on `useVideoEngine`
+  // (commit 6265582): one effect closure owns the engine reference,
+  // reconciles `loadClip` / `unloadClip` against the timeline, and
+  // wires play / pause / seek to the per-clip API.
+  useEffect(() => {
+    if (!engine) return;
+
+    function reconcile(timeline: TimelineState, mediaRefs: MediaRef[]): void {
+      if (!engine) return;
+      const wanted = new Set(
+        timeline.clips.filter(isAudioClip).map((c) => c.id)
+      );
+      const loaded = new Set(engine.getLoadedClipIds());
+
+      for (const clipId of wanted) {
+        if (loaded.has(clipId)) continue;
+        const clip = timeline.clips.find((c) => c.id === clipId);
+        if (!clip) continue;
+        const ref = mediaRefs.find((m) => m.id === clip.mediaId);
+        if (!ref) continue;
+        void engine.loadClip(clipId, ref.url).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn(`[useAudioEngine] loadClip failed for ${clipId}:`, err);
+        });
+      }
+      for (const clipId of loaded) {
+        if (!wanted.has(clipId)) engine.unloadClip(clipId);
+      }
+    }
+
+    // Initial reconcile — handles rehydrated state.
+    const initial = useAppStore.getState();
+    reconcile(initial.timeline, initial.media.mediaRefs);
+
+    const unsub = useAppStore.subscribe((state, prev) => {
+      // Re-diff only when clips or mediaRefs actually changed.
+      if (
+        state.timeline.clips !== prev.timeline.clips ||
+        state.media.mediaRefs !== prev.media.mediaRefs
+      ) {
+        reconcile(state.timeline, state.media.mediaRefs);
+      }
+
+      const wasPlaying = prev.timeline.playhead.playing;
+      const isPlaying = state.timeline.playhead.playing;
+      const bpm = state.audio.grid.bpm;
+
+      // Play (was paused → playing) — start every active clip in sync.
+      if (isPlaying && !wasPlaying) {
+        startAllActiveClips(state.timeline, engine, bpm, LOOKAHEAD);
+      }
+
+      // Pause (was playing → paused) — stop every clip.
+      if (!isPlaying && wasPlaying) {
+        engine.stopAllClips();
+      }
+
+      // Seek-while-paused — stop only; next Play restarts at the new pos.
+      if (
+        !isPlaying &&
+        state.timeline.playhead.beats !== prev.timeline.playhead.beats
+      ) {
+        engine.stopAllClips();
+      }
+
+      // Seek-while-PLAYING — stop AND restart so audio re-syncs to the
+      // new playhead. Placed AFTER the play-branch so a single Play
+      // click doesn't double-fire startAllActiveClips.
+      if (
+        isPlaying &&
+        wasPlaying &&
+        state.timeline.playhead.beats !== prev.timeline.playhead.beats
+      ) {
+        engine.stopAllClips();
+        startAllActiveClips(state.timeline, engine, bpm, LOOKAHEAD);
+      }
+    });
+
     return unsub;
   }, [engine]);
 
