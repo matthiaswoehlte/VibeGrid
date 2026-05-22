@@ -1,9 +1,10 @@
 'use client';
-import { type DragEvent as ReactDragEvent } from 'react';
+import { useEffect, useRef, type DragEvent as ReactDragEvent } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
   PointerSensor,
+  useDndContext,
   useSensor,
   useSensors,
   type DragEndEvent
@@ -26,6 +27,86 @@ const BEAT_PX_BASE = 40;
 // reserved for track-name labels. All horizontal positioning of clips/ticks
 // happens to the RIGHT of this column.
 export const TRACK_LABEL_WIDTH = 80;
+
+/**
+ * Independent manual auto-scroll while a clip is dragged.
+ *
+ * dnd-kit's built-in autoScroll has been unreliable for our layout
+ * across multiple config attempts. This bypass:
+ *  - Uses `useDndContext` (synchronous read of dnd-kit's internal
+ *    state) to know when a drag is active. `active != null` means
+ *    "drag in progress" — no event subscription needed.
+ *  - Attaches a window-level `pointermove` capture listener (capture
+ *    phase, so it fires BEFORE any propagation-stopping handlers).
+ *  - Runs a rAF loop while dragging; scrolls the container when
+ *    cursor is within `EDGE` px of either horizontal edge.
+ *  - Loud `console.debug` traces so the symptom is observable in
+ *    DevTools when the user reports "still broken". Remove these
+ *    traces once the behavior is verified.
+ */
+function ClipDragAutoScroll(): null {
+  const { active } = useDndContext();
+  const isDragging = active != null;
+  const stateRef = useRef({
+    lastClientX: 0,
+    rafId: null as number | null,
+    scrollsAttempted: 0
+  });
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const s = stateRef.current;
+    s.scrollsAttempted = 0;
+    // eslint-disable-next-line no-console
+    console.debug('[autoScroll] drag start — installing listeners');
+
+    const onMove = (e: PointerEvent) => {
+      s.lastClientX = e.clientX;
+    };
+    // Capture phase, passive — runs before bubbling, no preventDefault.
+    window.addEventListener('pointermove', onMove, { capture: true, passive: true });
+
+    const tick = () => {
+      const container = document.querySelector(
+        '[data-timeline-scroll]'
+      ) as HTMLElement | null;
+      if (!container) {
+        s.rafId = requestAnimationFrame(tick);
+        return;
+      }
+      const rect = container.getBoundingClientRect();
+      const EDGE = 80;
+      const STEP = 14;
+      const x = s.lastClientX;
+      if (x > 0 && x < rect.left + EDGE && container.scrollLeft > 0) {
+        const prev = container.scrollLeft;
+        container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
+        if (container.scrollLeft !== prev) s.scrollsAttempted++;
+      } else if (x > rect.right - EDGE) {
+        const max = container.scrollWidth - container.clientWidth;
+        if (container.scrollLeft < max) {
+          const prev = container.scrollLeft;
+          container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
+          if (container.scrollLeft !== prev) s.scrollsAttempted++;
+        }
+      }
+      s.rafId = requestAnimationFrame(tick);
+    };
+    s.rafId = requestAnimationFrame(tick);
+
+    return () => {
+      window.removeEventListener('pointermove', onMove, { capture: true });
+      if (s.rafId !== null) {
+        cancelAnimationFrame(s.rafId);
+        s.rafId = null;
+      }
+      // eslint-disable-next-line no-console
+      console.debug(`[autoScroll] drag end — ${s.scrollsAttempted} scroll-step(s) applied`);
+    };
+  }, [isDragging]);
+
+  return null;
+}
 
 // Plan 5.9c — local PLUGIN_TO_TRACK_KIND map gone; use the SSOT
 // `PLUGIN_KIND_TO_TRACK_KIND` from `@/lib/timeline/plugin-mapping`.
@@ -266,35 +347,20 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     <DndContext
       sensors={sensors}
       onDragEnd={onDragEnd}
-      // dnd-kit's built-in auto-scroll, configured explicitly.
+      // dnd-kit's built-in auto-scroll is disabled for this iteration —
+      // multiple config attempts didn't produce visible scrolling in
+      // our layout. The `ClipDragAutoScroll` helper below replaces it
+      // with an independent manual implementation that uses
+      // `useDndContext` (sync read, no event subscription) + a
+      // window pointermove capture listener + rAF.
       //
-      // Root cause behind the earlier "no auto-scroll" symptom: the
-      // Clip component used to render with `left: startBeat*px +
-      // transform.x` and a CSS transform of only `translate3d(0,
-      // transform.y, 0)`. dnd-kit's auto-scroll measures the dragged
-      // element's CSS transform to decide whether it's near the
-      // edge AND to compensate for layout shifts during scroll.
-      // With `transform.x` always 0 on the element, dnd-kit
-      // (a) couldn't detect edge-proximity → no scroll fired,
-      // (b) couldn't compensate during scroll → if the scroll DID
-      //     fire (via other means), the clip drifted off the cursor.
-      //
-      // After moving the drag offset into the CSS transform (both
-      // axes), dnd-kit's built-in auto-scroll works as advertised.
-      //
-      // - threshold 0.25 on x: trigger zone is the leftmost / rightmost
-      //   25% of the container width. Generous so users feel the scroll
-      //   engage well before they hit the viewport edge.
-      // - threshold 0 on y: timeline is short vertically, no need.
-      // - layoutShiftCompensation: true: keep the clip glued to the
-      //   cursor as the container scrolls.
-      autoScroll={{
-        enabled: true,
-        threshold: { x: 0.25, y: 0 },
-        acceleration: 10,
-        layoutShiftCompensation: true
-      }}
+      // Layout-shift compensation isn't needed because the Clip's
+      // `transform.x` already accounts for the visible drag offset —
+      // and the manual scroll updates `scrollLeft` directly without
+      // dnd-kit having to coordinate the two.
+      autoScroll={false}
     >
+      <ClipDragAutoScroll />
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
