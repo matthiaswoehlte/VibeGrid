@@ -4,7 +4,7 @@ import { useAudioEngine } from '@/lib/hooks/useAudioEngine';
 import { useVideoEngine } from '@/lib/hooks/useVideoEngine';
 import { TopBar } from '@/components/TopBar';
 import { Workspace } from '@/components/Workspace';
-import { MobileTabBar } from '@/components/Mobile/MobileTabBar';
+import { TabBar } from '@/components/Mobile/TabBar';
 
 export default function StudioPage() {
   const { engine } = useAudioEngine();
@@ -43,7 +43,7 @@ export default function StudioPage() {
         getBitmapRef={getBitmapRef}
         getVideoElement={getVideoElement}
       />
-      <MobileTabBar />
+      <TabBar />
     </div>
   );
 }
