@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import type { AudioEngine } from '@/lib/audio/engine';
 import { useAppStore } from '@/lib/store';
+import { useIsMobile } from '@/lib/utils/breakpoints';
 import { LeftPanel } from './LeftPanel';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
@@ -27,6 +28,11 @@ export function Workspace({
 }) {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_PX);
+  // Plan 5.10 — Mobile layout drops the Desktop LeftPanel + Inspector
+  // asides (Mobile uses MediaDrawer / FXDrawer / InspectorSheet instead)
+  // and switches the Timeline from a fixed pixel height to flex-grow so
+  // it fills the area between the 40vh Stage and the bottom TabBar.
+  const isMobile = useIsMobile();
 
   // Global Delete / Backspace shortcut — removes the currently selected clip.
   // No-op when an input/textarea/contenteditable has focus (don't interfere
@@ -54,11 +60,16 @@ export function Workspace({
 
   return (
     <div className="flex flex-1 min-h-0">
-      <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
+      {/* Desktop LeftPanel — hidden on Mobile; MediaDrawer + FXDrawer
+          (mounted in page.tsx) take over the same content. */}
+      <aside className="hidden md:block w-64 shrink-0 border-r border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
         <LeftPanel />
       </aside>
       <main className="flex-1 flex flex-col min-w-0">
-        <div className="flex-1 min-h-0 relative">
+        {/* On Desktop the Stage flex-grows above the resize handle; on
+            Mobile the Stage component itself locks to h-[40vh] (Plan 5.10
+            Task 5), so the wrapper drops flex-1 to let that height win. */}
+        <div className="md:flex-1 md:min-h-0 relative">
           <Stage
             engine={engine}
             canvasRef={canvasRef}
@@ -69,11 +80,13 @@ export function Workspace({
             type="button"
             aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}
             onClick={() => setInspectorOpen((v) => !v)}
-            className="absolute right-2 top-2 lg:hidden h-7 px-2 rounded bg-[var(--surface-2)] text-xs"
+            className="absolute right-2 top-2 hidden md:inline-flex lg:hidden h-7 px-2 rounded bg-[var(--surface-2)] text-xs"
           >
             {inspectorOpen ? '›' : '‹'}
           </button>
         </div>
+        {/* Resize handle is Desktop-only — Mobile has no Stage/Timeline
+            split to adjust (Stage = 40vh fixed, Timeline = flex-grow). */}
         <div
           role="separator"
           aria-orientation="horizontal"
@@ -113,18 +126,24 @@ export function Workspace({
             target.addEventListener('pointerup', up);
             target.addEventListener('pointercancel', up);
           }}
-          className="h-1.5 shrink-0 bg-[var(--border)] hover:bg-[var(--a2)] transition-colors"
+          className="hidden md:block h-1.5 shrink-0 bg-[var(--border)] hover:bg-[var(--a2)] transition-colors"
           style={{ cursor: 'row-resize', touchAction: 'none' }}
         />
+        {/* Mobile: Timeline fills remaining viewport (flex-grow) between
+            the 40vh Stage and the 48px TabBar. Desktop: fixed pixel
+            height controlled by the resize handle above. The inline
+            `style.height` is omitted on Mobile so flex-1 wins. */}
         <div
-          className="shrink-0 border-t border-[var(--border)] bg-[var(--surface-1)]"
-          style={{ height: timelineHeight }}
+          className="shrink-0 border-t border-[var(--border)] bg-[var(--surface-1)] flex-1 md:flex-none"
+          style={isMobile ? undefined : { height: timelineHeight }}
         >
           <Timeline engine={engine} />
         </div>
       </main>
+      {/* Desktop Inspector — hidden on Mobile; InspectorSheet (mounted in
+          page.tsx) takes over with a bottom-sheet UX. */}
       {inspectorOpen && (
-        <aside className="w-72 shrink-0 border-l border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
+        <aside className="hidden md:block w-72 shrink-0 border-l border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
           <Inspector />
         </aside>
       )}
