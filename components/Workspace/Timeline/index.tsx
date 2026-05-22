@@ -14,12 +14,12 @@ const BEAT_PX_BASE = 40;
 
 export function Timeline({ engine }: { engine: AudioEngine | null }) {
   const clips = useAppStore((s) => s.timeline.clips);
-  const audioRefs = useAppStore((s) => s.media.mediaRefs);
-  const bpm = useAppStore((s) => s.audio.grid.bpm);
-  const totalBeats = useMemo(() => {
-    const lastAudio = [...audioRefs].reverse().find((m) => m.kind === 'audio' && m.duration);
-    return computeTotalBeats(clips, lastAudio?.duration, bpm);
-  }, [clips, audioRefs, bpm]);
+  // Plan 5.8b — audio clips now contribute their `clip.lengthBeats` like
+  // any other clip via computeTotalBeats. Earlier this hook also pulled
+  // `mediaRef.duration` from the audio MediaRef (pre-5.9d "global
+  // soundtrack" pattern), which left the scroller stuck at the original
+  // FILE length even after the user trimmed the on-timeline clip.
+  const totalBeats = useMemo(() => computeTotalBeats(clips), [clips]);
 
   // Reset horizontal scroll when the playhead jumps back to beat 0
   // (triggered by the Stop button via `setPlayhead(0)`, or by any
