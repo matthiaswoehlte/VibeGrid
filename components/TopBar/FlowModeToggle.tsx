@@ -21,13 +21,16 @@ export function FlowModeToggle() {
           ? 'Flow Mode — klick für Beat Mode'
           : 'Beat Mode — klick für Flow Mode'
       }
-      className={`px-3 h-7 rounded text-xs font-medium transition-colors ${
+      className={`px-3 h-11 md:h-7 rounded text-sm md:text-xs font-medium transition-colors ${
         flowMode
           ? 'bg-[var(--a3)] text-[var(--bg)]'
           : 'bg-[var(--surface-3)] text-[var(--text-dim)] hover:text-[var(--text)]'
       }`}
     >
-      {flowMode ? '〜 Flow' : '♩ Beat'}
+      {/* Mobile: glyph only — "Flow"/"Beat" word fits awkwardly next to
+          the export progress label. Desktop keeps the labeled version. */}
+      <span aria-hidden>{flowMode ? '〜' : '♩'}</span>
+      <span className="hidden md:inline"> {flowMode ? 'Flow' : 'Beat'}</span>
     </button>
   );
 }

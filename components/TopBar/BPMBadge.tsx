@@ -40,10 +40,13 @@ export function BPMBadge() {
         setDraft(String(bpm));
         setEditing(true);
       }}
-      className="h-7 px-2 rounded bg-[var(--surface-2)] border border-[var(--border)] text-xs font-mono"
+      className="h-11 md:h-7 px-2 rounded bg-[var(--surface-2)] border border-[var(--border)] text-xs font-mono"
       aria-label="Edit BPM"
     >
-      {bpm.toFixed(0)} BPM
+      {/* Drop the "BPM" suffix on Mobile to save horizontal space; the
+          number alone reads as tempo in context (next to Play/Stop). */}
+      {bpm.toFixed(0)}
+      <span className="hidden md:inline"> BPM</span>
     </button>
   );
 }

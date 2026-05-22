@@ -29,14 +29,20 @@ export function TopBar({
     videoEngine
   });
   return (
-    <header className="h-12 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">
-      <div className="flex items-center gap-3">
+    <header className="h-12 px-2 md:px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">
+      <div className="flex items-center gap-2 md:gap-3">
         <Transport engine={engine} />
         <BPMBadge />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 md:gap-2">
+        {/* RecIndicator hides itself when status === 'idle'; on Mobile the
+            timecode + progress bar may overflow the right cluster — left
+            unchanged because export happens once per session, edge-case. */}
         <RecIndicator onCancel={() => exporter.cancel()} />
         <FlowModeToggle />
+        {/* ClearProjectButton + Dev: Clear are dangerous actions. Keep
+            them visible on Mobile too — the native window.confirm()
+            dialog already protects against misclicks at any size. */}
         <ClearProjectButton />
         {process.env.NODE_ENV === 'development' && (
           <button
@@ -46,7 +52,7 @@ export function TopBar({
               window.location.reload();
             }}
             title="Dev only: clear localStorage and reload"
-            className="h-7 px-2 rounded text-[10px] uppercase tracking-wider bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text)] transition-colors border border-[var(--border)]"
+            className="hidden md:inline-flex h-7 px-2 items-center rounded text-[10px] uppercase tracking-wider bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text)] transition-colors border border-[var(--border)]"
           >
             Dev: Clear
           </button>
