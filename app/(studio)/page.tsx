@@ -1,6 +1,12 @@
 'use client';
 import { useCallback, useRef } from 'react';
-import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core';
 import { useAudioEngine } from '@/lib/hooks/useAudioEngine';
 import { useVideoEngine } from '@/lib/hooks/useVideoEngine';
 import { TopBar } from '@/components/TopBar';
@@ -39,8 +45,17 @@ export default function StudioPage() {
   // distance:5 stays as before (prevents pointerdown from swallowing
   // the click-to-select). Built-in autoScroll disabled — the timeline
   // uses its own manual implementation (see Tracks.tsx startAutoScroll).
+  //
+  // TouchSensor added alongside for Mobile clip-drag (Plan 5.10 Task 9):
+  //  - delay: 150ms — prevents a quick scroll-swipe from accidentally
+  //    activating a drag. The user must press-and-hold briefly before
+  //    a drag starts.
+  //  - tolerance: 8px — small finger jitter during the hold is OK; the
+  //    sensor only cancels if movement exceeds 8px before the delay
+  //    elapses.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
   );
 
   return (

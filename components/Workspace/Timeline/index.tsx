@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAppStore } from '@/lib/store';
 import { computeTotalBeats } from '@/lib/timeline/total-beats';
+import { useTimelinePinchZoom } from '@/lib/hooks/useTimelinePinchZoom';
 import { Toolbar } from './Toolbar';
 import { Ruler } from './Ruler';
 import { Tracks } from './Tracks';
@@ -26,6 +27,11 @@ export function Timeline({ engine }: { engine: AudioEngine | null }) {
   // Playhead.tsx only kicks in while `playing` is true, so a pure
   // beats-to-0 transition wouldn't otherwise move the viewport.
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Plan 5.10 — two-finger pinch on the timeline scroll area adjusts
+  // timeline.zoom (Anm 8). Mobile-first; on Desktop with a mouse the
+  // hook attaches harmlessly (pinch events don't fire from a mouse).
+  useTimelinePinchZoom(scrollRef);
   useEffect(() => {
     let prevBeats = useAppStore.getState().timeline.playhead.beats;
     return useAppStore.subscribe((state) => {
