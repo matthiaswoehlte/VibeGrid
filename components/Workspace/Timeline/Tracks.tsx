@@ -264,7 +264,25 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   };
 
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      onDragEnd={onDragEnd}
+      // Explicit auto-scroll config — dnd-kit's default (threshold
+      // 0.2 on both axes) wasn't reliably engaging when dragging a
+      // clip from the timeline end leftward toward beat 0. The
+      // timeline only scrolls horizontally (the track list is short
+      // enough to fit vertically); zeroing the y threshold tells
+      // dnd-kit to ignore vertical edge proximity entirely and
+      // focus on horizontal-only auto-scroll. Threshold 0.25
+      // (25% of the container width near each edge) is a more
+      // generous trigger zone than the default — gives the user
+      // visible "scroll is engaging" feedback when their cursor
+      // approaches the edge.
+      autoScroll={{
+        threshold: { x: 0.25, y: 0 },
+        acceleration: 10
+      }}
+    >
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
