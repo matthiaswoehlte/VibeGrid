@@ -43,7 +43,11 @@ export function Timeline({ engine }: { engine: AudioEngine | null }) {
         <Toolbar />
         {/* Shared horizontal+vertical scroll so Ruler ticks, track clips and
             the Playhead all stay aligned and scroll together. */}
-        <div ref={scrollRef} className="flex-1 overflow-auto relative">
+        <div
+          ref={scrollRef}
+          data-timeline-scroll
+          className="flex-1 overflow-auto relative"
+        >
           <Ruler totalBeats={totalBeats} engine={engine} />
           <Tracks totalBeats={totalBeats} />
           <Playhead engine={engine} totalBeats={totalBeats} />

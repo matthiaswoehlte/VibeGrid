@@ -37,14 +37,48 @@ export function Clip({ clip }: { clip: ClipT }) {
 
   const onResizePointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
-    const startX = e.clientX;
+    const handle = e.currentTarget as HTMLElement;
+    // Resolve the timeline's horizontal scroll container so the resize
+    // math can compute pointer position in CONTENT coordinates (which
+    // are invariant under scrolling). Without this, when the container
+    // scrolls during a resize (trackpad two-finger swipe, auto-scroll,
+    // or the user scrolling near the viewport edge), `ev.clientX`
+    // stays the same in viewport coords while the content shifts —
+    // the resize anchor drifts off the cursor and the user perceives
+    // a "lost grip" (smoke Bug E).
+    const scrollContainer = handle.closest('[data-timeline-scroll]') as HTMLElement | null;
+    // Pointer capture binds all pointermove / pointerup events for
+    // this pointerId to the handle until release. Without it, the
+    // implicit capture can break when the cursor crosses other
+    // pointer-event-handling elements (especially during scroll).
+    try {
+      handle.setPointerCapture(e.pointerId);
+    } catch {
+      // Older browsers — fall back to window listeners below.
+    }
+
+    const containerLeft = scrollContainer?.getBoundingClientRect().left ?? 0;
+    const initialScrollLeft = scrollContainer?.scrollLeft ?? 0;
+    // Cursor position in TIMELINE-CONTENT coordinates at drag start.
+    // contentX = (viewport X - container left) + container scrollLeft.
+    const startContentX = e.clientX - containerLeft + initialScrollLeft;
     const startLen = clip.lengthBeats;
+
     const move = (ev: PointerEvent) => {
-      const dxBeats = (ev.clientX - startX) / px;
+      const currentScrollLeft = scrollContainer?.scrollLeft ?? initialScrollLeft;
+      const currentContainerLeft =
+        scrollContainer?.getBoundingClientRect().left ?? containerLeft;
+      const currentContentX = ev.clientX - currentContainerLeft + currentScrollLeft;
+      const dxBeats = (currentContentX - startContentX) / px;
       const next = Math.max(0.25, startLen + dxBeats);
       resizeClip(clip.id, next);
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
+      try {
+        handle.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* pointer was never captured — ok */
+      }
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
