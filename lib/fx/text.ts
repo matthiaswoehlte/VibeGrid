@@ -171,7 +171,9 @@ export const textPlugin: FxPlugin<TextParams> = {
       max: 1,
       step: 0.05,
       default: 0.7,
-      label: 'Blink decay'
+      label: 'Blink decay',
+      // Plan 5.8b — only relevant while blink-on-beat is active.
+      visibleWhen: (p) => p.blink === true
     },
     enable3d: { kind: 'toggle', default: false, label: '3D extrusion' },
     extrusionDirection: {
@@ -183,7 +185,9 @@ export const textPlugin: FxPlugin<TextParams> = {
         { value: 'top-left', label: '↖ Top-left' }
       ],
       default: 'bottom-right',
-      label: 'Extrusion dir'
+      label: 'Extrusion dir',
+      // Plan 5.8b — only meaningful when 3D extrusion is enabled.
+      visibleWhen: (p) => p.enable3d === true
     },
     extrusionDepth: {
       kind: 'slider',
@@ -192,7 +196,8 @@ export const textPlugin: FxPlugin<TextParams> = {
       step: 1,
       default: 8,
       unit: 'px',
-      label: 'Extrusion depth'
+      label: 'Extrusion depth',
+      visibleWhen: (p) => p.enable3d === true
     },
     extrusionStyle: {
       kind: 'select',
@@ -201,7 +206,8 @@ export const textPlugin: FxPlugin<TextParams> = {
         { value: 'rock', label: 'Rock (jittered)' }
       ],
       default: 'plain',
-      label: 'Extrusion style'
+      label: 'Extrusion style',
+      visibleWhen: (p) => p.enable3d === true
     }
   },
   getDefaultParams: (): TextParams => ({
