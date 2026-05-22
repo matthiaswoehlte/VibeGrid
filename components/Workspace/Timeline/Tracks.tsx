@@ -1,13 +1,7 @@
 'use client';
 import { useRef, type DragEvent as ReactDragEvent } from 'react';
 import { toast } from 'sonner';
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent
-} from '@dnd-kit/core';
+import { useDndMonitor, type DragEndEvent } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import { isAutomationCurve } from '@/lib/automation/resolve';
@@ -47,15 +41,15 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   const getMediaRef = useAppStore((s) => s.mediaActions.getMediaRef);
   const px = BEAT_PX_BASE * zoom;
 
-  // Require 5px of movement before a clip drag activates — without this,
-  // every pointerdown starts dnd-kit drag tracking and steals the subsequent
-  // click event, so the Inspector never sees a clip-select click.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
+  // Plan 5.10: DndContext is now mounted in app/(studio)/page.tsx so the
+  // InspectorSheet (mounted as a sibling of Workspace) can use
+  // useDndMonitor to detect drag-in-progress. Tracks subscribes to the
+  // same parent context via useDndMonitor below — drag-handler logic is
+  // unchanged, only the wiring moved up one level. Sensors + activation
+  // constraints + autoScroll={false} live at the parent DndContext.
 
   // Auto-scroll lives in a ref so its lifecycle is controlled by the
-  // DndContext callbacks below — no React state, no useEffect, no
+  // drag callbacks below — no React state, no useEffect, no
   // useDndContext (which has been unreliable for detecting drag activation
   // across earlier fix attempts). The ref holds the running rAF id, the
   // window-level pointermove listener, and a counter we log on drag end.
@@ -329,37 +323,31 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     }
   };
 
+  // Subscribe to the parent DndContext's drag lifecycle (Plan 5.10 lift).
+  // Same handlers that previously sat on the local DndContext props —
+  // useDndMonitor accepts the same listener shape and fires identically.
+  useDndMonitor({
+    onDragStart: (e) => {
+      const data = e.active.data.current as { kind?: string } | undefined;
+      if (data?.kind === 'clip') startAutoScroll();
+    },
+    onDragCancel: stopAutoScroll,
+    onDragEnd
+  });
+
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={(e) => {
-        const data = e.active.data.current as { kind?: string } | undefined;
-        if (data?.kind === 'clip') startAutoScroll();
-      }}
-      onDragCancel={stopAutoScroll}
-      onDragEnd={onDragEnd}
-      // dnd-kit's built-in auto-scroll is disabled — multiple config
-      // attempts didn't produce visible scrolling in our layout. The
-      // manual auto-scroll (startAutoScroll/stopAutoScroll above) runs
-      // a rAF loop while a clip-drag is active and scrolls the
-      // [data-timeline-scroll] container when the cursor is near an
-      // edge. Driven by DndContext's prop callbacks (not by
-      // useDndContext, which proved unreliable for detecting drag
-      // activation across earlier attempts).
-      autoScroll={false}
+    /* Plan 5.10: touch-pan-x on Mobile hints to the browser that
+        horizontal pans are preferred within the timeline drop area;
+        vertical pans propagate up to the outer Timeline container so
+        the track-list still scrolls. Reset to touch-auto on Desktop
+        (where mouse drives both axes). dnd-kit's PointerSensor sets
+        its own touch-action: none on draggable handles, so clip-drag
+        isn't affected by this default. */
+    <div
+      onDragOver={onNativeDragOver}
+      onDrop={onNativeDrop}
+      className="touch-pan-x md:touch-auto"
     >
-      {/* Plan 5.10: touch-pan-x on Mobile hints to the browser that
-          horizontal pans are preferred within the timeline drop area;
-          vertical pans propagate up to the outer Timeline container so
-          the track-list still scrolls. Reset to touch-auto on Desktop
-          (where mouse drives both axes). dnd-kit's PointerSensor sets
-          its own touch-action: none on draggable handles, so clip-drag
-          isn't affected by this default. */}
-      <div
-        onDragOver={onNativeDragOver}
-        onDrop={onNativeDrop}
-        className="touch-pan-x md:touch-auto"
-      >
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
           // row whenever that clip has at least one automation curve. The
@@ -416,7 +404,6 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
             </div>
           );
         })}
-      </div>
-    </DndContext>
+    </div>
   );
 }
