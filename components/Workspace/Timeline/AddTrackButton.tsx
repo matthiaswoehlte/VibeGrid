@@ -57,7 +57,7 @@ export function AddTrackButton() {
         + Track hinzufügen
       </button>
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 min-w-[180px] bg-[var(--surface-2)] border border-[var(--border)] rounded shadow-lg z-30 py-1">
+        <div className="absolute left-0 top-full mt-1 min-w-[180px] bg-[var(--surface-2)] border border-[var(--border)] rounded shadow-lg z-30 py-1">
           <div className="px-2 py-1 text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
             Media
           </div>

@@ -2,6 +2,7 @@
 import { useAppStore } from '@/lib/store';
 import { SelectControl } from '@/components/ui/SelectControl';
 import { Slider } from '@/components/ui/Slider';
+import { AddTrackButton } from './AddTrackButton';
 
 export function Toolbar() {
   const zoom = useAppStore((s) => s.ui.zoom);
@@ -26,6 +27,11 @@ export function Toolbar() {
           label="Snap"
         />
       </label>
+      {/* AddTrackButton lives here between Snap and Zoom so it stays
+          reachable regardless of how many tracks exist (the old
+          mount point at the bottom of the track list scrolled out of
+          view as more tracks were added). */}
+      <AddTrackButton />
       <label className="flex items-center gap-1 text-xs text-[var(--text-dim)] w-40">
         Zoom
         <Slider min={0.5} max={3} step={0.1} value={zoom} onChange={setZoom} label="Zoom" />

@@ -37,6 +37,32 @@ export function Timeline({ engine }: { engine: AudioEngine | null }) {
     });
   }, []);
 
+  // Auto-scroll vertically to the bottom when a track is added. The
+  // user just clicked "+ Track hinzufügen" and presumably wants to
+  // do something with the new track immediately — scrolling down so
+  // it's visible spares the manual scroll. Fires on length INCREASE
+  // only; removeTrack / reorder keep the current scroll position.
+  useEffect(() => {
+    let prevTrackCount = useAppStore.getState().timeline.tracks.length;
+    return useAppStore.subscribe((state) => {
+      const count = state.timeline.tracks.length;
+      if (count > prevTrackCount && scrollRef.current) {
+        // Defer one rAF so React has flushed the new track row into
+        // the DOM — without this, scrollHeight is still the
+        // pre-mount value and the scrollTo lands one row short.
+        requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTo({
+              top: scrollRef.current.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        });
+      }
+      prevTrackCount = count;
+    });
+  }, []);
+
   return (
     <ErrorBoundary name="Timeline">
       <div className="h-full flex flex-col">

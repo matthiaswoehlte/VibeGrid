@@ -19,7 +19,6 @@ import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
 import { TrackHeader } from './TrackHeader';
-import { AddTrackButton } from './AddTrackButton';
 
 const TRACK_HEIGHT = 32;
 const BEAT_PX_BASE = 40;
@@ -325,12 +324,6 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
             </div>
           );
         })}
-        <div
-          className="px-2 py-2 border-b border-[var(--border)]"
-          style={{ width: TRACK_LABEL_WIDTH + totalBeats * px }}
-        >
-          <AddTrackButton />
-        </div>
       </div>
     </DndContext>
   );
