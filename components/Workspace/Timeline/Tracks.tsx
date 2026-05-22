@@ -160,22 +160,21 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           toast.error('No image track found');
           return;
         }
-        // Default image-clip length: cover the active audio (most images are
-        // "the album art" that stays for the full song). Fallback: 256 beats
-        // (~2 min at 120 BPM) when no audio exists yet. User can resize after.
-        const state = useAppStore.getState();
-        const audio = state.media.mediaRefs.find((m) => m.kind === 'audio' && m.duration);
-        const bpm = state.audio.grid.bpm || 120;
-        const lengthBeats = audio?.duration
-          ? Math.ceil((audio.duration * bpm) / 60)
-          : 256;
+        // Default image-clip length: 4 beats (same as FX defaults).
+        // Pre-5.9d image clips were auto-stretched to the full audio
+        // duration on the assumption "image = album art for the whole
+        // song". With Multi-Audio and dynamic image-tracks the assumption
+        // doesn't hold — long auto-stretched bars force the user to
+        // scroll to the song's end just to shorten them. 4 beats is
+        // visible without scrolling at any zoom level; the user resizes
+        // outward when they actually want a longer image.
         addClip({
           id: crypto.randomUUID(),
           trackId: imageTrack.id,
           kind: 'image',
           mediaId: mediaIdImage,
           startBeat,
-          lengthBeats,
+          lengthBeats: 4,
           label: ref.filename
         });
         return;
