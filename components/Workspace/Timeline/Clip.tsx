@@ -2,32 +2,24 @@
 import { useDraggable } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
 import type { Clip as ClipT, TrackKind } from '@/lib/timeline/types';
-import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
+import {
+  FX_CLIP_COLORS,
+  type TrackFxKind
+} from '@/lib/timeline/plugin-mapping';
 
 const BEAT_PX_BASE = 40;
 
-// Per-clip-kind accent. Aligns with plugin defaults where possible
-// (sweep uses --a1 purple, particles uses --a3 teal). Image gets blue.
-//
-// Plan 5.9c — Task 9 replaces this with an `FX_CLIP_COLORS` fallback
-// from plugin-mapping. Until then key-type widened to admit the
-// legacy v5 FX-kinds present here.
-const KIND_COLOR: Record<TrackKind | TrackFxKind, string> = {
+// Media-kind colors stay local to the Timeline UI — they're a UI
+// concern, not a renderer/plugin concern. FX clip colors come from
+// the SSOT `FX_CLIP_COLORS` in plugin-mapping (extended below at
+// lookup time).
+const KIND_COLOR: Record<TrackKind, string> = {
   image: '#5a8fff',     // blue (matches --a2)
-  contour: '#a86bff',   // purple (matches --a1)
-  sweep: '#ff6b9d',     // pink
-  particles: '#2ee0d0', // teal (matches --a3)
-  pulse: '#ffd166',     // amber
-  'zoom-pulse': '#ff9f43', // orange
-  // Plan 5.8a — three new FX kinds.
-  text: '#e8eaf0',      // off-white (matches --text)
-  dissolve: '#6b7088',  // muted slate (matches --text-muted)
-  sunray: '#fffbe6',    // warm white — matches Sunray plugin default color
-  // Plan 5.9a — media-bearing track kinds.
   audio: '#3a3f55',     // muted blue-grey (stub, never user-visible in v0.1)
   video: '#7a4dff',     // saturated purple — distinct from image (blue)
-  // Plan 5.9c — generic FX track-kind. Used when a clip on an 'fx'
-  // track has no per-kind color override.
+  // Generic FX track fallback — used when a clip carries an unknown
+  // clip-kind (e.g. legacy / future). Specific FX clip-kinds resolve
+  // via FX_CLIP_COLORS first.
   fx: 'var(--surface-3)'
 };
 
@@ -60,7 +52,12 @@ export function Clip({ clip }: { clip: ClipT }) {
     window.addEventListener('pointerup', up);
   };
 
-  const color = KIND_COLOR[clip.kind];
+  // Resolve color: FX-specific kind first (purple/pink/teal/…), then
+  // media-kind fallback, then a neutral surface default.
+  const color =
+    FX_CLIP_COLORS[clip.kind as TrackFxKind]
+    ?? KIND_COLOR[clip.kind as TrackKind]
+    ?? 'var(--surface-3)';
   // 33 / 66 hex suffix = ~20% / ~40% alpha — translucent fills layered over
   // the dark surface read as glowing washes instead of solid blocks.
   const bgAlpha = selected ? '66' : '33';
