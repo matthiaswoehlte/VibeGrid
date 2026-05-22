@@ -1,9 +1,10 @@
 'use client';
-import type { DragEvent as ReactDragEvent } from 'react';
+import { useCallback, useRef, type DragEvent as ReactDragEvent } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
   PointerSensor,
+  useDndMonitor,
   useSensor,
   useSensors,
   type DragEndEvent
@@ -26,6 +27,86 @@ const BEAT_PX_BASE = 40;
 // reserved for track-name labels. All horizontal positioning of clips/ticks
 // happens to the RIGHT of this column.
 export const TRACK_LABEL_WIDTH = 80;
+
+/**
+ * Manual auto-scroll while a clip is dragged.
+ *
+ * dnd-kit's built-in `autoScroll` config didn't engage reliably for
+ * our `flex-1 overflow-auto` timeline container — probably its
+ * scrollable-ancestor detection runs before our layout settles, or
+ * the DraggableRect-based activator doesn't trigger when the
+ * draggable's visible bounds stay outside the threshold zone.
+ * Whatever the reason: explicit pointer-tracking + rAF is bombproof
+ * and only ~25 lines.
+ *
+ * The component renders nothing; it lives inside `<DndContext>` so
+ * `useDndMonitor` can listen for drag-lifecycle events. While a
+ * drag is active, a window-level `pointermove` listener records
+ * the cursor's `clientX`, and a rAF loop scrolls the timeline
+ * container leftward / rightward when the cursor is within
+ * `EDGE` pixels of the container's left / right viewport edge.
+ */
+function ClipDragAutoScroll(): null {
+  const stateRef = useRef({
+    active: false,
+    lastClientX: 0,
+    rafId: null as number | null
+  });
+
+  const onPointerMove = useCallback((e: PointerEvent) => {
+    stateRef.current.lastClientX = e.clientX;
+  }, []);
+
+  const tick = useCallback((): void => {
+    const s = stateRef.current;
+    if (!s.active) return;
+    const container = document.querySelector(
+      '[data-timeline-scroll]'
+    ) as HTMLElement | null;
+    if (!container) {
+      s.rafId = requestAnimationFrame(tick);
+      return;
+    }
+    const rect = container.getBoundingClientRect();
+    const EDGE = 80; // px from the container's left/right edge that triggers scroll
+    const STEP = 12; // px scrolled per frame — ~720 px/s at 60 fps
+    const x = s.lastClientX;
+    if (x < rect.left + EDGE && container.scrollLeft > 0) {
+      container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
+    } else if (x > rect.right - EDGE) {
+      const max = container.scrollWidth - container.clientWidth;
+      if (container.scrollLeft < max) {
+        container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
+      }
+    }
+    s.rafId = requestAnimationFrame(tick);
+  }, []);
+
+  const startTracking = useCallback((): void => {
+    const s = stateRef.current;
+    s.active = true;
+    window.addEventListener('pointermove', onPointerMove);
+    s.rafId = requestAnimationFrame(tick);
+  }, [onPointerMove, tick]);
+
+  const stopTracking = useCallback((): void => {
+    const s = stateRef.current;
+    s.active = false;
+    window.removeEventListener('pointermove', onPointerMove);
+    if (s.rafId !== null) {
+      cancelAnimationFrame(s.rafId);
+      s.rafId = null;
+    }
+  }, [onPointerMove]);
+
+  useDndMonitor({
+    onDragStart: startTracking,
+    onDragEnd: stopTracking,
+    onDragCancel: stopTracking
+  });
+
+  return null;
+}
 
 // Plan 5.9c — local PLUGIN_TO_TRACK_KIND map gone; use the SSOT
 // `PLUGIN_KIND_TO_TRACK_KIND` from `@/lib/timeline/plugin-mapping`.
@@ -266,22 +347,14 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     <DndContext
       sensors={sensors}
       onDragEnd={onDragEnd}
-      // Explicit auto-scroll config — dnd-kit's default (threshold
-      // 0.2 on both axes) wasn't reliably engaging when dragging a
-      // clip from the timeline end leftward toward beat 0. The
-      // timeline only scrolls horizontally (the track list is short
-      // enough to fit vertically); zeroing the y threshold tells
-      // dnd-kit to ignore vertical edge proximity entirely and
-      // focus on horizontal-only auto-scroll. Threshold 0.25
-      // (25% of the container width near each edge) is a more
-      // generous trigger zone than the default — gives the user
-      // visible "scroll is engaging" feedback when their cursor
-      // approaches the edge.
-      autoScroll={{
-        threshold: { x: 0.25, y: 0 },
-        acceleration: 10
-      }}
+      // dnd-kit's built-in auto-scroll is disabled — it didn't
+      // engage reliably with our `flex-1 overflow-auto` container.
+      // Replaced by the explicit `ClipDragAutoScroll` helper
+      // mounted below, which uses window-pointermove + rAF to
+      // scroll the container when the cursor approaches its edge.
+      autoScroll={false}
     >
+      <ClipDragAutoScroll />
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
