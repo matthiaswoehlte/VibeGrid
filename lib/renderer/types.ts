@@ -9,7 +9,22 @@ export type ParamType =
   | { kind: 'toggle'; default: boolean }
   | { kind: 'text'; default: string; maxLength?: number };
 
-export type ParamSchema = Record<string, ParamType & { label: string }>;
+/**
+ * Plan 5.8b — optional per-param visibility predicate. When set, the
+ * Inspector calls `visibleWhen(clip.params)` before rendering the param;
+ * if it returns false, the param's row + its AutomateButton are both
+ * omitted (no grey, no disabled — entirely absent). Store values and
+ * AutomationCurves are preserved; toggling the gating param brings the
+ * row back with prior state intact.
+ *
+ * Lives on the schema-level intersection alongside `label` (not on the
+ * `ParamType` union itself) so the discriminated variants stay clean
+ * and the field is only visible where schemas are consumed.
+ */
+export type ParamSchema = Record<string, ParamType & {
+  label: string;
+  visibleWhen?: (params: Record<string, unknown>) => boolean;
+}>;
 
 export type PreloadState = 'idle' | 'loading' | 'ready' | 'error';
 
