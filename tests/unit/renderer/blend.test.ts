@@ -20,7 +20,7 @@ const mkClip = (
 });
 
 const baseState = (clips: Clip[]): TimelineState => ({
-  tracks: [{ id: 't-pulse', kind: 'pulse', name: 'P', muted: false, order: 0 }],
+  tracks: [{ id: 't-pulse', kind: 'fx', name: 'P', muted: false, order: 0 }],
   clips,
   playhead: { beats: 0, playing: false },
   zoom: 1,

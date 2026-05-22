@@ -35,7 +35,7 @@ describe('addClip', () => {
 
   it('preserves other state fields unchanged (referential equality)', () => {
     const s0 = freezeState(
-      makeState({ tracks: [{ id: 't1', kind: 'contour', name: 'c', muted: false, order: 0 }] })
+      makeState({ tracks: [{ id: 't1', kind: 'fx', name: 'c', muted: false, order: 0 }] })
     );
     const s1 = addClip(s0, makeClip({ id: 'a', trackId: 't1', kind: 'contour' }));
     expect(s1.tracks).toBe(s0.tracks);
@@ -241,7 +241,7 @@ describe('setMuted', () => {
   it('toggles the muted flag on the named track', () => {
     const s0 = freezeState(
       makeState({
-        tracks: [{ id: 't1', kind: 'contour', name: 'c', muted: false, order: 0 }]
+        tracks: [{ id: 't1', kind: 'fx', name: 'c', muted: false, order: 0 }]
       })
     );
     const s1 = setMuted(s0, 't1', true);

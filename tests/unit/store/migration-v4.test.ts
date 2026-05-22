@@ -13,7 +13,19 @@ import { describe, it, expect } from 'vitest';
  */
 
 import { INITIAL_TRACKS_V5 } from '@/lib/store/timeline-slice';
-import type { Track } from '@/lib/timeline/types';
+
+/**
+ * v3-shape Track — `kind` is a plain string because v3 snapshots
+ * predate Plan 5.9c's TrackKind narrowing. Migration tests work in
+ * this loose shape so they can keep simulating real legacy data.
+ */
+interface LooseTrack {
+  id: string;
+  kind: string;
+  name: string;
+  muted: boolean;
+  order?: number;
+}
 
 /**
  * The migrate function is internal to the persist config. We re-derive
@@ -22,9 +34,9 @@ import type { Track } from '@/lib/timeline/types';
  * which now holds only the 4-lane v6 default and would lose all FX
  * appends.
  */
-function migrateV3ToV4(persisted: { timeline: { tracks: Track[]; clips: unknown[] } }) {
+function migrateV3ToV4(persisted: { timeline: { tracks: LooseTrack[]; clips: unknown[] } }) {
   const existing = persisted.timeline.tracks;
-  const existingKinds = new Set(existing.map((t) => t.kind));
+  const existingKinds = new Set<string>(existing.map((t) => t.kind));
   const missing = INITIAL_TRACKS_V5.filter(
     (t) => !existingKinds.has(t.kind)
   );
@@ -50,7 +62,7 @@ describe('Store migration v3 → v4 (Plan 5.8a)', () => {
           { id: 'track-sweep', kind: 'sweep', name: 'Sweep', muted: false, order: 3 },
           { id: 'track-particles', kind: 'particles', name: 'Particles', muted: false, order: 4 },
           { id: 'track-pulse', kind: 'pulse', name: 'Pulse', muted: false, order: 5 }
-        ] as Track[],
+        ] as LooseTrack[],
         clips: []
       }
     };
@@ -66,7 +78,7 @@ describe('Store migration v3 → v4 (Plan 5.8a)', () => {
       timeline: {
         tracks: [
           { id: 'track-image', kind: 'image', name: 'Image', muted: false, order: 0 }
-        ] as Track[],
+        ] as LooseTrack[],
         clips: [{ id: 'clip-1', mediaId: 'm1' }]
       }
     };
@@ -77,7 +89,7 @@ describe('Store migration v3 → v4 (Plan 5.8a)', () => {
   it('idempotent: running on a v4 snapshot is a no-op for the track count', () => {
     const v4Snapshot = {
       timeline: {
-        tracks: [...INITIAL_TRACKS_V5] as Track[],
+        tracks: [...INITIAL_TRACKS_V5] as LooseTrack[],
         clips: []
       }
     };

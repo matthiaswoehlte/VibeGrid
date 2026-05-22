@@ -3,7 +3,7 @@ import { findIncomingOverlap, overlapRange, isReservedParamKey } from '@/lib/tim
 import type { Clip, TimelineState } from '@/lib/timeline/types';
 
 const baseState: TimelineState = {
-  tracks: [{ id: 't-pulse', kind: 'pulse', name: 'P', muted: false, order: 0 }],
+  tracks: [{ id: 't-pulse', kind: 'fx', name: 'P', muted: false, order: 0 }],
   clips: [],
   playhead: { beats: 0, playing: false },
   zoom: 1,
@@ -47,7 +47,7 @@ describe('findIncomingOverlap', () => {
       ...baseState,
       tracks: [
         ...baseState.tracks,
-        { id: 't-sweep', kind: 'sweep', name: 'S', muted: false, order: 1 }
+        { id: 't-sweep', kind: 'fx', name: 'S', muted: false, order: 1 }
       ],
       clips: [clip('a', 't-sweep', 0, 8), clip('b', 't-pulse', 4, 4)]
     };

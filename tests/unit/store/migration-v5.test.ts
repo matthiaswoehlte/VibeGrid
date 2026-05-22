@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { INITIAL_TRACKS_V5 } from '@/lib/store/timeline-slice';
-import type { Track } from '@/lib/timeline/types';
+
+/**
+ * v4-shape Track — `kind` is a plain string because v4 snapshots
+ * predate Plan 5.9c's TrackKind narrowing. Migration tests work in
+ * this loose shape so they can keep simulating real legacy data.
+ */
+interface LooseTrack {
+  id: string;
+  kind: string;
+  name: string;
+  muted: boolean;
+  order?: number;
+}
 
 /**
  * Plan-5.9a Task 2 — verify the v4 → v5 migration adds the new video
@@ -13,10 +25,10 @@ import type { Track } from '@/lib/timeline/types';
  * the v5 → v6 FX-kind rewrite is covered separately in
  * `migration-v5-v6.test.ts`.
  */
-function migrateV4ToV5(persisted: { timeline: { tracks: Track[]; clips: unknown[] } }) {
+function migrateV4ToV5(persisted: { timeline: { tracks: LooseTrack[]; clips: unknown[] } }) {
   const existing = [...persisted.timeline.tracks];
   existing.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const existingKinds = new Set(existing.map((t) => t.kind));
+  const existingKinds = new Set<string>(existing.map((t) => t.kind));
   const missing = INITIAL_TRACKS_V5.filter(
     (t) => !existingKinds.has(t.kind)
   );
@@ -42,7 +54,7 @@ const v4Snapshot = {
       { id: 'track-dissolve', kind: 'dissolve', name: 'Dissolve', muted: false, order: 6 },
       { id: 'track-sunray', kind: 'sunray', name: 'Sunray', muted: false, order: 7 },
       { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 }
-    ] as Track[],
+    ] as LooseTrack[],
     clips: [
       { id: 'clip-a', trackId: 'track-image', kind: 'image', startBeat: 0, lengthBeats: 16 },
       { id: 'clip-b', trackId: 'track-pulse', kind: 'pulse', startBeat: 4, lengthBeats: 4 }
@@ -68,7 +80,7 @@ describe('Store migration v4 → v5 (Plan 5.9a)', () => {
     // must still produce the order 0..8 sequence at the top of the array.
     const shuffled = {
       timeline: {
-        tracks: [...v4Snapshot.timeline.tracks].reverse() as Track[],
+        tracks: [...v4Snapshot.timeline.tracks].reverse() as LooseTrack[],
         clips: v4Snapshot.timeline.clips
       }
     };
@@ -95,7 +107,7 @@ describe('Store migration v4 → v5 (Plan 5.9a)', () => {
   it('idempotent: running on a v5 snapshot is a no-op for track count', () => {
     const v5Snapshot = {
       timeline: {
-        tracks: [...INITIAL_TRACKS_V5] as Track[],
+        tracks: [...INITIAL_TRACKS_V5] as LooseTrack[],
         clips: []
       }
     };

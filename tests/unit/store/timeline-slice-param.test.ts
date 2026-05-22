@@ -5,7 +5,7 @@ describe('setClipParam', () => {
   beforeEach(() => {
     useAppStore.setState({
       timeline: {
-        tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],
+        tracks: [{ id: 't1', kind: 'fx', name: 'P', muted: false, order: 0 }],
         clips: [
           {
             id: 'c1',

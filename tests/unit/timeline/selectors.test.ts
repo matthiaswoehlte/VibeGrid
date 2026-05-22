@@ -118,7 +118,7 @@ describe('activeClipsAt', () => {
 
   it('does not filter by track mute (caller is responsible)', () => {
     const s = makeState({
-      tracks: [{ id: 't1', kind: 'contour', name: 'c', muted: true, order: 0 }],
+      tracks: [{ id: 't1', kind: 'fx', name: 'c', muted: true, order: 0 }],
       clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 })]
     });
     expect(activeClipsAt(s, 2)).toHaveLength(1);

@@ -2,7 +2,6 @@ import type { StateCreator } from 'zustand';
 import { toast } from 'sonner';
 import type { AppState } from './types';
 import type { TimelineState, Track, TrackKind } from '@/lib/timeline/types';
-import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 import * as ops from '@/lib/timeline/operations';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import {
@@ -16,30 +15,17 @@ import type { AutomationCurve, AutomationPoint } from '@/lib/automation/types';
 import { regenerateBlendsForTrack } from '@/lib/timeline/blend-lifecycle';
 import { BLEND_KEY } from '@/lib/timeline/blend';
 
-/** Plan 5.9a — title-case mapping for default track labels when the user
- *  hits "+ Track" without typing a name. Multiple tracks of the same kind
- *  get numbered (`Contour`, `Contour 2`, …).
- *
- *  Plan 5.9c transitional: Record key widened to admit the legacy v5
- *  FX-kinds for the duration of the migration. Task 4 rewrites this
- *  whole map to 4-entry shape.
- */
-const KIND_LABEL: Record<TrackKind | TrackFxKind, string> = {
+/** Plan 5.9a / 5.9c — title-case mapping for default track labels when
+ *  the user hits "+ Track" without typing a name. Multiple tracks of
+ *  the same kind get numbered (`FX`, `FX 2`, …). */
+const KIND_LABEL: Record<TrackKind, string> = {
   image: 'Image',
   audio: 'Audio',
   video: 'Video',
-  fx: 'FX',
-  contour: 'Contour',
-  sweep: 'Sweep',
-  pulse: 'Pulse',
-  particles: 'Particles',
-  'zoom-pulse': 'Zoom Pulse',
-  text: 'Text',
-  dissolve: 'Dissolve',
-  sunray: 'Sunray'
+  fx: 'FX'
 };
 
-function defaultLabelFor(kind: TrackKind | TrackFxKind, existing: Track[]): string {
+function defaultLabelFor(kind: TrackKind, existing: Track[]): string {
   const base = KIND_LABEL[kind];
   const sameKindCount = existing.filter((t) => t.kind === kind).length;
   return sameKindCount === 0 ? base : `${base} ${sameKindCount + 1}`;
@@ -53,10 +39,20 @@ function defaultLabelFor(kind: TrackKind | TrackFxKind, existing: Track[]): stri
  *  nothing meaningful to append and v4 users would lose their FX
  *  lanes on rehydrate.
  *
- *  Note: the entries' `kind` values are the LEGACY v5 strings
- *  ('contour', 'sweep', …). After the v4→v5 append, the v5→v6
- *  migration in `store/index.ts` rewrites them all to `'fx'`. */
-export const INITIAL_TRACKS_V5: ReadonlyArray<Track> = Object.freeze([
+ *  The shape is **deliberately not `Track`** — `Track.kind` narrows
+ *  to the 4-entry `TrackKind`, but these legacy entries carry the
+ *  v5 FX-kinds (`'contour'`, `'sweep'`, …). They're rewritten to
+ *  `kind: 'fx'` by the v5→v6 migration step in `store/index.ts`.
+ *  Treat them as raw v5 record data, NOT as live Track objects. */
+export interface LegacyV5Track {
+  id: string;
+  kind: string;
+  name: string;
+  muted: boolean;
+  order: number;
+}
+
+export const INITIAL_TRACKS_V5: ReadonlyArray<LegacyV5Track> = Object.freeze([
   { id: 'track-image', kind: 'image', name: 'Image', muted: false, order: 0 },
   { id: 'track-contour', kind: 'contour', name: 'Contour', muted: false, order: 1 },
   { id: 'track-zoom-pulse', kind: 'zoom-pulse', name: 'Zoom Pulse', muted: false, order: 2 },
@@ -67,7 +63,7 @@ export const INITIAL_TRACKS_V5: ReadonlyArray<Track> = Object.freeze([
   { id: 'track-sunray', kind: 'sunray', name: 'Sunray', muted: false, order: 7 },
   { id: 'track-text', kind: 'text', name: 'Text', muted: false, order: 8 },
   { id: 'track-video', kind: 'video', name: 'Video', muted: false, order: 9 }
-] as Track[]);
+]);
 
 // Default tracks — one per TrackKind. Plan 5.9c collapsed eight
 // per-FX-plugin lanes into one generic `'fx'` lane; users can add

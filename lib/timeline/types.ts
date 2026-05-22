@@ -18,16 +18,11 @@ export type SnapMode = 'beat' | 'half' | 'quarter' | 'off';
 
 export interface Track {
   id: string;
-  /**
-   * Plan 5.9c — **transitional widening** during the v5 → v6 migration
-   * window. After the v5→v6 migrate runs, runtime values are always in
-   * the 4-entry `TrackKind` (`image`|`video`|`audio`|`fx`). Test
-   * fixtures and the migrate-input path still construct Track objects
-   * with the legacy v5 FX-kinds (`'contour'`, `'pulse'`, …), so this
-   * union has to admit them until those callers migrate. The final
-   * cleanup task of Plan 5.9c narrows this back to `TrackKind`.
-   */
-  kind: TrackKind | import('./plugin-mapping').TrackFxKind;
+  /** Plan 5.9c — narrow to the 4-entry `TrackKind`. The v5→v6 migrate
+   *  in `lib/store/index.ts` ensures runtime values are always
+   *  `'image'|'video'|'audio'|'fx'`. Legacy v5 snapshot data flows
+   *  through migrate's `unknown` input, not through this type. */
+  kind: TrackKind;
   name: string;
   muted: boolean;
   /** @deprecated Plan 5.9a: array position in `TimelineState.tracks` is
