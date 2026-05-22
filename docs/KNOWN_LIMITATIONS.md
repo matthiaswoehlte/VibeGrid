@@ -239,6 +239,32 @@ button and an optional per-session ceiling.
 
 ---
 
+## Plan 5.8b — Inspector Conditional Visibility
+
+`visibleWhen` is purely a render-time filter in the Inspector. Three
+semantics to be aware of:
+
+- **Store values survive hide/show toggles.** A param hidden because
+  its gating predicate returned false keeps its current value (and
+  any AutomationCurve) in the Zustand store. Flipping the gating
+  param back so the row reappears restores everything as it was.
+- **AutomationCurves of hidden params remain active in the renderer.**
+  `resolveParam` (`lib/automation/resolve.ts`) does not consult
+  `visibleWhen` — by design. If the gating param itself is automated
+  and flips on/off across beats, the gated param's curve continues
+  to influence rendering on every frame the gate is open. Hiding the
+  curve mid-clip would introduce a visible snap; surfacing the
+  rendered value is the safer default.
+- **Auto-Preset proposes values for hidden params too.** The Claude
+  vision endpoint suggests values for every key in the schema,
+  regardless of which row is currently visible in the Inspector.
+  After a preset, values for currently-hidden params may be
+  pre-populated; they become user-visible the moment the gating
+  param is toggled back on. This is feature, not bug — users see
+  sensible defaults already in place when they enable a sub-feature.
+
+---
+
 ## Mobile (Plan 5.10) — Responsive Layout
 
 Plan 5.10 ships a Mobile-first layout (≤ 768 px viewport) that runs
