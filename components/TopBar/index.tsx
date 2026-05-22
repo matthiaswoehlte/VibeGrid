@@ -38,6 +38,19 @@ export function TopBar({
         <RecIndicator onCancel={() => exporter.cancel()} />
         <FlowModeToggle />
         <ClearProjectButton />
+        {process.env.NODE_ENV === 'development' && (
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.clear();
+              window.location.reload();
+            }}
+            title="Dev only: clear localStorage and reload"
+            className="h-7 px-2 rounded text-[10px] uppercase tracking-wider bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text)] transition-colors border border-[var(--border)]"
+          >
+            Dev: Clear
+          </button>
+        )}
         <ExportButton onStart={() => exporter.start()} />
       </div>
     </header>
