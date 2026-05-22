@@ -57,7 +57,7 @@ describe('renderer — automation curve in clip.params', () => {
 
   it('linearly interpolates an automation curve at the current beat', () => {
     const timeline: TimelineState = {
-      tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],
+      tracks: [{ id: 't1', kind: 'fx', name: 'P', muted: false, order: 0 }],
       clips: [
         {
           id: 'c1',
@@ -100,7 +100,7 @@ describe('renderer — automation curve in clip.params', () => {
 
   it('passes static params unchanged (passthrough)', () => {
     const timeline: TimelineState = {
-      tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],
+      tracks: [{ id: 't1', kind: 'fx', name: 'P', muted: false, order: 0 }],
       clips: [
         {
           id: 'c1',
@@ -132,7 +132,7 @@ describe('renderer — automation curve in clip.params', () => {
 
   it('uses plugin defaults when clip.params is absent', () => {
     const timeline: TimelineState = {
-      tracks: [{ id: 't1', kind: 'pulse', name: 'P', muted: false, order: 0 }],
+      tracks: [{ id: 't1', kind: 'fx', name: 'P', muted: false, order: 0 }],
       clips: [
         {
           id: 'c1',

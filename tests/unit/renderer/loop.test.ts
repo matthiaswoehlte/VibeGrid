@@ -58,7 +58,7 @@ describe('renderer loop tick', () => {
     const { ctx, deps } = makeDeps({
       getCurrentTime: () => 0,
       getTimelineState: () => ({
-        tracks: [{ id: 'tp', kind: 'pulse', name: 'p', muted: false, order: 0 }],
+        tracks: [{ id: 'tp', kind: 'fx', name: 'p', muted: false, order: 0 }],
         clips: [
           {
             id: 'p1',
@@ -87,8 +87,8 @@ describe('renderer loop tick', () => {
       getTimelineState: () => ({
         tracks: [
           { id: 'ti', kind: 'image', name: 'i', muted: false, order: 0 },
-          { id: 'tc', kind: 'contour', name: 'c', muted: false, order: 1 },
-          { id: 'ts', kind: 'sweep', name: 's', muted: false, order: 2 }
+          { id: 'tc', kind: 'fx', name: 'c', muted: false, order: 1 },
+          { id: 'ts', kind: 'fx', name: 's', muted: false, order: 2 }
         ],
         clips: [
           {
@@ -134,7 +134,7 @@ describe('renderer loop tick', () => {
   it('skips muted FX tracks', () => {
     const { ctx, deps } = makeDeps({
       getTimelineState: () => ({
-        tracks: [{ id: 'tp', kind: 'pulse', name: 'p', muted: true, order: 0 }],
+        tracks: [{ id: 'tp', kind: 'fx', name: 'p', muted: true, order: 0 }],
         clips: [
           {
             id: 'p1',
@@ -175,7 +175,7 @@ describe('renderer loop tick', () => {
       getTimelineState: () => ({
         tracks: [
           { id: 'ti', kind: 'image', name: 'i', muted: false, order: 0 },
-          { id: 'tpa', kind: 'particles', name: 'pa', muted: false, order: 1 }
+          { id: 'tpa', kind: 'fx', name: 'pa', muted: false, order: 1 }
         ],
         clips: [
           {

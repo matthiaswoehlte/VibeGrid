@@ -4,7 +4,8 @@ import {
   type SnapMode,
   type TimelineState
 } from './types';
-import type { TrackFxKind } from './plugin-mapping';
+import type { Track } from './types';
+import { fxSortIndex, type TrackFxKind } from './plugin-mapping';
 
 export function snapBeats(beats: number, mode: SnapMode): number {
   if (mode === 'off') return beats;
@@ -107,6 +108,40 @@ export function activeFxClipsByKind(
  * beat — `addClip` rejects overlaps via `lib/timeline/operations.ts`.
  * The first match wins defensively.
  */
+/**
+ * Plan 5.9c — gather every active FX clip across all FX tracks, in
+ * render order. The renderer's outer iteration used to walk
+ * RENDER_ORDER × tracks (one active clip per track per kind); after
+ * FX-track consolidation a single fx track can carry multiple clip
+ * kinds, so we flatten and sort by `clip.kind` via
+ * `RENDER_ORDER_TRACK_KIND` (via fxSortIndex).
+ *
+ * Returns `{ clip; track }` so the renderer's inner-loop body can
+ * access track-level state (e.g. `track.muted` is already filtered
+ * here but kept on the returned record for future per-track work).
+ */
+export function getActiveFxClips(
+  tracks: Track[],
+  clips: Clip[],
+  beat: number
+): Array<{ clip: Clip; track: Track }> {
+  const out: Array<{ clip: Clip; track: Track }> = [];
+  for (const track of tracks) {
+    if (track.kind !== 'fx' || track.muted) continue;
+    for (const c of clips) {
+      if (c.trackId !== track.id) continue;
+      if (beat < c.startBeat) continue;
+      if (beat >= c.startBeat + c.lengthBeats) continue;
+      out.push({ clip: c, track });
+    }
+  }
+  // Sort by clip.kind via the canonical render order. Stable-sort:
+  // within a kind, original-insertion order is preserved (matches
+  // the iteration order above, which is track-then-clip-array).
+  out.sort((a, b) => fxSortIndex(String(a.clip.kind)) - fxSortIndex(String(b.clip.kind)));
+  return out;
+}
+
 export function activeClipOnTrack(
   trackId: string,
   clips: Clip[],

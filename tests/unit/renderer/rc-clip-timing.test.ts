@@ -56,7 +56,7 @@ describe('RenderContext — clipStartSec + clipDurationSec (Plan 5.8a)', () => {
 
     const grid: BeatGrid = { bpm, source: 'manual', beatsPerBar: 4, offsetMs };
     const timeline: TimelineState = {
-      tracks: [{ id: 'tp', kind: 'pulse', name: 'p', muted: false, order: 0 }],
+      tracks: [{ id: 'tp', kind: 'fx', name: 'p', muted: false, order: 0 }],
       clips: [
         {
           id: 'p1',

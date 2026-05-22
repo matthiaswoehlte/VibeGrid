@@ -1,15 +1,18 @@
 import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
-import { activeClipOnTrack } from '@/lib/timeline/selectors';
+import { activeClipOnTrack, getActiveFxClips } from '@/lib/timeline/selectors';
 import { resolveClipParams } from '@/lib/automation/resolve';
 import { computeClipAlpha } from './blend';
 import { getPlugin, listPluginsByKind } from './registry';
 import { registerBuiltInPlugins } from '@/lib/fx';
 import type { TimelineState } from '@/lib/timeline/types';
-import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
+import {
+  TRACK_KIND_TO_PLUGIN_KIND,
+  type TrackFxKind
+} from '@/lib/timeline/plugin-mapping';
 import type { BeatGrid } from '@/lib/audio/types';
-import type { FxKind, FxPlugin, RenderContext } from './types';
+import type { FxPlugin, RenderContext } from './types';
 
 export interface RendererDeps {
   canvas: HTMLCanvasElement;
@@ -37,38 +40,13 @@ export interface Renderer {
   tick(): void;
 }
 
-// Plan 5.8a — render order (bottom-up):
-// Dissolve manipulates the image directly (first overlay). Image-FX
-// (Contour edges, ZoomPulse scale) come next. Sweep + Particle + Pulse
-// are visual flashes. Sunray = directional light, sits above flashes.
-// Text is always on top.
-const RENDER_ORDER: FxKind[] = [
-  'Dissolve',
-  'Contour',
-  'ZoomPulse',
-  'Sweep',
-  'Particle',
-  'Pulse',
-  'Sunray',
-  'Text'
-];
-
-/**
- * Map FX plugin `kind` (PascalCase) to the corresponding key in `activeFxClipsByKind`'s
- * Record (lowercase, sometimes pluralized). Cannot rely on `kind.toLowerCase()` —
- * 'Particle'.toLowerCase() === 'particle' but the timeline slice key is 'particles'.
- */
-const KIND_TO_TRACK_KIND: Record<FxKind, TrackFxKind> = {
-  Contour: 'contour',
-  ZoomPulse: 'zoom-pulse',
-  Pulse: 'pulse',
-  Sweep: 'sweep',
-  Particle: 'particles',
-  // Plan 5.8a — new kinds, lowercase TrackKind names match 1:1.
-  Text: 'text',
-  Dissolve: 'dissolve',
-  Sunray: 'sunray'
-};
+// Plan 5.9c — render order moved to `@/lib/timeline/plugin-mapping`
+// as `RENDER_ORDER_TRACK_KIND` (lowercase, clip-side). The renderer's
+// outer iteration now consumes `getActiveFxClips` which pre-sorts
+// clips by that order via `fxSortIndex`. Plugin dispatch reads
+// `TRACK_KIND_TO_PLUGIN_KIND[clip.kind]` to resolve the PascalCase
+// plugin-kind for `listPluginsByKind`. The old PascalCase
+// RENDER_ORDER + KIND_TO_TRACK_KIND constants are gone.
 
 /** Plan 5.9b hotfix: Contour bucket size for video clips. Edge paths
  *  are re-extracted only when the video crosses into a new bucket.
@@ -300,87 +278,89 @@ export function createRenderer(deps: RendererDeps): Renderer {
     // the single-track world.
     const imageBitmap = firstImageBitmap;
 
-    for (const kind of RENDER_ORDER) {
-      const sliceKind = KIND_TO_TRACK_KIND[kind];
-      // Plan 5.9a — multi-track per kind. Within a kind, render order is
-      // the track-array order. Each track contributes at most one clip
-      // (overlap rejection enforced at addClip time).
-      const tracksOfKind = timeline.tracks.filter(
-        (t) => t.kind === sliceKind && !t.muted
-      );
-      for (const track of tracksOfKind) {
-        const clip = activeClipOnTrack(track.id, timeline.clips, beats);
-        if (!clip) continue;
+    // Plan 5.9c — single iteration over every active FX clip across
+    // all 'fx' tracks, pre-sorted by `RENDER_ORDER_TRACK_KIND`. Each
+    // fx track may carry multiple clips of mixed kinds (the per-FX
+    // track-kind world is gone). Inner-loop body below is unchanged
+    // from the previous outer iteration — same alpha logic, same
+    // bitmap-skip gate, same try/catch around plugin.render.
+    const activeFxClips = getActiveFxClips(timeline.tracks, timeline.clips, beats);
 
-        const plugin: FxPlugin<unknown> | undefined =
-          (clip.fxId ? getPlugin(clip.fxId) : undefined) ?? listPluginsByKind(kind)[0];
-        if (!plugin) continue;
+    for (const { clip } of activeFxClips) {
+      // Plugin resolution: explicit fxId wins, else look up the
+      // default plugin instance registered for this clip-kind's
+      // PascalCase. `TRACK_KIND_TO_PLUGIN_KIND` is the inverse of the
+      // map plugins register under in lib/fx/.
+      const pluginKind = TRACK_KIND_TO_PLUGIN_KIND[clip.kind as TrackFxKind];
+      const plugin: FxPlugin<unknown> | undefined =
+        (clip.fxId ? getPlugin(clip.fxId) : undefined)
+        ?? (pluginKind ? listPluginsByKind(pluginKind)[0] : undefined);
+      if (!plugin) continue;
 
-        // Contour reads rc.imageBitmap for Canny edges; ZoomPulse re-draws
-        // the bitmap with a scale transform. Both require a bitmap. Pulse,
-        // Sweep, Particle paint pure overlays and work on a black canvas.
-        if ((plugin.kind === 'Contour' || plugin.kind === 'ZoomPulse') && !imageBitmap) continue;
+      // Contour reads rc.imageBitmap for Canny edges; ZoomPulse re-draws
+      // the bitmap with a scale transform. Both require a bitmap. Pulse,
+      // Sweep, Particle paint pure overlays and work on a black canvas.
+      if ((plugin.kind === 'Contour' || plugin.kind === 'ZoomPulse') && !imageBitmap) continue;
 
-        const guard = lastFiredBeatGuard(nearestBeatIndex, lastFiredByClip.get(clip.id) ?? null);
-        const shouldFire = phase.isOnBeat && guard.shouldFire;
-        if (phase.isOnBeat) lastFiredByClip.set(clip.id, guard.nextLastFired);
+      const guard = lastFiredBeatGuard(nearestBeatIndex, lastFiredByClip.get(clip.id) ?? null);
+      const shouldFire = phase.isOnBeat && guard.shouldFire;
+      if (phase.isOnBeat) lastFiredByClip.set(clip.id, guard.nextLastFired);
 
-        // Plan-5.8a: clip-relative timing fields. startBeat is a timestamp
-        // (needs offsetMs), lengthBeats is a duration (no offset term).
-        const clipStartSec =
-          (clip.startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
-        const clipDurationSec = (clip.lengthBeats * 60) / grid.bpm;
+      // Plan-5.8a: clip-relative timing fields. startBeat is a timestamp
+      // (needs offsetMs), lengthBeats is a duration (no offset term).
+      const clipStartSec =
+        (clip.startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
+      const clipDurationSec = (clip.lengthBeats * 60) / grid.bpm;
 
-        const rc: RenderContext = {
-          ctx: ctx!,
-          width: w,
-          height: h,
-          time,
-          beatPhase: phase.phase,
-          beatIndex: phase.beatIndex,
-          isOnBeat: shouldFire,
-          trigger: clip.trigger ?? plugin.defaultTrigger,
-          clipId: clip.id,
-          clipStartSec,
-          clipDurationSec,
-          flowMode,
-          imageBitmap,
-          imageBitmapKey: firstImageBitmapKey
-        };
+      const rc: RenderContext = {
+        ctx: ctx!,
+        width: w,
+        height: h,
+        time,
+        beatPhase: phase.phase,
+        beatIndex: phase.beatIndex,
+        isOnBeat: shouldFire,
+        trigger: clip.trigger ?? plugin.defaultTrigger,
+        clipId: clip.id,
+        clipStartSec,
+        clipDurationSec,
+        flowMode,
+        imageBitmap,
+        imageBitmapKey: firstImageBitmapKey
+      };
 
-        // Merge defaults with clip overrides. Without the spread, a clip with
-        // partial params (e.g. only `{__blend: ...}` added by the lifecycle)
-        // would lose access to every plugin default — Particles would render
-        // with undefined spawnPerBeat, Pulse with undefined intensity, etc.
-        const rawParams = {
-          ...(plugin.getDefaultParams() as Record<string, unknown>),
-          ...(clip.params ?? {})
-        };
-        const clipAlpha = computeClipAlpha(timeline, clip, beats);
-        const usesAlpha = clipAlpha < 1;
-        if (usesAlpha) {
-          ctx!.save();
-          ctx!.globalAlpha *= clipAlpha;
-        }
-        // Flow Mode passes a clip-relative beat so the resolver can stretch
-        // the curve over `clip.lengthBeats`. Beat Mode keeps the absolute
-        // beats it has always passed — preserves the existing semantics
-        // (and any existing alignment users authored against the grid).
-        const paramBeat = flowMode ? beats - clip.startBeat : beats;
-        try {
-          plugin.render(
-            rc,
-            resolveClipParams(rawParams, paramBeat, clip.lengthBeats, flowMode)
-          );
-        } catch (err) {
-          // A plugin throwing inside RAF would tear down the whole render loop
-          // (and trigger Next.js dev's unhandled-error overlay). Swallow per
-          // plugin call so the rest of the frame still renders.
-          // eslint-disable-next-line no-console
-          console.warn(`[renderer] plugin "${plugin.id}" render() threw:`, err);
-        } finally {
-          if (usesAlpha) ctx!.restore();
-        }
+      // Merge defaults with clip overrides. Without the spread, a clip with
+      // partial params (e.g. only `{__blend: ...}` added by the lifecycle)
+      // would lose access to every plugin default — Particles would render
+      // with undefined spawnPerBeat, Pulse with undefined intensity, etc.
+      const rawParams = {
+        ...(plugin.getDefaultParams() as Record<string, unknown>),
+        ...(clip.params ?? {})
+      };
+      const clipAlpha = computeClipAlpha(timeline, clip, beats);
+      const usesAlpha = clipAlpha < 1;
+      if (usesAlpha) {
+        ctx!.save();
+        ctx!.globalAlpha *= clipAlpha;
+      }
+      // Flow Mode passes a clip-relative beat so the resolver can stretch
+      // the curve over `clip.lengthBeats`. Beat Mode keeps the absolute
+      // beats it has always passed — preserves the existing semantics
+      // (and any existing alignment users authored against the grid).
+      const paramBeat = flowMode ? beats - clip.startBeat : beats;
+      try {
+        plugin.render(
+          rc,
+          resolveClipParams(rawParams, paramBeat, clip.lengthBeats, flowMode)
+        );
+      } catch (err) {
+        // A plugin throwing inside RAF would tear down the whole render loop
+        // (and trigger Next.js dev's unhandled-error overlay). Swallow per
+        // plugin call so the rest of the frame still renders.
+        // eslint-disable-next-line no-console
+        console.warn(`[renderer] plugin "${plugin.id}" render() threw:`, err);
+      } finally {
+        if (usesAlpha) ctx!.restore();
       }
     }
 

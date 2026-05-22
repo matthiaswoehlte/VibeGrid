@@ -79,7 +79,7 @@ describe('makeOfflineRenderer', () => {
     // beat-hit; in flow mode the Hotfix short-circuit returns early. With
     // beats=0 and the empty grid (offset=0), the very first tick is on the beat.
     const timeline: TimelineState = {
-      tracks: [{ id: 'tp', kind: 'pulse', name: 'p', muted: false, order: 0 }],
+      tracks: [{ id: 'tp', kind: 'fx', name: 'p', muted: false, order: 0 }],
       clips: [
         {
           id: 'p1',
