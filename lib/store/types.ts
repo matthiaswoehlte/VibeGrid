@@ -4,6 +4,7 @@ import type { MediaRef } from '@/lib/storage/types';
 import type { AutomationPoint, Interpolation } from '@/lib/automation/types';
 import type { AutomationSnap } from '@/lib/automation/snap';
 import type { ExportState } from '@/lib/export/types';
+import type { MobileUIState, MobileUIActions } from './mobile-ui-slice';
 
 export interface UIState {
   zoom: number;
@@ -100,4 +101,8 @@ export interface AppState {
   audioActions: AudioActions;
   media: MediaState;
   mediaActions: MediaActions;
+  /** Plan 5.10 — Mobile-only UI state (active tab). Transient,
+   *  excluded from `partialize`. See `lib/store/mobile-ui-slice.ts`. */
+  mobileUI: MobileUIState;
+  mobileUIActions: MobileUIActions;
 }

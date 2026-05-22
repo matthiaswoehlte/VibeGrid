@@ -4,6 +4,7 @@ import type { AppState } from './types';
 import { createTimelineSlice, INITIAL_TRACKS_V5 } from './timeline-slice';
 import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
+import { createMobileUISlice } from './mobile-ui-slice';
 import type { Track } from '@/lib/timeline/types';
 import { TRACK_FX_KINDS } from '@/lib/timeline/plugin-mapping';
 import { EXPORT_INITIAL_STATE, reduceExportState } from '@/lib/export/state-machine';
@@ -79,7 +80,8 @@ export const useAppStore = create<AppState>()(
       setFlowMode: (value) => set((s) => ({ ui: { ...s.ui, flowMode: value } })),
       ...createTimelineSlice(set, get, store),
       ...createAudioSlice(set, get, store),
-      ...createMediaSlice(set, get, store)
+      ...createMediaSlice(set, get, store),
+      ...createMobileUISlice(set, get, store)
     }),
     {
       name: 'vibegrid-store',
@@ -133,6 +135,11 @@ export const useAppStore = create<AppState>()(
         // resets; exportState would resume a recording session that no
         // longer has a MediaRecorder; flowMode would silently keep beat
         // triggers disabled). Only `zoom` survives reloads.
+        //
+        // Plan 5.10: `mobileUI` is intentionally absent from this return
+        // object too — opt-in persistence means anything not listed is
+        // dropped, so the active mobile tab resets to 'timeline' on
+        // every refresh. Matches the rest of the transient UI state.
         ui: { zoom: state.ui.zoom },
         timeline: {
           ...state.timeline,
