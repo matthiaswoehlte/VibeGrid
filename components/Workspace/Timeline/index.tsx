@@ -1,5 +1,5 @@
 'use client';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAppStore } from '@/lib/store';
 import { computeTotalBeats } from '@/lib/timeline/total-beats';
@@ -33,13 +33,30 @@ export function Timeline({ engine }: { engine: AudioEngine | null }) {
     targetCols: Math.max(64, Math.min(2048, Math.floor(totalBeats * pxPerBeat)))
   });
 
+  // Reset horizontal scroll when the playhead jumps back to beat 0
+  // (triggered by the Stop button via `setPlayhead(0)`, or by any
+  // future "rewind to start" interaction). The auto-scroll in
+  // Playhead.tsx only kicks in while `playing` is true, so a pure
+  // beats-to-0 transition wouldn't otherwise move the viewport.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let prevBeats = useAppStore.getState().timeline.playhead.beats;
+    return useAppStore.subscribe((state) => {
+      const beats = state.timeline.playhead.beats;
+      if (prevBeats !== 0 && beats === 0 && scrollRef.current) {
+        scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+      }
+      prevBeats = beats;
+    });
+  }, []);
+
   return (
     <ErrorBoundary name="Timeline">
       <div className="h-full flex flex-col">
         <Toolbar />
         {/* Shared horizontal+vertical scroll so Ruler ticks, track clips and
             the Playhead all stay aligned and scroll together. */}
-        <div className="flex-1 overflow-auto relative">
+        <div ref={scrollRef} className="flex-1 overflow-auto relative">
           <Ruler totalBeats={totalBeats} engine={engine} />
           {peaks && (
             <div
