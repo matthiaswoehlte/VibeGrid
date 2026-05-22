@@ -21,6 +21,37 @@ export interface AudioEngine {
   getState(): AudioEngineState;
   onStateChange(cb: (s: AudioEngineState) => void): () => void;
   destroy(): void;
+
+  /** Plan 5.9d — per-clip audio routing. */
+  loadClip(clipId: string, url: string): Promise<void>;
+  unloadClip(clipId: string): void;
+  /** Start playback. `offsetSec` is the position inside the clip's own
+   *  buffer (0 = clip start). `whenSec` is the absolute AudioContext
+   *  time when playback begins. Engine clamps to `max(currentTime,
+   *  whenSec)` so callers never schedule in the past. */
+  playClip(clipId: string, offsetSec: number, whenSec: number): void;
+  stopClip(clipId: string): void;
+  /** Stop every currently-playing source. Used by the reconciler on
+   *  seek (paused or playing); the reconciler then calls `playClip`
+   *  for every active clip to restart at the new position. */
+  stopAllClips(): void;
+  /** Instant volume set. Use for Seek / Stop where instant jumps are
+   *  wanted. */
+  setClipVolume(clipId: string, volume: number): void;
+  /** Per-frame volume ramp. Anchors via `setValueAtTime` first (Web
+   *  Audio footgun — without the anchor the ramp starts from t=0 =
+   *  silence on the first call), then schedules a linear ramp from
+   *  the current value to `volume` at `targetTime`. Sample-accurate,
+   *  no zipper noise. */
+  rampClipVolume(clipId: string, volume: number, targetTime: number): void;
+  /** Returns `audioCtx.currentTime`, or 0 if no context is initialised
+   *  yet. Used by the renderer to compute `rampClipVolume` target
+   *  times without holding an AudioContext reference. */
+  getContextTime(): number;
+  /** Returns the list of currently-loaded clip IDs. The
+   *  `useAudioEngine` reconciler diffs this against the set of clips
+   *  it WANTS loaded to drive `loadClip` / `unloadClip`. */
+  getLoadedClipIds(): string[];
 }
 
 interface EngineDeps {
@@ -79,6 +110,15 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     }
     return audioContext;
   }
+
+  /** Plan 5.9d — per-clip routing state. Each loaded clip has its own
+   *  decoded buffer + GainNode (long-lived, used for volume
+   *  automation) + current `AudioBufferSourceNode` (one-shot,
+   *  replaced on every play/restart per Web Audio's one-shot
+   *  source-node contract). */
+  const clipBuffers = new Map<string, AudioBuffer>();
+  const clipGainNodes = new Map<string, GainNode>();
+  const clipSources = new Map<string, AudioBufferSourceNode>();
 
   function wireGraph(el: HTMLAudioElement): void {
     const ctx = ensureContext();
@@ -254,6 +294,109 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
       return () => listeners.delete(cb);
     },
 
+    // ----------------------------------------------------------------
+    // Plan 5.9d — multi-clip API.
+    // ----------------------------------------------------------------
+
+    async loadClip(clipId, url): Promise<void> {
+      if (clipBuffers.has(clipId)) return;
+      const ctx = ensureContext();
+      const arrayBuffer = await fetch(url).then((r) => r.arrayBuffer());
+      const buf = await ctx.decodeAudioData(arrayBuffer);
+      clipBuffers.set(clipId, buf);
+      const gain = ctx.createGain();
+      gain.gain.value = 1.0;
+      gain.connect(ctx.destination);
+      clipGainNodes.set(clipId, gain);
+    },
+
+    unloadClip(clipId): void {
+      const src = clipSources.get(clipId);
+      if (src) {
+        try { src.stop(); } catch { /* already stopped */ }
+        src.disconnect();
+        clipSources.delete(clipId);
+      }
+      const gain = clipGainNodes.get(clipId);
+      if (gain) {
+        gain.disconnect();
+        clipGainNodes.delete(clipId);
+      }
+      clipBuffers.delete(clipId);
+    },
+
+    playClip(clipId, offsetSec, whenSec): void {
+      const buf = clipBuffers.get(clipId);
+      const gain = clipGainNodes.get(clipId);
+      if (!buf || !gain) return;
+      // Replace any in-flight source (Web Audio source nodes are
+      // one-shot; restarting at a new position requires a fresh node).
+      const prev = clipSources.get(clipId);
+      if (prev) {
+        try { prev.stop(); } catch { /* already stopped */ }
+        prev.disconnect();
+      }
+      const ctx = ensureContext();
+      const source = ctx.createBufferSource();
+      source.buffer = buf;
+      source.connect(gain);
+      source.start(Math.max(ctx.currentTime, whenSec), offsetSec);
+      clipSources.set(clipId, source);
+    },
+
+    stopClip(clipId): void {
+      const src = clipSources.get(clipId);
+      if (!src) return;
+      try { src.stop(); } catch { /* already stopped */ }
+      src.disconnect();
+      clipSources.delete(clipId);
+    },
+
+    stopAllClips(): void {
+      // The reconciler restarts clips at the new playhead position via
+      // `playClip()`. No per-clip math needed here.
+      for (const id of [...clipSources.keys()]) {
+        const src = clipSources.get(id);
+        if (!src) continue;
+        try { src.stop(); } catch { /* already stopped */ }
+        src.disconnect();
+        clipSources.delete(id);
+      }
+    },
+
+    setClipVolume(clipId, volume): void {
+      const gain = clipGainNodes.get(clipId);
+      if (!gain) return;
+      gain.gain.value = Math.max(0, Math.min(1, volume));
+    },
+
+    rampClipVolume(clipId, volume, targetTime): void {
+      const gain = clipGainNodes.get(clipId);
+      if (!gain) return;
+      const ctx = ensureContext();
+      // ANCHOR — `linearRampToValueAtTime` ramps from the previous
+      // scheduled event. Without an explicit setValueAtTime first the
+      // Web Audio spec ramps from time-zero (effectively from value 0
+      // = silence), so the FIRST ramp call after each load fades the
+      // clip in from silence. Anchoring to the current value at the
+      // current time is idempotent (no jump) and gives the ramp a
+      // stable start. Footgun documented in MDN's
+      // linearRampToValueAtTime notes.
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(
+        Math.max(0, Math.min(1, volume)),
+        targetTime
+      );
+    },
+
+    getContextTime(): number {
+      return audioContext?.currentTime ?? 0;
+    },
+
+    getLoadedClipIds(): string[] {
+      return [...clipBuffers.keys()];
+    },
+
     destroy(): void {
       activeDetectionAbort?.abort();
       activeDetectionAbort = null;
@@ -262,6 +405,15 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
       sourceNode?.disconnect();
       analyser?.disconnect();
       streamDest?.disconnect();
+      // Plan 5.9d — tear down per-clip state too.
+      for (const src of clipSources.values()) {
+        try { src.stop(); } catch { /* already stopped */ }
+        src.disconnect();
+      }
+      for (const gain of clipGainNodes.values()) gain.disconnect();
+      clipSources.clear();
+      clipGainNodes.clear();
+      clipBuffers.clear();
       audioContext?.close().catch(() => undefined);
       audioContext = null;
       audioEl = null;

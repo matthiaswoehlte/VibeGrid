@@ -40,3 +40,16 @@ export const DEFAULT_BEAT_GRID: BeatGrid = {
 /** BPM clamp range. Single source of truth — imported by engine and store slice. */
 export const BPM_MIN = 60;
 export const BPM_MAX = 200;
+
+/** Plan 5.9d — per-clip audio routing state held by the AudioEngine.
+ *  Each loaded audio clip has its own decoded buffer + GainNode (for
+ *  volume automation) + the currently-playing source node (one-shot,
+ *  replaced on every Seek / play call). `isPlaying` mirrors whether
+ *  `source` is currently scheduled. */
+export interface AudioClipState {
+  clipId: string;
+  buffer: AudioBuffer;
+  source: AudioBufferSourceNode | null;
+  gainNode: GainNode;
+  isPlaying: boolean;
+}

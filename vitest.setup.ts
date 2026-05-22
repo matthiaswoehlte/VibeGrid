@@ -28,6 +28,36 @@ class MockAudioContext {
     this.state = 'closed';
   }
 
+  /** Plan 5.9d — minimal GainNode stub. Each call returns a fresh
+   *  object; tests that need to observe gain manipulation hold the
+   *  reference returned by `createGain()`. */
+  createGain(): GainNode {
+    const param = {
+      value: 1.0,
+      setValueAtTime: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
+      exponentialRampToValueAtTime: vi.fn(),
+      cancelScheduledValues: vi.fn()
+    };
+    return {
+      gain: param,
+      connect: vi.fn(),
+      disconnect: vi.fn()
+    } as unknown as GainNode;
+  }
+
+  /** Plan 5.9d — minimal AudioBufferSourceNode stub. `start` / `stop`
+   *  are vi.fn() so tests can assert call args (when, offset). */
+  createBufferSource(): AudioBufferSourceNode {
+    return {
+      buffer: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      connect: vi.fn(),
+      disconnect: vi.fn()
+    } as unknown as AudioBufferSourceNode;
+  }
+
   createMediaElementSource(_el: HTMLMediaElement): { connect: () => void; disconnect: () => void } {
     return { connect: vi.fn(), disconnect: vi.fn() };
   }
