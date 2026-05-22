@@ -103,9 +103,20 @@ export function Clip({ clip }: { clip: ClipT }) {
       {...listeners}
       onClick={() => setSelected(clip.id)}
       style={{
-        left: clip.startBeat * px + (transform?.x ?? 0),
+        // Plan 5.10-aware: base position via `left` (so the clip is
+        // anchored to the right content-X for its startBeat), drag
+        // offset via CSS `transform` on BOTH axes. The previous
+        // approach (`left + transform.x` for x, transform for y)
+        // broke dnd-kit's auto-scroll layout-shift compensation
+        // because dnd-kit assumes drag offset is in `transform` and
+        // adjusts it during scroll to keep the dragged element
+        // glued to the cursor. With the offset split across two
+        // properties, dnd-kit's compensation hit the wrong axis.
+        left: clip.startBeat * px,
         width: clip.lengthBeats * px,
-        transform: transform ? `translate3d(0,${transform.y}px,0)` : undefined,
+        transform: transform
+          ? `translate3d(${transform.x}px,${transform.y}px,0)`
+          : undefined,
         backgroundColor: `${color}${bgAlpha}`,
         borderLeft: `3px solid ${color}`,
         boxShadow: selected

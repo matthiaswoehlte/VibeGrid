@@ -1,10 +1,9 @@
 'use client';
-import { useCallback, useRef, type DragEvent as ReactDragEvent } from 'react';
+import { type DragEvent as ReactDragEvent } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
   PointerSensor,
-  useDndMonitor,
   useSensor,
   useSensors,
   type DragEndEvent
@@ -27,99 +26,6 @@ const BEAT_PX_BASE = 40;
 // reserved for track-name labels. All horizontal positioning of clips/ticks
 // happens to the RIGHT of this column.
 export const TRACK_LABEL_WIDTH = 80;
-
-/**
- * Manual auto-scroll while a clip is dragged.
- *
- * dnd-kit's built-in `autoScroll` config didn't engage reliably for
- * our `flex-1 overflow-auto` timeline container. The first manual
- * attempt used a window-level `pointermove` listener, but those
- * don't fire reliably during a dnd-kit drag — pointer capture on
- * the dragged element redirects pointer events, and outside-window
- * cursor positions stop generating events at all.
- *
- * This version reads cursor position from dnd-kit's OWN events:
- * `onDragStart` captures the activator's `clientX`, then every
- * `onDragMove` adds `event.delta.x` to get the current cursor X.
- * dnd-kit guarantees these fire as long as the drag is active.
- *
- * A separate rAF loop ticks continuously so the scroll keeps
- * progressing even when the cursor sits still at the edge.
- */
-function ClipDragAutoScroll(): null {
-  const stateRef = useRef({
-    active: false,
-    activatorX: 0,
-    lastClientX: 0,
-    rafId: null as number | null
-  });
-
-  const tick = useCallback((): void => {
-    const s = stateRef.current;
-    if (!s.active) return;
-    const container = document.querySelector(
-      '[data-timeline-scroll]'
-    ) as HTMLElement | null;
-    if (container) {
-      const rect = container.getBoundingClientRect();
-      const EDGE = 80; // px from the container's left/right edge that triggers scroll
-      const STEP = 12; // px scrolled per frame — ~720 px/s at 60 fps
-      const x = s.lastClientX;
-      if (x < rect.left + EDGE && container.scrollLeft > 0) {
-        container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
-      } else if (x > rect.right - EDGE) {
-        const max = container.scrollWidth - container.clientWidth;
-        if (container.scrollLeft < max) {
-          container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
-        }
-      }
-    }
-    s.rafId = requestAnimationFrame(tick);
-  }, []);
-
-  useDndMonitor({
-    onDragStart: (event) => {
-      const activator = event.activatorEvent;
-      // `activatorEvent` is the ORIGINAL pointer/mouse event that
-      // crossed the activation threshold. Its clientX is our anchor.
-      const x =
-        activator instanceof PointerEvent || activator instanceof MouseEvent
-          ? activator.clientX
-          : 0;
-      const s = stateRef.current;
-      s.activatorX = x;
-      s.lastClientX = x;
-      s.active = true;
-      s.rafId = requestAnimationFrame(tick);
-    },
-    onDragMove: (event) => {
-      // dnd-kit's `delta.x` is the cumulative drag offset from the
-      // activator point. Re-derive current cursor X from it — this
-      // is more reliable than a window pointermove listener which
-      // can be swallowed by pointer-capture on the dragged element.
-      stateRef.current.lastClientX =
-        stateRef.current.activatorX + event.delta.x;
-    },
-    onDragEnd: () => {
-      const s = stateRef.current;
-      s.active = false;
-      if (s.rafId !== null) {
-        cancelAnimationFrame(s.rafId);
-        s.rafId = null;
-      }
-    },
-    onDragCancel: () => {
-      const s = stateRef.current;
-      s.active = false;
-      if (s.rafId !== null) {
-        cancelAnimationFrame(s.rafId);
-        s.rafId = null;
-      }
-    }
-  });
-
-  return null;
-}
 
 // Plan 5.9c — local PLUGIN_TO_TRACK_KIND map gone; use the SSOT
 // `PLUGIN_KIND_TO_TRACK_KIND` from `@/lib/timeline/plugin-mapping`.
@@ -360,14 +266,35 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     <DndContext
       sensors={sensors}
       onDragEnd={onDragEnd}
-      // dnd-kit's built-in auto-scroll is disabled — it didn't
-      // engage reliably with our `flex-1 overflow-auto` container.
-      // Replaced by the explicit `ClipDragAutoScroll` helper
-      // mounted below, which uses window-pointermove + rAF to
-      // scroll the container when the cursor approaches its edge.
-      autoScroll={false}
+      // dnd-kit's built-in auto-scroll, configured explicitly.
+      //
+      // Root cause behind the earlier "no auto-scroll" symptom: the
+      // Clip component used to render with `left: startBeat*px +
+      // transform.x` and a CSS transform of only `translate3d(0,
+      // transform.y, 0)`. dnd-kit's auto-scroll measures the dragged
+      // element's CSS transform to decide whether it's near the
+      // edge AND to compensate for layout shifts during scroll.
+      // With `transform.x` always 0 on the element, dnd-kit
+      // (a) couldn't detect edge-proximity → no scroll fired,
+      // (b) couldn't compensate during scroll → if the scroll DID
+      //     fire (via other means), the clip drifted off the cursor.
+      //
+      // After moving the drag offset into the CSS transform (both
+      // axes), dnd-kit's built-in auto-scroll works as advertised.
+      //
+      // - threshold 0.25 on x: trigger zone is the leftmost / rightmost
+      //   25% of the container width. Generous so users feel the scroll
+      //   engage well before they hit the viewport edge.
+      // - threshold 0 on y: timeline is short vertically, no need.
+      // - layoutShiftCompensation: true: keep the clip glued to the
+      //   cursor as the container scrolls.
+      autoScroll={{
+        enabled: true,
+        threshold: { x: 0.25, y: 0 },
+        acceleration: 10,
+        layoutShiftCompensation: true
+      }}
     >
-      <ClipDragAutoScroll />
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
