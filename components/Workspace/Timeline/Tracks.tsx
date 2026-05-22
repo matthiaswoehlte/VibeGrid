@@ -70,7 +70,8 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     if (
       e.dataTransfer.types.includes('application/x-vibegrid-fx') ||
       e.dataTransfer.types.includes('application/x-vibegrid-media-image') ||
-      e.dataTransfer.types.includes('application/x-vibegrid-media-video')
+      e.dataTransfer.types.includes('application/x-vibegrid-media-video') ||
+      e.dataTransfer.types.includes('application/x-vibegrid-media-audio')
     ) {
       e.preventDefault();
     }
@@ -80,7 +81,8 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     const fxId = e.dataTransfer.getData('application/x-vibegrid-fx');
     const mediaIdImage = e.dataTransfer.getData('application/x-vibegrid-media-image');
     const mediaIdVideo = e.dataTransfer.getData('application/x-vibegrid-media-video');
-    if (!fxId && !mediaIdImage && !mediaIdVideo) return;
+    const mediaIdAudio = e.dataTransfer.getData('application/x-vibegrid-media-audio');
+    if (!fxId && !mediaIdImage && !mediaIdVideo && !mediaIdAudio) return;
     e.preventDefault();
 
     // Compute startBeat from the actual clip-area under the cursor (not the
@@ -209,6 +211,44 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           trackId: videoTrack.id,
           kind: 'video',
           mediaId: mediaIdVideo,
+          startBeat,
+          lengthBeats,
+          label: ref.filename
+        });
+        return;
+      }
+
+      if (mediaIdAudio) {
+        // Plan 5.9d — audio drop. Mirrors the video block: pick the
+        // dropped audio track (or fall back to the first one), length
+        // matches the source audio duration in beats.
+        const ref = getMediaRef(mediaIdAudio);
+        if (!ref) {
+          toast.error(`Media reference ${mediaIdAudio} not found`);
+          return;
+        }
+        if (droppedTrackKind && !canDropOnTrack('audio', droppedTrackKind)) {
+          toast.error(
+            `Audio kann nicht auf "${droppedTrackKind}"-Track — nur auf Audio-Tracks`
+          );
+          return;
+        }
+        const audioTrack = droppedTrackId
+          ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'audio')
+          : tracks.find((t) => t.kind === 'audio');
+        if (!audioTrack) {
+          toast.error('No audio track found');
+          return;
+        }
+        const bpm = useAppStore.getState().audio.grid.bpm || 120;
+        const lengthBeats = ref.duration
+          ? Math.max(1, Math.ceil((ref.duration * bpm) / 60))
+          : 16;
+        addClip({
+          id: crypto.randomUUID(),
+          trackId: audioTrack.id,
+          kind: 'audio',
+          mediaId: mediaIdAudio,
           startBeat,
           lengthBeats,
           label: ref.filename

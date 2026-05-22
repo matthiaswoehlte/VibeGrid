@@ -109,14 +109,25 @@ export function useAudioEngine(): UseAudioEngine {
   }, [engine]);
 
   // Auto-load the most recently added audio MediaRef into the engine.
-  // v0.1 assumes a single soundtrack at a time — newest audio upload wins.
+  // v0.1: kept for the engine's `cachedDecodedBuffer` API surface
+  // (used by detectBPM and other diagnostic paths). After Plan 5.9d
+  // shipped Multi-Audio, the `<audio>` element created by engine.load
+  // is MUTED — playback comes exclusively from the per-clip
+  // reconciler (`loadClip` / `playClip`) below. Without this mute,
+  // Transport.play() (which calls engine.play() → audioEl.play())
+  // would play the autoloaded soundtrack in parallel to the per-clip
+  // path → audible double-volume.
   useEffect(() => {
     if (!engine) return;
+    const muteAutoloaded = (): void => {
+      const audioEl = engine.getAudioElement();
+      if (audioEl) audioEl.muted = true;
+    };
     // Prime once on mount from current state (handles rehydrated mediaRefs).
     const initial = useAppStore.getState().media.mediaRefs.filter((m) => m.kind === 'audio');
     const lastInitial = initial[initial.length - 1];
     if (lastInitial) {
-      engine.load(lastInitial.url).catch((err) => {
+      engine.load(lastInitial.url).then(muteAutoloaded).catch((err) => {
         // eslint-disable-next-line no-console
         console.warn('[useAudioEngine] initial audio load failed:', err);
       });
@@ -128,7 +139,7 @@ export function useAudioEngine(): UseAudioEngine {
       );
       const latest = added[added.length - 1];
       if (latest) {
-        engine.load(latest.url).catch((err) => {
+        engine.load(latest.url).then(muteAutoloaded).catch((err) => {
           // eslint-disable-next-line no-console
           console.warn('[useAudioEngine] audio load failed:', err);
         });

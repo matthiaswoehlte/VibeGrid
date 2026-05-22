@@ -129,15 +129,20 @@ export function MediaLibrary() {
           const isActiveAudio =
             r.kind === 'audio' && r.id === audioRefs[audioRefs.length - 1]?.id;
 
-          const audioTitle = isActiveAudio
-            ? 'Active soundtrack — loaded into the audio engine. Press Play in the toolbar.'
-            : 'Earlier soundtrack — re-upload to re-activate.';
+          // Plan 5.9d — drag-and-drop replaces the old "active soundtrack"
+          // mental model. Title hints at the new flow.
+          const audioTitle = `${r.filename} — drag onto an Audio track`;
 
+          // Plan 5.9d — audio is now draggable too. Multi-Audio
+          // means audio files become regular clips on audio tracks,
+          // same drag-and-drop model as image and video.
           const dragKey = isImage
             ? 'application/x-vibegrid-media-image'
             : isVideo
               ? 'application/x-vibegrid-media-video'
-              : null;
+              : r.kind === 'audio'
+                ? 'application/x-vibegrid-media-audio'
+                : null;
           const draggable = dragKey !== null;
           const onDragStart = dragKey
             ? (e: React.DragEvent<HTMLLIElement>) => {
@@ -186,15 +191,9 @@ export function MediaLibrary() {
                   {isImage && r.width && r.height ? `${r.width}×${r.height}` : null}
                   {isVideo && r.duration ? `▶ ${formatDurationSec(r.duration)}` : null}
                   {r.kind === 'audio' && r.duration
-                    ? `${r.duration.toFixed(1)}s — ${
-                        isActiveAudio ? 'active soundtrack' : 'soundtrack'
-                      }`
+                    ? `♪ ${formatDurationSec(r.duration)}`
                     : null}
-                  {r.kind === 'audio' && !r.duration
-                    ? isActiveAudio
-                      ? 'active soundtrack'
-                      : 'soundtrack'
-                    : null}
+                  {r.kind === 'audio' && !r.duration ? '♪ audio' : null}
                 </span>
               </span>
               {isImage && <AutoPresetButton mediaRef={r} />}
