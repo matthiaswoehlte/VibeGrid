@@ -51,6 +51,110 @@ export function useVideoEngine(): UseVideoEngineReturn {
     engineRef.current = newEngine;
     setEngine(newEngine);
 
+    // Retry state per mediaId. Tracks how many attempts have been made
+    // and any pending setTimeout for the next attempt. Without this,
+    // every store update (clip resize/move) re-tries failed URLs —
+    // flooding the console with the same error and, worse, racing
+    // AudioEngine.play() into AbortError because the video-side
+    // onerror handler triggers a pause() partway through play().
+    //
+    // Policy:
+    //  - 5 attempts max, exponential backoff: 5s, 10s, 20s, 40s, 80s
+    //    between consecutive attempts (~155s total before giving up).
+    //    Designed for unstable mobile/travel connections — short
+    //    blips get caught by attempt 2 (5s later); longer outages
+    //    get progressively-rarer retries to save battery & data.
+    //  - HTMLMediaElement code=4 (MEDIA_ERR_SRC_NOT_SUPPORTED — CORS,
+    //    codec, 404) bypasses the retry loop entirely. These errors
+    //    are by nature permanent: retrying won't make a missing/
+    //    CORS-blocked URL become accessible. ONE log per failed
+    //    media, then we give up immediately.
+    //  - Other codes (1=ABORTED, 2=NETWORK, 3=DECODE) get the full
+    //    retry sequence — network and decode errors are sometimes
+    //    transient, especially on flaky mobile connections.
+    //
+    // After give-up the entry stays in the map (with timerId=null)
+    // to block further reconciler triggers. unload() on clip removal
+    // clears the entry so a re-added clip gets a fresh attempt.
+    const RETRY_MAX_ATTEMPTS = 5;
+    const RETRY_BASE_MS = 5_000;
+    type RetryState = {
+      attempts: number;
+      timerId: ReturnType<typeof setTimeout> | null;
+    };
+    const retryState = new Map<string, RetryState>();
+
+    /** Exponential backoff: 5s, 10s, 20s, 40s, 80s. */
+    function getRetryDelay(attemptsSoFar: number): number {
+      return RETRY_BASE_MS * Math.pow(2, attemptsSoFar - 1);
+    }
+
+    /** Detect HTMLMediaElement `code=4 MEDIA_ERR_SRC_NOT_SUPPORTED` by
+     *  parsing the engine's error message (engine.ts formats it as
+     *  `... — code=N (message)`). Centralising the parse here keeps
+     *  the engine's error contract simple — string only, no typed
+     *  error subclass — while still letting the hook differentiate
+     *  permanent vs transient failures. */
+    function isPermanentError(err: unknown): boolean {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /\bcode=4\b/.test(msg);
+    }
+
+    function attemptLoad(mediaId: string, url: string): void {
+      const state = retryState.get(mediaId) ?? { attempts: 0, timerId: null };
+      state.attempts += 1;
+      state.timerId = null;
+      retryState.set(mediaId, state);
+
+      void newEngine!.load(mediaId, url).then(
+        () => {
+          // Success — drop the entry so future re-additions get a clean slate.
+          retryState.delete(mediaId);
+        },
+        (err: unknown) => {
+          if (isPermanentError(err)) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[useVideoEngine] permanent error for ${mediaId} (code=4 — CORS / codec / missing file) — not retrying. Fix the source URL and re-add the clip, or reload the page:`,
+              err
+            );
+            // Leave in retryState with attempts at current value (no timer)
+            // so reconciler skips it permanently for this session.
+            return;
+          }
+          if (state.attempts >= RETRY_MAX_ATTEMPTS) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[useVideoEngine] giving up on ${mediaId} after ${state.attempts} attempts:`,
+              err
+            );
+            return;
+          }
+          const delay = getRetryDelay(state.attempts);
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[useVideoEngine] load failed for ${mediaId} (attempt ${state.attempts}/${RETRY_MAX_ATTEMPTS}), retrying in ${delay / 1000}s:`,
+            err
+          );
+          state.timerId = setTimeout(() => {
+            state.timerId = null;
+            // Refetch the URL from the current store — the user may have
+            // re-uploaded the clip to a new R2 key while we were waiting.
+            const currentRefs = useAppStore.getState().media.mediaRefs;
+            const currentRef = currentRefs.find(
+              (m) => m.id === mediaId && m.kind === 'video'
+            );
+            if (!currentRef) {
+              // Clip was removed during the wait — drop retry state.
+              retryState.delete(mediaId);
+              return;
+            }
+            attemptLoad(mediaId, currentRef.url);
+          }, delay);
+        }
+      );
+    }
+
     /** Diff the desired video-element set against the loaded set and
      *  call `engine.load/unload` to match. Runs at mount + on every
      *  relevant store change. */
@@ -65,15 +169,26 @@ export function useVideoEngine(): UseVideoEngineReturn {
 
       for (const id of wanted) {
         if (loaded.has(id)) continue;
+        // Skip if a retry is already pending or we've given up.
+        // Pending timer → wait; attempts at max → permanently failed.
+        if (retryState.has(id)) continue;
         const ref = mediaRefs.find((m) => m.id === id && m.kind === 'video');
         if (!ref) continue;
-        void newEngine.load(id, ref.url).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn(`[useVideoEngine] failed to load ${id}:`, err);
-        });
+        attemptLoad(id, ref.url);
       }
       for (const id of loaded) {
         if (!wanted.has(id)) newEngine.unload(id);
+      }
+      // Drop retry state for mediaIds whose clips have been removed —
+      // cancels pending timers and gives a fresh slate if the user
+      // re-adds the clip later. Permanently-failed entries (attempts
+      // at MAX, no timer) also get cleared by this loop.
+      for (const id of [...retryState.keys()]) {
+        if (!wanted.has(id)) {
+          const s = retryState.get(id);
+          if (s?.timerId !== null && s?.timerId !== undefined) clearTimeout(s.timerId);
+          retryState.delete(id);
+        }
       }
     }
 
@@ -111,6 +226,12 @@ export function useVideoEngine(): UseVideoEngineReturn {
     });
 
     return () => {
+      // Cancel any pending retry timers so they don't fire after the
+      // engine is destroyed (Strict Mode mount → unmount → remount).
+      for (const s of retryState.values()) {
+        if (s.timerId !== null) clearTimeout(s.timerId);
+      }
+      retryState.clear();
       unsub();
       newEngine.destroy();
       engineRef.current = null;
