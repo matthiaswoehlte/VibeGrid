@@ -385,6 +385,16 @@ export function createRenderer(deps: RendererDeps): Renderer {
     // the linear ramp (Web Audio footgun — without anchor, the ramp
     // starts from t=0 = silence on the first call). Sample-accurate,
     // no zipper noise at 60 fps update rate.
+    //
+    // FlowMode is intentionally forced FALSE for audio: Flow Mode is
+    // a FX-driven concept (stretches a curve over clip duration so
+    // beat-triggers feel continuous). Audio volume is authored in
+    // absolute timeline beats; stretching it would surprise the user
+    // who placed a fade-in over the first 4 beats and instead heard
+    // it stretched across the whole clip length. For static volume
+    // the flowMode argument is irrelevant (resolveParam short-circuits)
+    // — but forcing false here makes the semantics explicit for the
+    // automation-curve path too.
     if (deps.rampClipVolume && deps.getAudioContextTime) {
       const FRAME_DURATION = 1 / 60;
       const target = deps.getAudioContextTime() + FRAME_DURATION;
@@ -394,12 +404,11 @@ export function createRenderer(deps: RendererDeps): Renderer {
         if (beats >= clip.startBeat + clip.lengthBeats) continue;
         const rawVolume =
           (clip.params as { volume?: StaticOrAuto<number> } | undefined)?.volume ?? 1.0;
-        const paramBeat = flowMode ? beats - clip.startBeat : beats;
         const resolved = resolveParam(
           rawVolume,
-          paramBeat,
+          beats,
           clip.lengthBeats,
-          flowMode
+          false
         );
         deps.rampClipVolume(clip.id, resolved, target);
       }

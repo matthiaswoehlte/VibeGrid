@@ -216,11 +216,23 @@ export function useAudioEngine(): UseAudioEngine {
       // Seek-while-PLAYING — stop AND restart so audio re-syncs to the
       // new playhead. Placed AFTER the play-branch so a single Play
       // click doesn't double-fire startAllActiveClips.
-      if (
-        isPlaying &&
-        wasPlaying &&
-        state.timeline.playhead.beats !== prev.timeline.playhead.beats
-      ) {
+      //
+      // CRITICAL: distinguish USER-INITIATED seek from natural playback
+      // advance. `useAudioEngine`'s currentTime mirror writes
+      // playhead.beats on every audioEl `timeupdate` event (~4-25 Hz
+      // depending on browser). Without this gate, every timeupdate
+      // tick during playback would tear down and restart every audio
+      // source — audible as a rapid pulsing / glitching glued to the
+      // playhead-tick frequency (smoke-reported as "volume pulses to
+      // the beat" in Bug C). User-initiated seeks are characterised
+      // by either:
+      //   - a rewind (beats < prev.beats), or
+      //   - a forward jump larger than any single timeupdate could
+      //     produce (> 1.0 beats = 500 ms @ 120 BPM).
+      const beatsDelta =
+        state.timeline.playhead.beats - prev.timeline.playhead.beats;
+      const isUserSeek = beatsDelta < 0 || beatsDelta > 1.0;
+      if (isPlaying && wasPlaying && isUserSeek) {
         engine.stopAllClips();
         startAllActiveClips(state.timeline, engine, bpm, LOOKAHEAD);
       }
