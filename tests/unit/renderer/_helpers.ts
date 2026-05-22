@@ -51,7 +51,12 @@ export function makeMockCtx(): CanvasRenderingContext2D & {
       data: new Uint8ClampedArray(4 * 100 * 100),
       width: 100,
       height: 100
-    }))
+    })),
+    // Identity DOMMatrix — `lib/renderer/loop.ts` calls `getTransform().a`
+    // to detect whether DPR setTransform is applied. jsdom canvas has
+    // no native context; production code reads the X-scale factor and
+    // expects 1 for identity (= no DPR), >1 for live-canvas DPR-scaled.
+    getTransform: vi.fn(() => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) as DOMMatrix)
   };
   return ctx as unknown as CanvasRenderingContext2D & typeof ctx;
 }

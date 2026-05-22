@@ -163,22 +163,30 @@ export function createRenderer(deps: RendererDeps): Renderer {
   let rafId: number | null = null;
 
   function tick(): void {
-    // CSS-pixel dimensions = buffer pixels divided by DPR. useRenderer
-    // applies `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` after every
-    // resize, so all drawing operations downstream already get scaled
-    // by DPR. Passing the BUFFER size (canvas.width) into
-    // drawImageContain / fillRect / RenderContext.width would re-multiply
-    // by DPR → image rendered at 2× on retina / iPhone emulation, with
-    // only the top-left CSS-quadrant visible (Plan 5.10 smoke bug on
-    // iPhone SE DPR=2). Desktop with DPR=1 looked fine by coincidence.
+    // Render dimensions adapted to whatever transform the context has.
     //
-    // Using `canvas.width / dpr` (instead of `clientWidth`) works in
-    // both jsdom — where clientWidth is always 0 because there's no
-    // layout, and dpr defaults to 1 → identical to the previous
-    // canvas.width read — and real browsers where DPR > 1.
-    const dpr = window.devicePixelRatio || 1;
-    const w = deps.canvas.width / dpr;
-    const h = deps.canvas.height / dpr;
+    // - LIVE preview (`useRenderer`): `ctx.setTransform(dpr, 0, 0, dpr,
+    //   0, 0)` is applied after every DPR resize, so drawing operations
+    //   are CSS-space scaled. Buffer is `cssSize × dpr`; we need the
+    //   CSS size for plugin math (Plan 5.10 iPhone-SE smoke bug —
+    //   without dividing we rendered 2× and only the top-left quadrant
+    //   was visible).
+    // - OFFLINE export (`makeOfflineRenderer`): a static
+    //   `OffscreenCanvas(1920, 1080)` with NO setTransform — the
+    //   context's transform is identity. Buffer == content size; we
+    //   pass canvas.width/height verbatim. Pre-fix this branch worked
+    //   by coincidence (DPR-divide was missing); the fix initially
+    //   broke offline because it divided by `window.devicePixelRatio`
+    //   (host DPR) regardless of context state, shrinking the video
+    //   render to the top-left quarter of the 1920×1080 buffer.
+    //
+    // `ctx.getTransform().a` returns the effective X-scale factor of
+    // the current transform. Identity → 1 → no division. Live DPR
+    // setTransform → dpr → division as before. Tests in jsdom inherit
+    // identity (no DPR setup) → same as offline.
+    const xScale = ctx!.getTransform().a || 1;
+    const w = deps.canvas.width / xScale;
+    const h = deps.canvas.height / xScale;
     if (w === 0 || h === 0) return;
 
     // Guard against non-finite time (HTMLMediaElement.currentTime can be NaN

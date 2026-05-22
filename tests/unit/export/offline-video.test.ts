@@ -107,6 +107,7 @@ function installWebCodecsMocks() {
         save: noop,
         restore: noop,
         setTransform: noop,
+        getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } as DOMMatrix),
         drawImage: noop,
         beginPath: noop,
         closePath: noop,

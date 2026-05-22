@@ -20,6 +20,7 @@ function makeCanvas(): HTMLCanvasElement {
     restore: () => {},
     fillRect: () => {},
     setTransform: () => {},
+    getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } as DOMMatrix),
     globalAlpha: 1,
     fillStyle: '#000'
   } as unknown as CanvasRenderingContext2D;
