@@ -1,34 +1,26 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
 import type { TrackKind } from '@/lib/timeline/types';
-import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 
 /**
- * Plan 5.9a — "+ Track hinzufügen" button with a dropdown picker.
- * 'audio' is intentionally excluded — Multi-Audio is parked for v0.2
- * (the store action would throw if called with it).
+ * Plan 5.9a/5.9c — "+ Track hinzufügen" button with a dropdown picker.
  *
- * Plan 5.9c — Task 10 shrinks this to 3 options (Image / Video / FX).
- * Until then the option-kind type is widened to admit the legacy
- * v5 FX-kinds so existing entries still typecheck.
+ * After Plan 5.9c's FX consolidation, the picker exposes just three
+ * options: Image / Video / FX. `'audio'` is omitted (Multi-Audio
+ * lands in 5.9d; the store's `addTrack('audio')` soft-rejects with
+ * a toast if invoked anyway). The per-FX-plugin options
+ * (`'contour'`, `'sweep'`, …) are gone — clips of those kinds now
+ * land on a generic `'fx'` lane via the plugin-palette drop path.
  */
 const PICKER_OPTIONS: ReadonlyArray<{
-  kind: TrackKind | TrackFxKind;
+  kind: TrackKind;
   label: string;
   group: 'media' | 'fx';
 }> = [
   { kind: 'image', label: 'Image', group: 'media' },
   { kind: 'video', label: 'Video', group: 'media' },
-  { kind: 'contour', label: 'Contour', group: 'fx' },
-  { kind: 'sweep', label: 'Sweep', group: 'fx' },
-  { kind: 'pulse', label: 'Pulse', group: 'fx' },
-  { kind: 'zoom-pulse', label: 'Zoom Pulse', group: 'fx' },
-  { kind: 'particles', label: 'Particles', group: 'fx' },
-  { kind: 'text', label: 'Text', group: 'fx' },
-  { kind: 'dissolve', label: 'Dissolve', group: 'fx' },
-  { kind: 'sunray', label: 'Sunray', group: 'fx' }
+  { kind: 'fx', label: 'FX', group: 'fx' }
 ];
 
 export function AddTrackButton() {
@@ -45,13 +37,11 @@ export function AddTrackButton() {
     return () => document.removeEventListener('pointerdown', onPointer);
   }, [open]);
 
-  const handlePick = (kind: TrackKind | TrackFxKind) => {
+  const handlePick = (kind: TrackKind) => {
     setOpen(false);
-    try {
-      addTrack(kind);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Track-Add fehlgeschlagen');
-    }
+    // Plan 5.9c — `addTrack` soft-rejects via toast for `'audio'`, so
+    // we don't need a try/catch here anymore.
+    addTrack(kind);
   };
 
   const mediaOptions = PICKER_OPTIONS.filter((o) => o.group === 'media');
