@@ -107,14 +107,20 @@ export const FX_DISPLAY_NAME: Record<TrackFxKind, string> = {
 };
 
 /** Clip-band background color in the Timeline UI. Keep contrast vs
- *  the surface-3 hover background. Values are CSS color expressions
- *  (CSS custom property references or hex literals). */
+ *  the surface-3 hover background.
+ *
+ *  **MUST be 6-digit hex literals** — Clip.tsx concatenates a 2-digit
+ *  alpha suffix (`'33'` / `'66'`) onto the color string to produce a
+ *  translucent body fill. `var(--a1)33` is invalid CSS; the body
+ *  silently goes transparent. If you really want a CSS custom
+ *  property here, refactor Clip.tsx to use `rgba()` or
+ *  `color-mix()` instead of the suffix trick. */
 export const FX_CLIP_COLORS: Record<TrackFxKind, string> = {
-  contour: 'var(--a1)',
+  contour: '#a86bff',      // purple — matches --a1 (electric default)
   sweep: '#e05a7a',
   pulse: '#7a6a3a',
   'zoom-pulse': '#3a6a7a',
-  particles: 'var(--a3)',
+  particles: '#2ee0d0',    // teal — matches --a3 (electric default)
   text: '#6a3a7a',
   dissolve: '#3a5a3a',
   sunray: '#7a6a1a'
