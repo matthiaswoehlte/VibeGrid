@@ -14,24 +14,26 @@ beforeEach(() => {
   }));
 });
 
-describe('AddTrackButton — Plan 5.9c picker', () => {
-  it('opens the picker on click and shows exactly 3 options (Image / Video / FX)', () => {
+describe('AddTrackButton — Plan 5.9c/5.9d picker', () => {
+  it('opens the picker on click and shows all 4 options (Image / Video / Audio / FX)', () => {
     render(<AddTrackButton />);
     fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
     expect(screen.getByRole('button', { name: 'Image' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Video' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Audio' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'FX' })).toBeInTheDocument();
   });
 
-  it('does NOT show an Audio option (Multi-Audio stub gated to 5.9d)', () => {
+  it('clicking Audio calls addTrack("audio") (Plan 5.9d unlocked Multi-Audio)', () => {
+    const addTrackSpy = vi.spyOn(
+      useAppStore.getState().timelineActions,
+      'addTrack'
+    );
     render(<AddTrackButton />);
     fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
-    // The button labels are exact text — Audio shouldn't appear among them.
-    // (The word "Audio" might show elsewhere in surrounding chrome, so we
-    // assert against the button labels specifically.)
-    const buttons = screen.queryAllByRole('button');
-    const buttonLabels = buttons.map((b) => b.textContent?.trim()).filter(Boolean);
-    expect(buttonLabels).not.toContain('Audio');
+    fireEvent.click(screen.getByRole('button', { name: 'Audio' }));
+    expect(addTrackSpy).toHaveBeenCalledWith('audio');
+    addTrackSpy.mockRestore();
   });
 
   it('does NOT expose any per-FX-kind option (no Contour / Sweep / … in the picker)', () => {

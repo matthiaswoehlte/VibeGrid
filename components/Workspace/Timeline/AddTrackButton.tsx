@@ -4,13 +4,12 @@ import { useAppStore } from '@/lib/store';
 import type { TrackKind } from '@/lib/timeline/types';
 
 /**
- * Plan 5.9a/5.9c — "+ Track hinzufügen" button with a dropdown picker.
+ * Plan 5.9a/5.9c/5.9d — "+ Track hinzufügen" button with a dropdown picker.
  *
- * After Plan 5.9c's FX consolidation, the picker exposes just three
- * options: Image / Video / FX. `'audio'` is omitted (Multi-Audio
- * lands in 5.9d; the store's `addTrack('audio')` soft-rejects with
- * a toast if invoked anyway). The per-FX-plugin options
- * (`'contour'`, `'sweep'`, …) are gone — clips of those kinds now
+ * Picker exposes all four user-creatable track kinds: Image, Video,
+ * Audio, FX. Multi-Audio shipped in Plan 5.9d — the store-side
+ * `addTrack('audio')` is no longer gated. Per-FX-plugin options
+ * (`'contour'`, `'sweep'`, …) are gone (Plan 5.9c) — those clips
  * land on a generic `'fx'` lane via the plugin-palette drop path.
  */
 const PICKER_OPTIONS: ReadonlyArray<{
@@ -20,6 +19,7 @@ const PICKER_OPTIONS: ReadonlyArray<{
 }> = [
   { kind: 'image', label: 'Image', group: 'media' },
   { kind: 'video', label: 'Video', group: 'media' },
+  { kind: 'audio', label: 'Audio', group: 'media' },
   { kind: 'fx', label: 'FX', group: 'fx' }
 ];
 
