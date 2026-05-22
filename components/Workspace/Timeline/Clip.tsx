@@ -29,6 +29,14 @@ export function Clip({ clip }: { clip: ClipT }) {
   const selected = useAppStore((s) => s.ui.selectedClipId === clip.id);
   const setSelected = useAppStore((s) => s.setSelectedClipId);
   const resizeClip = useAppStore((s) => s.timelineActions.resizeClip);
+  // For video/audio clips, the resize handle can't extend the clip past
+  // the source media's intrinsic duration — beyond that the renderer
+  // (and the audio engine) just clamp on the last frame / silence,
+  // which looks like a freeze. Read mediaRefs + bpm here so the closure
+  // in `onResizePointerDown` has a stable snapshot. (BPM changes mid-
+  // resize are not a real-world concern.)
+  const mediaRefs = useAppStore((s) => s.media.mediaRefs);
+  const bpm = useAppStore((s) => s.audio.grid.bpm);
 
   const { setNodeRef, listeners, attributes, transform } = useDraggable({
     id: clip.id,
@@ -64,14 +72,69 @@ export function Clip({ clip }: { clip: ClipT }) {
     const startContentX = e.clientX - containerLeft + initialScrollLeft;
     const startLen = clip.lengthBeats;
 
+    // Max length in beats for video/audio clips — the resize handle
+    // hard-stops there so users can't accidentally extend a 30s video
+    // to 60s of frozen last-frame. Image and FX clips have no source
+    // duration and stay unbounded. If the mediaRef hasn't loaded its
+    // duration yet (slow upload), maxLengthBeats stays Infinity and
+    // the clip behaves as before — better unbounded than blocked.
+    let maxLengthBeats = Infinity;
+    if ((clip.kind === 'video' || clip.kind === 'audio') && clip.mediaId) {
+      const ref = mediaRefs.find((m) => m.id === clip.mediaId);
+      if (ref?.duration && bpm > 0) {
+        maxLengthBeats = (ref.duration * bpm) / 60;
+      }
+    }
+    const clampLen = (n: number): number =>
+      Math.min(maxLengthBeats, Math.max(0.25, n));
+
+    // Auto-scroll while the user resizes near a viewport edge. Uses
+    // the cursor's LIVE clientX (updated in `move` below) and a rAF
+    // loop that nudges scrollLeft when within EDGE px of either side.
+    // Because resize math is CONTENT-coordinate based, scrolling here
+    // is safe — the next pointermove recomputes the length against
+    // the new scrollLeft, so the resize anchor stays on the cursor.
+    let lastClientX = e.clientX;
+    const EDGE = 80;
+    const STEP = 14;
+    const tick = () => {
+      if (scrollContainer) {
+        const rect = scrollContainer.getBoundingClientRect();
+        if (lastClientX < rect.left + EDGE && scrollContainer.scrollLeft > 0) {
+          const prev = scrollContainer.scrollLeft;
+          scrollContainer.scrollLeft = Math.max(0, scrollContainer.scrollLeft - STEP);
+          if (scrollContainer.scrollLeft !== prev) {
+            // Recompute the resize length against the new scroll, so
+            // the visible clip end "catches up" to the cursor while
+            // scrolling — without this, you'd have to wiggle the
+            // pointer after each scroll step to trigger another resize.
+            const newContentX = lastClientX - rect.left + scrollContainer.scrollLeft;
+            resizeClip(clip.id, clampLen(startLen + (newContentX - startContentX) / px));
+          }
+        } else if (lastClientX > rect.right - EDGE) {
+          const max = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+          if (scrollContainer.scrollLeft < max) {
+            const prev = scrollContainer.scrollLeft;
+            scrollContainer.scrollLeft = Math.min(max, scrollContainer.scrollLeft + STEP);
+            if (scrollContainer.scrollLeft !== prev) {
+              const newContentX = lastClientX - rect.left + scrollContainer.scrollLeft;
+              resizeClip(clip.id, clampLen(startLen + (newContentX - startContentX) / px));
+            }
+          }
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    let rafId: number = requestAnimationFrame(tick);
+
     const move = (ev: PointerEvent) => {
+      lastClientX = ev.clientX;
       const currentScrollLeft = scrollContainer?.scrollLeft ?? initialScrollLeft;
       const currentContainerLeft =
         scrollContainer?.getBoundingClientRect().left ?? containerLeft;
       const currentContentX = ev.clientX - currentContainerLeft + currentScrollLeft;
       const dxBeats = (currentContentX - startContentX) / px;
-      const next = Math.max(0.25, startLen + dxBeats);
-      resizeClip(clip.id, next);
+      resizeClip(clip.id, clampLen(startLen + dxBeats));
     };
     const up = (ev: PointerEvent) => {
       try {
@@ -79,6 +142,7 @@ export function Clip({ clip }: { clip: ClipT }) {
       } catch {
         /* pointer was never captured — ok */
       }
+      cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
