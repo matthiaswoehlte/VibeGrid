@@ -2,7 +2,8 @@ import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeClipOnTrack, getActiveFxClips } from '@/lib/timeline/selectors';
-import { resolveClipParams } from '@/lib/automation/resolve';
+import { resolveClipParams, resolveParam } from '@/lib/automation/resolve';
+import type { StaticOrAuto } from '@/lib/automation/types';
 import { computeClipAlpha } from './blend';
 import { getPlugin, listPluginsByKind } from './registry';
 import { registerBuiltInPlugins } from '@/lib/fx';
@@ -29,6 +30,13 @@ export interface RendererDeps {
   /** Optional — when missing, the loop defaults to Beat Mode (false). The
    *  studio hook passes a store-getter so the toggle is read once per tick. */
   getFlowMode?: () => boolean;
+  /** Plan 5.9d — per-frame volume ramp for active audio clips. No-op
+   *  when the engine has no clip with this id. Sample-accurate via
+   *  `gain.linearRampToValueAtTime` (engine handles the anchor). */
+  rampClipVolume?: (clipId: string, volume: number, targetTime: number) => void;
+  /** Plan 5.9d — current AudioContext clock time, used to compute the
+   *  ramp's target time without holding an AudioContext reference. */
+  getAudioContextTime?: () => number;
   rafCallback?: (cb: FrameRequestCallback) => number;
   cancelRafCallback?: (id: number) => void;
 }
@@ -361,6 +369,32 @@ export function createRenderer(deps: RendererDeps): Renderer {
         console.warn(`[renderer] plugin "${plugin.id}" render() threw:`, err);
       } finally {
         if (usesAlpha) ctx!.restore();
+      }
+    }
+
+    // Plan 5.9d — per-frame audio volume ramp. Walk every active
+    // audio clip and push the resolved volume to the engine via
+    // `rampClipVolume`. The engine anchors with setValueAtTime before
+    // the linear ramp (Web Audio footgun — without anchor, the ramp
+    // starts from t=0 = silence on the first call). Sample-accurate,
+    // no zipper noise at 60 fps update rate.
+    if (deps.rampClipVolume && deps.getAudioContextTime) {
+      const FRAME_DURATION = 1 / 60;
+      const target = deps.getAudioContextTime() + FRAME_DURATION;
+      for (const clip of timeline.clips) {
+        if (clip.kind !== 'audio') continue;
+        if (beats < clip.startBeat) continue;
+        if (beats >= clip.startBeat + clip.lengthBeats) continue;
+        const rawVolume =
+          (clip.params as { volume?: StaticOrAuto<number> } | undefined)?.volume ?? 1.0;
+        const paramBeat = flowMode ? beats - clip.startBeat : beats;
+        const resolved = resolveParam(
+          rawVolume,
+          paramBeat,
+          clip.lengthBeats,
+          flowMode
+        );
+        deps.rampClipVolume(clip.id, resolved, target);
       }
     }
 

@@ -12,6 +12,14 @@ export interface UseRendererOptions {
   /** Plan-5.9b — threaded through to createRenderer's RendererDeps so
    *  the live preview can draw the current frame of each loaded video. */
   getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
+  /** Plan-5.9d — per-frame audio-clip volume ramp. The renderer
+   *  iterates active audio clips and pushes the resolved volume to
+   *  the engine via this callback. Optional — when missing, the
+   *  audio-iteration block in the renderer is a no-op. */
+  rampClipVolume?: (clipId: string, volume: number, targetTime: number) => void;
+  /** Plan-5.9d — current AudioContext clock time, used to compute the
+   *  ramp's target time. Engine exposes this via `getContextTime()`. */
+  getAudioContextTime?: () => number;
 }
 
 export interface UseRendererReturn {
@@ -34,7 +42,9 @@ export function useRenderer({
   canvasRef,
   getCurrentTime,
   getSeekCounter,
-  getVideoElement
+  getVideoElement,
+  rampClipVolume,
+  getAudioContextTime
 }: UseRendererOptions): UseRendererReturn {
   const cacheRef = useRef(createImageBitmapCache());
   const getBitmapRef = useRef<(mediaId: string) => ImageBitmap | undefined>(
@@ -43,10 +53,14 @@ export function useRenderer({
   const getCurrentTimeRef = useRef(getCurrentTime);
   const getSeekCounterRef = useRef(getSeekCounter);
   const getVideoElementRef = useRef(getVideoElement);
+  const rampClipVolumeRef = useRef(rampClipVolume);
+  const getAudioContextTimeRef = useRef(getAudioContextTime);
   // Keep refs in sync with the latest props — runs on every render, no re-mount.
   getCurrentTimeRef.current = getCurrentTime;
   getSeekCounterRef.current = getSeekCounter;
   getVideoElementRef.current = getVideoElement;
+  rampClipVolumeRef.current = rampClipVolume;
+  getAudioContextTimeRef.current = getAudioContextTime;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -99,7 +113,13 @@ export function useRenderer({
       getVideoElement: (mediaId) =>
         getVideoElementRef.current?.(mediaId) ?? null,
       getSeekCounter: () => getSeekCounterRef.current?.() ?? 0,
-      getFlowMode: () => useAppStore.getState().ui.flowMode
+      getFlowMode: () => useAppStore.getState().ui.flowMode,
+      // Plan 5.9d — forward audio-volume hooks. Both stay refs so the
+      // engine can be hot-swapped (Strict-Mode-safe) without re-mounting
+      // the renderer.
+      rampClipVolume: (clipId, volume, targetTime) =>
+        rampClipVolumeRef.current?.(clipId, volume, targetTime),
+      getAudioContextTime: () => getAudioContextTimeRef.current?.() ?? 0
     });
 
     // DPR sizing — dpr.ts only computes; we set canvas.width/height and apply

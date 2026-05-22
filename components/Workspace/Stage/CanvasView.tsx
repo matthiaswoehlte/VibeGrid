@@ -22,7 +22,13 @@ export function CanvasView({
   const { getBitmap } = useRenderer({
     canvasRef,
     getCurrentTime: () => engine?.getState().currentTime ?? 0,
-    getVideoElement
+    getVideoElement,
+    // Plan 5.9d — forward the engine's per-clip volume API so the
+    // renderer can push per-frame ramps to active audio clips.
+    rampClipVolume: engine
+      ? (clipId, volume, targetTime) => engine.rampClipVolume(clipId, volume, targetTime)
+      : undefined,
+    getAudioContextTime: engine ? () => engine.getContextTime() : undefined
   });
 
   useEffect(() => {
