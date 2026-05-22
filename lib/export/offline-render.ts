@@ -2,7 +2,9 @@ import { makeOfflineRenderer } from '@/lib/renderer/offline-tick';
 import { pickCodecPair } from './webcodecs';
 import { chunkAudioBuffer } from './audio-chunks';
 import { createOfflineMuxer } from './muxer';
-import type { TimelineState } from '@/lib/timeline/types';
+import { mixAudioOffline, type VideoAudioClip } from './mix-audio-offline';
+import type { Clip, TimelineState } from '@/lib/timeline/types';
+import type { MediaRef } from '@/lib/storage/types';
 import type { BeatGrid } from '@/lib/audio/types';
 
 // WebCodecs types (VideoEncoder, AudioEncoder, VideoFrame, AudioData)
@@ -30,7 +32,24 @@ export interface OfflineRenderOptions {
 export interface OfflineRenderDeps {
   timeline: TimelineState;
   beatGrid: BeatGrid;
-  audioBuffer: AudioBuffer;
+  /** Plan 5.9d — replaced the single `audioBuffer` field. The
+   *  orchestrator now mixes all audio clips (and audio-enabled video
+   *  clips) via `mixAudioOffline` into a single AudioBuffer before
+   *  the audio loop. */
+  audioClips: Clip[];
+  videoAudioClips: VideoAudioClip[];
+  mediaRefs: MediaRef[];
+  bpm: number;
+  /** Audio duration in seconds — used to size the OfflineAudioContext
+   *  mix-bus and to compute totalFrames for the video loop. The
+   *  caller derives this from the longest audio source (typically
+   *  the global soundtrack via `audioEngine.getDecodedBuffer()`) or
+   *  from the last audio-clip's end. */
+  audioDurationSec: number;
+  /** Audio sample rate + channel count for codec selection. Matches
+   *  what `mixAudioOffline` produces (48 kHz / 2 ch). */
+  sampleRate: number;
+  numberOfChannels: number;
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   flowMode: boolean;
   /** Plan-5.9b — optional. When provided, each frame awaits
@@ -83,8 +102,22 @@ export async function renderOffline(
   const width = options.width ?? DEFAULTS.width;
   const height = options.height ?? DEFAULTS.height;
   const fps = options.fps ?? DEFAULTS.fps;
-  const durationSec = deps.audioBuffer.duration;
+  const durationSec = deps.audioDurationSec;
   const totalFrames = Math.ceil(durationSec * fps);
+
+  // Plan 5.9d — mix all audio sources (audio clips + audio-enabled
+  // video clips) into one AudioBuffer. The OfflineAudioContext bus
+  // bakes per-clip volume automation as `setValueAtTime` events on a
+  // 0.1-beat raster; peak-normalises to 0.95 if the sum exceeded 1.0.
+  // Result feeds the existing `chunkAudioBuffer` → AudioEncoder
+  // pipeline unchanged.
+  const mixedBuffer = await mixAudioOffline(
+    deps.audioClips,
+    deps.mediaRefs,
+    deps.bpm,
+    durationSec,
+    deps.videoAudioClips
+  );
 
   // 1. Pick a codec PAIR (video + audio + container) — never independent.
   //    Independent picks would let us mux Opus into an MP4 container or
@@ -96,8 +129,8 @@ export async function renderOffline(
     width,
     height,
     fps,
-    deps.audioBuffer.sampleRate,
-    deps.audioBuffer.numberOfChannels
+    deps.sampleRate,
+    deps.numberOfChannels
   );
   if (!pair) throw new Error('No supported codec pair');
   const videoPick = pair.video;
@@ -122,8 +155,8 @@ export async function renderOffline(
     width,
     height,
     fps,
-    sampleRate: deps.audioBuffer.sampleRate,
-    channels: deps.audioBuffer.numberOfChannels
+    sampleRate: deps.sampleRate,
+    channels: deps.numberOfChannels
   });
 
   // 4. Encoders — architect-flagged Bug 1: never `throw` inside the
@@ -278,7 +311,7 @@ export async function renderOffline(
   // 6. Audio loop. Configure the encoder NOW — see the note at its
   //    construction for why this isn't done upfront.
   audioEncoder.configure(audioPick.config);
-  for (const chunk of chunkAudioBuffer(deps.audioBuffer)) {
+  for (const chunk of chunkAudioBuffer(mixedBuffer)) {
     throwIfAborted();
     throwIfAudio();
 
@@ -298,7 +331,7 @@ export async function renderOffline(
     }
     const audioData = new AudioDataCtor({
       format: 'f32',
-      sampleRate: deps.audioBuffer.sampleRate,
+      sampleRate: deps.sampleRate,
       numberOfFrames: chunk.frameCount,
       numberOfChannels: chunk.channels.length,
       timestamp: chunk.timestampUs,

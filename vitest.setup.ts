@@ -111,6 +111,64 @@ globalThis.AudioContext = MockAudioContext;
 // @ts-expect-error — Webkit alias used by some libs; keep for parity.
 globalThis.webkitAudioContext = MockAudioContext;
 
+/**
+ * Plan 5.9d — minimal OfflineAudioContext stub for the offline audio
+ * mix pipeline. Tests that need to observe schedule calls
+ * (`setValueAtTime`, `start(when, offset)`) install their own per-file
+ * MockOfflineAudioContext with vi.fn-backed nodes; this default stub
+ * exists so the global `mixAudioOffline` call site in
+ * `offline-render.ts` doesn't blow up when invoked from tests that
+ * pass empty audio arrays.
+ */
+class MockOfflineAudioContext {
+  channels: number;
+  length: number;
+  sampleRate: number;
+  destination = {} as AudioDestinationNode;
+  constructor(channels: number, length: number, sampleRate: number) {
+    this.channels = channels;
+    this.length = length;
+    this.sampleRate = sampleRate;
+  }
+  createGain(): GainNode {
+    return {
+      gain: {
+        value: 1,
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn()
+      },
+      connect: vi.fn()
+    } as unknown as GainNode;
+  }
+  createBufferSource(): AudioBufferSourceNode {
+    return {
+      buffer: null,
+      start: vi.fn(),
+      connect: vi.fn()
+    } as unknown as AudioBufferSourceNode;
+  }
+  async decodeAudioData(_buf: ArrayBuffer): Promise<AudioBuffer> {
+    return {
+      sampleRate: this.sampleRate,
+      length: 0,
+      duration: 0,
+      numberOfChannels: this.channels,
+      getChannelData: () => new Float32Array(0)
+    } as unknown as AudioBuffer;
+  }
+  async startRendering(): Promise<AudioBuffer> {
+    return {
+      sampleRate: this.sampleRate,
+      length: this.length,
+      duration: this.length / this.sampleRate,
+      numberOfChannels: this.channels,
+      getChannelData: () => new Float32Array(this.length)
+    } as unknown as AudioBuffer;
+  }
+}
+// @ts-expect-error — test-only global.
+globalThis.OfflineAudioContext = MockOfflineAudioContext;
+
 // The remaining shims are jsdom-only — server-route integration tests run under
 // the `node` environment (via `// @vitest-environment node`) and have no
 // `window` / `HTMLMediaElement` / `ImageBitmap` to patch.

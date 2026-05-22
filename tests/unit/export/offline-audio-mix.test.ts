@@ -1,0 +1,303 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mixAudioOffline, type VideoAudioClip } from '@/lib/export/mix-audio-offline';
+import type { Clip } from '@/lib/timeline/types';
+import type { MediaRef } from '@/lib/storage/types';
+
+/**
+ * Plan 5.9d Task 7 — `mixAudioOffline` test coverage.
+ *
+ * Mocks `OfflineAudioContext` per test so we can observe:
+ * - `createBufferSource` + `createGain` invocations
+ * - `setValueAtTime` calls on the gain node (volume automation)
+ * - `start(when, offset)` calls on the source (per-clip timing)
+ * - the rendered buffer (controlled output for peak / normalise tests)
+ *
+ * `decodeAudioData` returns a fake AudioBuffer with the requested
+ * sample values so the test can verify mixing math.
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+interface MockGain {
+  gain: {
+    value: number;
+    setValueAtTime: ReturnType<typeof vi.fn>;
+    linearRampToValueAtTime: ReturnType<typeof vi.fn>;
+  };
+  connect: ReturnType<typeof vi.fn>;
+}
+interface MockSource {
+  buffer: AudioBuffer | null;
+  start: ReturnType<typeof vi.fn>;
+  connect: ReturnType<typeof vi.fn>;
+}
+
+class MockOfflineAudioContext {
+  channels: number;
+  totalSamples: number;
+  sampleRate: number;
+  destination = {} as AudioDestinationNode;
+  createdGains: MockGain[] = [];
+  createdSources: MockSource[] = [];
+  /** Test override — when set, controls what `startRendering` returns. */
+  static renderResult: AudioBuffer | null = null;
+  /** Test override — when set, controls what `decodeAudioData` returns. */
+  static decodeImpl: ((buf: ArrayBuffer) => Promise<AudioBuffer>) | null = null;
+
+  constructor(channels: number, totalSamples: number, sampleRate: number) {
+    this.channels = channels;
+    this.totalSamples = totalSamples;
+    this.sampleRate = sampleRate;
+  }
+
+  createGain(): GainNode {
+    const g: MockGain = {
+      gain: {
+        value: 1.0,
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn()
+      },
+      connect: vi.fn()
+    };
+    this.createdGains.push(g);
+    return g as unknown as GainNode;
+  }
+
+  createBufferSource(): AudioBufferSourceNode {
+    const s: MockSource = {
+      buffer: null,
+      start: vi.fn(),
+      connect: vi.fn()
+    };
+    this.createdSources.push(s);
+    return s as unknown as AudioBufferSourceNode;
+  }
+
+  async decodeAudioData(buf: ArrayBuffer): Promise<AudioBuffer> {
+    if (MockOfflineAudioContext.decodeImpl) {
+      return MockOfflineAudioContext.decodeImpl(buf);
+    }
+    return makeFakeBuffer(48000, 1.0);
+  }
+
+  async startRendering(): Promise<AudioBuffer> {
+    return MockOfflineAudioContext.renderResult ?? makeFakeBuffer(this.totalSamples, 0);
+  }
+}
+
+/** Helper — fake AudioBuffer with `fillValue` in every sample. */
+function makeFakeBuffer(length: number, fillValue: number): AudioBuffer {
+  const data = new Float32Array(length).fill(fillValue);
+  return {
+    sampleRate: 48000,
+    length,
+    duration: length / 48000,
+    numberOfChannels: 2,
+    getChannelData: () => data
+  } as unknown as AudioBuffer;
+}
+
+beforeEach(() => {
+  (globalThis as any).OfflineAudioContext = MockOfflineAudioContext;
+  MockOfflineAudioContext.renderResult = null;
+  MockOfflineAudioContext.decodeImpl = null;
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+    arrayBuffer: async () => new ArrayBuffer(8)
+  } as Response);
+});
+afterEach(() => {
+  delete (globalThis as any).OfflineAudioContext;
+  vi.restoreAllMocks();
+});
+
+function makeAudioClip(over: Partial<Clip> = {}): Clip {
+  return {
+    id: 'c-a',
+    trackId: 'track-audio',
+    kind: 'audio',
+    mediaId: 'm-a',
+    startBeat: 0,
+    lengthBeats: 16,
+    label: 'a',
+    ...over
+  };
+}
+function makeRef(over: Partial<MediaRef> = {}): MediaRef {
+  return {
+    id: 'm-a',
+    kind: 'audio',
+    url: 'https://example.com/a.mp3',
+    filename: 'a.mp3',
+    duration: 10,
+    uploadedAt: new Date().toISOString(),
+    ...over
+  };
+}
+
+describe('mixAudioOffline (Plan 5.9d)', () => {
+  it('single clip + static volume 0.5: setValueAtTime called with 0.5 at every step', async () => {
+    const clip = makeAudioClip({ params: { volume: 0.5 }, lengthBeats: 4 });
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    await mixAudioOffline([clip], [makeRef()], 120, 10);
+    expect(createdCtx).not.toBeNull();
+    const gain = (createdCtx as unknown as MockOfflineAudioContext).createdGains[0];
+    expect(gain).toBeDefined();
+    expect(gain!.gain.setValueAtTime).toHaveBeenCalled();
+    // Every call should pass the static 0.5 value.
+    for (const call of gain!.gain.setValueAtTime.mock.calls) {
+      expect(call[0]).toBe(0.5);
+    }
+  });
+
+  it('volume automation 0→1 over 4 beats: setValueAtTime called per 0.1-beat step', async () => {
+    const clip = makeAudioClip({
+      lengthBeats: 4,
+      params: {
+        volume: {
+          mode: 'automation',
+          interpolation: 'linear',
+          points: [
+            { beat: 0, value: 0 },
+            { beat: 4, value: 1 }
+          ]
+        }
+      }
+    });
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    await mixAudioOffline([clip], [makeRef()], 120, 10);
+    const gain = (createdCtx as unknown as MockOfflineAudioContext).createdGains[0];
+    // 4 beats / 0.1 step + 1 (inclusive endpoint) = 41 calls.
+    expect(gain!.gain.setValueAtTime.mock.calls.length).toBe(41);
+    // First call: value=0 at the clip's start time (beat 0 @ 120 BPM = 0 sec).
+    expect(gain!.gain.setValueAtTime.mock.calls[0][0]).toBe(0);
+    expect(gain!.gain.setValueAtTime.mock.calls[0][1]).toBe(0);
+    // Last call: value=1.
+    expect(gain!.gain.setValueAtTime.mock.calls[40][0]).toBe(1);
+  });
+
+  it('two overlapping clips: both sources created and connected', async () => {
+    const clipA = makeAudioClip({ id: 'a', startBeat: 0, lengthBeats: 8 });
+    const clipB = makeAudioClip({ id: 'b', mediaId: 'm-b', startBeat: 4, lengthBeats: 8 });
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    await mixAudioOffline(
+      [clipA, clipB],
+      [makeRef({ id: 'm-a' }), makeRef({ id: 'm-b' })],
+      120,
+      10
+    );
+    expect((createdCtx as unknown as MockOfflineAudioContext).createdSources).toHaveLength(2);
+  });
+
+  it('video-audio: source added when audioEnabled is true', async () => {
+    const vc: VideoAudioClip = {
+      url: 'https://example.com/v.mp4',
+      startBeat: 0,
+      audioEnabled: true
+    };
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    await mixAudioOffline([], [], 120, 10, [vc]);
+    expect((createdCtx as unknown as MockOfflineAudioContext).createdSources).toHaveLength(1);
+  });
+
+  it('video without an audio track: decodeAudioData reject is swallowed, mix continues', async () => {
+    const vc: VideoAudioClip = {
+      url: 'https://example.com/v.mp4',
+      startBeat: 0,
+      audioEnabled: true
+    };
+    MockOfflineAudioContext.decodeImpl = async () => {
+      throw new Error('EncodingError');
+    };
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    // Must NOT throw — silent skip when video has no audio track.
+    const result = await mixAudioOffline([], [], 120, 10, [vc]);
+    expect(result).toBeDefined();
+    expect((createdCtx as unknown as MockOfflineAudioContext).createdSources).toHaveLength(0);
+  });
+
+  it('peak normalisation triggered when summed peak > 1.0', async () => {
+    // Single-channel fake — real AudioBuffer.getChannelData returns
+    // distinct arrays per channel; the simple shared-array mock here
+    // would double-scale across channels otherwise.
+    const overLoudBuffer: AudioBuffer = (() => {
+      const data = new Float32Array(48000).fill(1.5);
+      return {
+        sampleRate: 48000,
+        length: 48000,
+        duration: 1,
+        numberOfChannels: 1,
+        getChannelData: () => data
+      } as unknown as AudioBuffer;
+    })();
+    MockOfflineAudioContext.renderResult = overLoudBuffer;
+    const out = await mixAudioOffline([], [], 120, 1);
+    // Samples should scale from 1.5 to ~0.95 (peak target).
+    const data = out.getChannelData(0);
+    expect(data[0]).toBeCloseTo(0.95, 5);
+  });
+
+  it('peak normalisation NOT triggered when summed peak ≤ 1.0', async () => {
+    const quietBuffer: AudioBuffer = (() => {
+      const data = new Float32Array(48000).fill(0.8);
+      return {
+        sampleRate: 48000,
+        length: 48000,
+        duration: 1,
+        numberOfChannels: 1,
+        getChannelData: () => data
+      } as unknown as AudioBuffer;
+    })();
+    MockOfflineAudioContext.renderResult = quietBuffer;
+    const out = await mixAudioOffline([], [], 120, 1);
+    const data = out.getChannelData(0);
+    // Float32 stores 0.8 as 0.800000011920929 — toBeCloseTo handles the
+    // 32-bit precision delta.
+    expect(data[0]).toBeCloseTo(0.8, 5);
+  });
+
+  it('clip starting after totalDurationSec renders silence without throw', async () => {
+    // Clip on beat 100 (~50s @ 120 BPM); export ends at 10s.
+    const clip = makeAudioClip({ startBeat: 100, lengthBeats: 16 });
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    const out = await mixAudioOffline([clip], [makeRef()], 120, 10);
+    expect(out).toBeDefined();
+    // Source skipped (would be after the export window) — no source created.
+    expect((createdCtx as unknown as MockOfflineAudioContext).createdSources).toHaveLength(0);
+  });
+});

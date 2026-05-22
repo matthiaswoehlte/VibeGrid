@@ -209,13 +209,34 @@ export function useVideoExporter({
             return;
           }
 
+          // Plan 5.9d — derive the offline-render deps from the live
+          // timeline. mixAudioOffline consumes the audio clips + the
+          // audio-enabled video clips and emits one mixed buffer.
+          const mediaRefs = useAppStore.getState().media.mediaRefs;
+          const bpm = useAppStore.getState().audio.grid.bpm;
+          const audioClips = timeline.clips.filter((c) => c.kind === 'audio');
+          const videoAudioClips = timeline.clips
+            .filter((c) => c.kind === 'video')
+            .map((c) => {
+              const ref = mediaRefs.find((m) => m.id === c.mediaId);
+              const audioEnabled =
+                (c.params as { audioEnabled?: unknown } | undefined)?.audioEnabled === true;
+              return {
+                url: ref?.url ?? '',
+                startBeat: c.startBeat,
+                audioEnabled
+              };
+            })
+            .filter((vc) => vc.url !== '');
+
           const fps = 30;
-          const totalFrames = Math.ceil(audioBuffer.duration * fps);
+          const audioDurationSec = audioBuffer.duration;
+          const totalFrames = Math.ceil(audioDurationSec * fps);
           offlineAbortRef.current = new AbortController();
           setExportState({
             status: 'preparing',
             mode: 'offline',
-            totalSeconds: audioBuffer.duration,
+            totalSeconds: audioDurationSec,
             totalFrames,
             currentFrame: 0,
             progress: 0,
@@ -227,7 +248,13 @@ export function useVideoExporter({
               {
                 timeline,
                 beatGrid: useAppStore.getState().audio.grid,
-                audioBuffer,
+                audioClips,
+                videoAudioClips,
+                mediaRefs,
+                bpm,
+                audioDurationSec,
+                sampleRate: audioBuffer.sampleRate,
+                numberOfChannels: audioBuffer.numberOfChannels,
                 getImageBitmap: getImageBitmap ?? (() => undefined),
                 // Plan 5.9b — videoEngine is the shared element pool;
                 // getVideoElement is the per-frame source for the renderer's

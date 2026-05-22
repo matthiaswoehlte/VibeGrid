@@ -168,7 +168,7 @@ describe('renderOffline — Plan 5.9b video seek', () => {
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
-        audioBuffer: fakeAudioBuffer(1), // 30 frames at 30fps
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 1, sampleRate: 48000, numberOfChannels: 2, // 30 frames at 30fps
         getImageBitmap: () => undefined,
         videoEngine: engine,
         flowMode: false
@@ -185,7 +185,7 @@ describe('renderOffline — Plan 5.9b video seek', () => {
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
-        audioBuffer: fakeAudioBuffer(0.5),
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 0.5, sampleRate: 48000, numberOfChannels: 2,
         getImageBitmap: () => undefined,
         flowMode: false
       },
@@ -215,7 +215,7 @@ describe('renderOffline — Plan 5.9b video seek', () => {
         {
           timeline: emptyTimeline(),
           beatGrid: grid120,
-          audioBuffer: fakeAudioBuffer(1),
+          audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 1, sampleRate: 48000, numberOfChannels: 2,
           getImageBitmap: () => undefined,
           videoEngine: engine,
           flowMode: false

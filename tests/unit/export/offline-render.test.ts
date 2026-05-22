@@ -235,7 +235,7 @@ describe('renderOffline — frame loop', () => {
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
-        audioBuffer: fakeAudioBuffer(2),
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 2, sampleRate: 48000, numberOfChannels: 2,
         getImageBitmap: () => undefined,
         flowMode: false
       },
@@ -253,7 +253,7 @@ describe('renderOffline — frame loop', () => {
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
-        audioBuffer: fakeAudioBuffer(1),
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 1, sampleRate: 48000, numberOfChannels: 2,
         getImageBitmap: () => undefined,
         flowMode: false
       },
@@ -282,7 +282,7 @@ describe('renderOffline — error + cancel', () => {
         {
           timeline: emptyTimeline(),
           beatGrid: grid120,
-          audioBuffer: fakeAudioBuffer(1),
+          audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 1, sampleRate: 48000, numberOfChannels: 2,
           getImageBitmap: () => undefined,
           flowMode: false
         },
@@ -323,7 +323,7 @@ describe('renderOffline — error + cancel', () => {
         {
           timeline: emptyTimeline(),
           beatGrid: grid120,
-          audioBuffer: fakeAudioBuffer(1),
+          audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 1, sampleRate: 48000, numberOfChannels: 2,
           getImageBitmap: () => undefined,
           flowMode: false
         },
@@ -339,7 +339,7 @@ describe('renderOffline — error + cancel', () => {
         {
           timeline: emptyTimeline(),
           beatGrid: grid120,
-          audioBuffer: fakeAudioBuffer(1),
+          audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 1, sampleRate: 48000, numberOfChannels: 2,
           getImageBitmap: () => undefined,
           flowMode: false
         },
@@ -356,7 +356,7 @@ describe('renderOffline — output', () => {
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
-        audioBuffer: fakeAudioBuffer(0.5),
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 0.5, sampleRate: 48000, numberOfChannels: 2,
         getImageBitmap: () => undefined,
         flowMode: false
       },
@@ -372,7 +372,7 @@ describe('renderOffline — output', () => {
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
-        audioBuffer: fakeAudioBuffer(0.5),
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120, audioDurationSec: 0.5, sampleRate: 48000, numberOfChannels: 2,
         getImageBitmap: () => undefined,
         flowMode: false
       },
