@@ -18,7 +18,10 @@ export function Stage({
 }) {
   return (
     <ErrorBoundary name="Stage">
-      <div className="h-full w-full flex items-center justify-center bg-black">
+      {/* Plan 5.10: Mobile-first 40vh, Desktop h-full. Fixed 40vh on
+          Mobile makes room for the Tab-Bar + active tab content below;
+          Desktop keeps flex-grow behavior via h-full. */}
+      <div className="h-[40vh] md:h-full w-full flex items-center justify-center bg-black">
         <div className="max-w-full max-h-full w-full" style={{ aspectRatio: '16/9' }}>
           <CanvasView
             engine={engine}
