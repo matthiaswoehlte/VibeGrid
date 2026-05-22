@@ -5,6 +5,7 @@ import { ParamControl } from '@/components/ui/ParamControl';
 import { PreloadIndicator } from './PreloadIndicator';
 import { AutomateButton } from './AutomateButton';
 import { TransitionSection } from './TransitionSection';
+import { MediaClipInspector } from './MediaClipInspector';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import { isReservedParamKey } from '@/lib/timeline/overlap';
 
@@ -15,7 +16,16 @@ export function Inspector() {
   );
   const setClipParam = useAppStore((s) => s.timelineActions.setClipParam);
 
-  if (!clip || !clip.fxId) {
+  if (!clip) {
+    return <div className="p-3 text-xs text-[var(--text-dim)]">Wähle einen Clip oder Effekt aus.</div>;
+  }
+  // Plan 5.9d — audio + video clips have their own inspector view
+  // (volume slider / audio toggle). FX clips fall through to the
+  // plugin-driven view below.
+  if (clip.kind === 'audio' || clip.kind === 'video') {
+    return <MediaClipInspector clip={clip} />;
+  }
+  if (!clip.fxId) {
     return <div className="p-3 text-xs text-[var(--text-dim)]">Wähle einen Clip oder Effekt aus.</div>;
   }
   const plugin = getPlugin(clip.fxId);
