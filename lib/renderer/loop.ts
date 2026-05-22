@@ -163,12 +163,22 @@ export function createRenderer(deps: RendererDeps): Renderer {
   let rafId: number | null = null;
 
   function tick(): void {
-    // Skip if the canvas has a zero-sized pixel buffer (happens during window
-    // resize when the parent flex container collapses briefly). Drawing into
-    // a 0×0 buffer is silent — the image would visually disappear until next
-    // observer fire. Returning early keeps the previous frame on-screen.
-    const w = deps.canvas.width;
-    const h = deps.canvas.height;
+    // CSS-pixel dimensions = buffer pixels divided by DPR. useRenderer
+    // applies `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` after every
+    // resize, so all drawing operations downstream already get scaled
+    // by DPR. Passing the BUFFER size (canvas.width) into
+    // drawImageContain / fillRect / RenderContext.width would re-multiply
+    // by DPR → image rendered at 2× on retina / iPhone emulation, with
+    // only the top-left CSS-quadrant visible (Plan 5.10 smoke bug on
+    // iPhone SE DPR=2). Desktop with DPR=1 looked fine by coincidence.
+    //
+    // Using `canvas.width / dpr` (instead of `clientWidth`) works in
+    // both jsdom — where clientWidth is always 0 because there's no
+    // layout, and dpr defaults to 1 → identical to the previous
+    // canvas.width read — and real browsers where DPR > 1.
+    const dpr = window.devicePixelRatio || 1;
+    const w = deps.canvas.width / dpr;
+    const h = deps.canvas.height / dpr;
     if (w === 0 || h === 0) return;
 
     // Guard against non-finite time (HTMLMediaElement.currentTime can be NaN
