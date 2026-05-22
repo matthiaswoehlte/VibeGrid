@@ -53,6 +53,13 @@ export function Inspector() {
       </header>
       <div className="px-3 space-y-2">
         {Object.entries(plugin.paramSchema).map(([key, schema]) => {
+          // Plan 5.8b — visibleWhen filter. Returning null drops the
+          // whole <label> block, which means the param input AND its
+          // AutomateButton (rendered inside the label) both disappear
+          // in one pass. Store values + AutomationCurves stay intact —
+          // a later toggle that flips visibleWhen back to true brings
+          // the row back with all prior state.
+          if (schema.visibleWhen && !schema.visibleWhen(params)) return null;
           const raw = (params as Record<string, unknown>)[key];
           const automated = isAutomationCurve(raw);
           const display = automated ? raw.points[0]?.value : raw;
