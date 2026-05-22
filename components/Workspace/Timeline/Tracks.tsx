@@ -1,10 +1,9 @@
 'use client';
-import { useEffect, useRef, type DragEvent as ReactDragEvent } from 'react';
+import { useRef, type DragEvent as ReactDragEvent } from 'react';
 import { toast } from 'sonner';
 import {
   DndContext,
   PointerSensor,
-  useDndContext,
   useSensor,
   useSensors,
   type DragEndEvent
@@ -27,86 +26,6 @@ const BEAT_PX_BASE = 40;
 // reserved for track-name labels. All horizontal positioning of clips/ticks
 // happens to the RIGHT of this column.
 export const TRACK_LABEL_WIDTH = 80;
-
-/**
- * Independent manual auto-scroll while a clip is dragged.
- *
- * dnd-kit's built-in autoScroll has been unreliable for our layout
- * across multiple config attempts. This bypass:
- *  - Uses `useDndContext` (synchronous read of dnd-kit's internal
- *    state) to know when a drag is active. `active != null` means
- *    "drag in progress" — no event subscription needed.
- *  - Attaches a window-level `pointermove` capture listener (capture
- *    phase, so it fires BEFORE any propagation-stopping handlers).
- *  - Runs a rAF loop while dragging; scrolls the container when
- *    cursor is within `EDGE` px of either horizontal edge.
- *  - Loud `console.debug` traces so the symptom is observable in
- *    DevTools when the user reports "still broken". Remove these
- *    traces once the behavior is verified.
- */
-function ClipDragAutoScroll(): null {
-  const { active } = useDndContext();
-  const isDragging = active != null;
-  const stateRef = useRef({
-    lastClientX: 0,
-    rafId: null as number | null,
-    scrollsAttempted: 0
-  });
-
-  useEffect(() => {
-    if (!isDragging) return;
-    const s = stateRef.current;
-    s.scrollsAttempted = 0;
-    // eslint-disable-next-line no-console
-    console.debug('[autoScroll] drag start — installing listeners');
-
-    const onMove = (e: PointerEvent) => {
-      s.lastClientX = e.clientX;
-    };
-    // Capture phase, passive — runs before bubbling, no preventDefault.
-    window.addEventListener('pointermove', onMove, { capture: true, passive: true });
-
-    const tick = () => {
-      const container = document.querySelector(
-        '[data-timeline-scroll]'
-      ) as HTMLElement | null;
-      if (!container) {
-        s.rafId = requestAnimationFrame(tick);
-        return;
-      }
-      const rect = container.getBoundingClientRect();
-      const EDGE = 80;
-      const STEP = 14;
-      const x = s.lastClientX;
-      if (x > 0 && x < rect.left + EDGE && container.scrollLeft > 0) {
-        const prev = container.scrollLeft;
-        container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
-        if (container.scrollLeft !== prev) s.scrollsAttempted++;
-      } else if (x > rect.right - EDGE) {
-        const max = container.scrollWidth - container.clientWidth;
-        if (container.scrollLeft < max) {
-          const prev = container.scrollLeft;
-          container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
-          if (container.scrollLeft !== prev) s.scrollsAttempted++;
-        }
-      }
-      s.rafId = requestAnimationFrame(tick);
-    };
-    s.rafId = requestAnimationFrame(tick);
-
-    return () => {
-      window.removeEventListener('pointermove', onMove, { capture: true });
-      if (s.rafId !== null) {
-        cancelAnimationFrame(s.rafId);
-        s.rafId = null;
-      }
-      // eslint-disable-next-line no-console
-      console.debug(`[autoScroll] drag end — ${s.scrollsAttempted} scroll-step(s) applied`);
-    };
-  }, [isDragging]);
-
-  return null;
-}
 
 // Plan 5.9c — local PLUGIN_TO_TRACK_KIND map gone; use the SSOT
 // `PLUGIN_KIND_TO_TRACK_KIND` from `@/lib/timeline/plugin-mapping`.
@@ -134,7 +53,73 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
+  // Auto-scroll lives in a ref so its lifecycle is controlled by the
+  // DndContext callbacks below — no React state, no useEffect, no
+  // useDndContext (which has been unreliable for detecting drag activation
+  // across earlier fix attempts). The ref holds the running rAF id, the
+  // window-level pointermove listener, and a counter we log on drag end.
+  const autoScrollRef = useRef<{
+    rafId: number | null;
+    lastClientX: number;
+    onMove: ((e: PointerEvent) => void) | null;
+    scrollsAttempted: number;
+  }>({
+    rafId: null,
+    lastClientX: 0,
+    onMove: null,
+    scrollsAttempted: 0
+  });
+
+  const startAutoScroll = () => {
+    const s = autoScrollRef.current;
+    if (s.rafId !== null) return; // already running
+    s.scrollsAttempted = 0;
+    s.lastClientX = 0;
+    s.onMove = (e: PointerEvent) => {
+      s.lastClientX = e.clientX;
+    };
+    window.addEventListener('pointermove', s.onMove, { capture: true, passive: true });
+    const tick = () => {
+      const container = document.querySelector(
+        '[data-timeline-scroll]'
+      ) as HTMLElement | null;
+      if (container && s.lastClientX > 0) {
+        const rect = container.getBoundingClientRect();
+        const EDGE = 80;
+        const STEP = 14;
+        const x = s.lastClientX;
+        if (x < rect.left + EDGE && container.scrollLeft > 0) {
+          const prev = container.scrollLeft;
+          container.scrollLeft = Math.max(0, container.scrollLeft - STEP);
+          if (container.scrollLeft !== prev) s.scrollsAttempted++;
+        } else if (x > rect.right - EDGE) {
+          const max = container.scrollWidth - container.clientWidth;
+          if (container.scrollLeft < max) {
+            const prev = container.scrollLeft;
+            container.scrollLeft = Math.min(max, container.scrollLeft + STEP);
+            if (container.scrollLeft !== prev) s.scrollsAttempted++;
+          }
+        }
+      }
+      s.rafId = requestAnimationFrame(tick);
+    };
+    s.rafId = requestAnimationFrame(tick);
+  };
+
+  const stopAutoScroll = () => {
+    const s = autoScrollRef.current;
+    if (s.onMove) {
+      window.removeEventListener('pointermove', s.onMove, { capture: true });
+      s.onMove = null;
+    }
+    if (s.rafId !== null) {
+      cancelAnimationFrame(s.rafId);
+      s.rafId = null;
+    }
+  };
+
   const onDragEnd = (e: DragEndEvent) => {
+    stopAutoScroll();
     const data = e.active.data.current as { kind: string; clipId?: string } | undefined;
     if (data?.kind !== 'clip' || !data.clipId) return;
     const clip = clips.find((c) => c.id === data.clipId);
@@ -346,21 +331,22 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   return (
     <DndContext
       sensors={sensors}
+      onDragStart={(e) => {
+        const data = e.active.data.current as { kind?: string } | undefined;
+        if (data?.kind === 'clip') startAutoScroll();
+      }}
+      onDragCancel={stopAutoScroll}
       onDragEnd={onDragEnd}
-      // dnd-kit's built-in auto-scroll is disabled for this iteration —
-      // multiple config attempts didn't produce visible scrolling in
-      // our layout. The `ClipDragAutoScroll` helper below replaces it
-      // with an independent manual implementation that uses
-      // `useDndContext` (sync read, no event subscription) + a
-      // window pointermove capture listener + rAF.
-      //
-      // Layout-shift compensation isn't needed because the Clip's
-      // `transform.x` already accounts for the visible drag offset —
-      // and the manual scroll updates `scrollLeft` directly without
-      // dnd-kit having to coordinate the two.
+      // dnd-kit's built-in auto-scroll is disabled — multiple config
+      // attempts didn't produce visible scrolling in our layout. The
+      // manual auto-scroll (startAutoScroll/stopAutoScroll above) runs
+      // a rAF loop while a clip-drag is active and scrolls the
+      // [data-timeline-scroll] container when the cursor is near an
+      // edge. Driven by DndContext's prop callbacks (not by
+      // useDndContext, which proved unreliable for detecting drag
+      // activation across earlier attempts).
       autoScroll={false}
     >
-      <ClipDragAutoScroll />
       <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
