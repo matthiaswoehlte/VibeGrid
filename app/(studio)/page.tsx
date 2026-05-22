@@ -5,6 +5,8 @@ import { useVideoEngine } from '@/lib/hooks/useVideoEngine';
 import { TopBar } from '@/components/TopBar';
 import { Workspace } from '@/components/Workspace';
 import { TabBar } from '@/components/Mobile/TabBar';
+import { MediaDrawer } from '@/components/Mobile/MediaDrawer';
+import { FXDrawer } from '@/components/Mobile/FXDrawer';
 
 export default function StudioPage() {
   const { engine } = useAudioEngine();
@@ -44,6 +46,12 @@ export default function StudioPage() {
         getVideoElement={getVideoElement}
       />
       <TabBar />
+      {/* Mobile-only drawers. Each component early-returns null on
+          Desktop AND when the matching mobileTab is not active, so
+          mounting them all unconditionally is safe — only one is
+          ever visible at a time. */}
+      <MediaDrawer />
+      <FXDrawer />
     </div>
   );
 }
