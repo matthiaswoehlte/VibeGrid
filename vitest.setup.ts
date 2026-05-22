@@ -220,13 +220,28 @@ if (typeof window !== 'undefined') {
   // jsdom's File extends Blob but lacks .arrayBuffer(). Patch the prototype
   // so every File instance gets the polyfill — used by media-meta tests
   // and any future exporter consumer.
+  //
+  // Implementation note: the polyfill uses FileReader, NOT
+  // `new Response(this).arrayBuffer()`. The Response path goes through
+  // undici under Node ≤ 22, which calls `blob.stream()` to read the
+  // body — and jsdom's File doesn't implement `.stream()` in those
+  // versions, so the polyfill itself threw `object.stream is not a
+  // function`. FileReader is implemented in jsdom across all supported
+  // Node versions (works on Node 20, 22, 24). Same async contract as
+  // the real Blob#arrayBuffer.
   if (
     typeof window.File !== 'undefined' &&
     typeof window.File.prototype.arrayBuffer !== 'function'
   ) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window.File.prototype as any).arrayBuffer = async function (this: File) {
-      return await new Response(this).arrayBuffer();
+    (window.File.prototype as any).arrayBuffer = function (this: File): Promise<ArrayBuffer> {
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () =>
+          reject(reader.error ?? new Error('FileReader.arrayBuffer failed'));
+        reader.readAsArrayBuffer(this);
+      });
     };
   }
 
