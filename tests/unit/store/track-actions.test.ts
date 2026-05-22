@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { toast } from 'sonner';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '@/lib/store';
 import { initialTimelineState } from '@/lib/store/timeline-slice';
 
@@ -45,14 +44,13 @@ describe('Store Actions — addTrack (Plan 5.9a / 5.9c)', () => {
     expect(tracks[tracks.length - 1].name).toBe('Hintergrund');
   });
 
-  it('addTrack("audio") soft-rejects via toast — Multi-Audio is v0.2', () => {
-    const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => 'mock');
-    const before = useAppStore.getState().timeline.tracks.length;
-    // Does NOT throw — soft-rejection via toast.
+  it('addTrack("audio") creates a new audio lane (Multi-Audio enabled by Plan 5.9d)', () => {
+    const before = useAppStore.getState().timeline.tracks
+      .filter((t) => t.kind === 'audio').length;
     useAppStore.getState().timelineActions.addTrack('audio');
-    expect(useAppStore.getState().timeline.tracks.length).toBe(before);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Multi-Audio'));
-    errorSpy.mockRestore();
+    const after = useAppStore.getState().timeline.tracks
+      .filter((t) => t.kind === 'audio').length;
+    expect(after).toBe(before + 1);
   });
 
   it('appends new tracks at the end (array index drives render order)', () => {

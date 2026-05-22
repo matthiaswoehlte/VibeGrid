@@ -1,5 +1,4 @@
 import type { StateCreator } from 'zustand';
-import { toast } from 'sonner';
 import type { AppState } from './types';
 import type { TimelineState, Track, TrackKind } from '@/lib/timeline/types';
 import * as ops from '@/lib/timeline/operations';
@@ -68,9 +67,9 @@ export const INITIAL_TRACKS_V5: ReadonlyArray<LegacyV5Track> = Object.freeze([
 // Default tracks — one per TrackKind. Plan 5.9c collapsed eight
 // per-FX-plugin lanes into one generic `'fx'` lane; users can add
 // more FX lanes via "+ Track hinzufügen" if they want visual grouping
-// or separate mute scopes. `audio` is a STUB lane (visible but
-// `addTrack('audio')` rejects with a toast until Multi-Audio lands
-// in Plan 5.9d). Array index drives render order.
+// or separate mute scopes. Plan 5.9d unlocks Multi-Audio — calling
+// `addTrack('audio')` repeatedly produces "Audio 2", "Audio 3", …
+// Array index drives render order.
 export const initialTimelineState: TimelineState = {
   tracks: [
     { id: 'track-image', kind: 'image', name: 'Image', muted: false },
@@ -154,16 +153,12 @@ export const createTimelineSlice: StateCreator<
       setMuted: (trackId, muted) =>
         set({ timeline: ops.setMuted(get().timeline, trackId, muted) }),
 
-      // Plan 5.9a — dynamic multi-track actions.
-      // Plan 5.9c — `'audio'` now soft-rejects via toast (no throw) so
-      // the UI doesn't have to wrap the call in try/catch. The default
-      // FX lane is mounted by initialTimelineState; subsequent
-      // addTrack('fx') get suffixed labels via defaultLabelFor.
+      // Plan 5.9a/5.9c/5.9d — dynamic multi-track actions. The
+      // `'audio'` soft-reject from 5.9c is gone — Multi-Audio is the
+      // headline feature of 5.9d. All four track kinds are now
+      // user-creatable; numbering via defaultLabelFor handles
+      // repeated calls ("Audio", "Audio 2", "Audio 3"…).
       addTrack: (kind, label) => {
-        if (kind === 'audio') {
-          toast.error('Multi-Audio-Tracks: kommt mit Plan 5.9d');
-          return;
-        }
         const id =
           typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
