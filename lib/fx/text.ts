@@ -158,12 +158,41 @@ export const textPlugin: FxPlugin<TextParams> = {
       max: 1,
       step: 0.01,
       default: 0,
-      label: 'Progress (manual)'
+      label: 'Progress (manual)',
+      // Plan 5.8b — manual progress is overridden by auto, so it only
+      // matters when the user has explicitly turned auto off.
+      visibleWhen: (p) => p.useAutoProgress === false
     },
     startX: { kind: 'slider', min: 0, max: 1, step: 0.01, default: 0.1, label: 'Start X' },
     startY: { kind: 'slider', min: 0, max: 1, step: 0.01, default: 0.5, label: 'Start Y' },
-    endX: { kind: 'slider', min: 0, max: 1, step: 0.01, default: 0.9, label: 'End X' },
-    endY: { kind: 'slider', min: 0, max: 1, step: 0.01, default: 0.5, label: 'End Y' },
+    endX: {
+      kind: 'slider',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.9,
+      label: 'End X',
+      // Plan 5.8b — the end position only matters when the text actually
+      // moves toward it: either auto-progress is on (animation will hit
+      // the end), or manual progress is past zero (text has moved at
+      // least somewhat toward end). With auto off AND progress=0 the
+      // text is statically anchored at startX/startY — endX/endY are
+      // dead inputs in that state and we hide them.
+      visibleWhen: (p) =>
+        p.useAutoProgress === true ||
+        (typeof p.progress === 'number' && p.progress > 0)
+    },
+    endY: {
+      kind: 'slider',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+      label: 'End Y',
+      visibleWhen: (p) =>
+        p.useAutoProgress === true ||
+        (typeof p.progress === 'number' && p.progress > 0)
+    },
     blink: { kind: 'toggle', default: false, label: 'Blink on beat' },
     blinkDecay: {
       kind: 'slider',
