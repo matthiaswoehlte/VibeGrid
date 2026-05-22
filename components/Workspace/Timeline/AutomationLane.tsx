@@ -43,7 +43,11 @@ export function AutomationLane({
 
   return (
     <div
-      className="relative bg-[var(--surface-1)] border-y border-[var(--border)]"
+      // Plan 5.10: Mobile hides the inline preview entirely — the lane is
+      // too narrow for finger interaction at the 56px Mobile track row.
+      // MobileAutomationButton takes its place, opening the full-screen
+      // AutomationEditorModal for actual editing.
+      className="hidden md:block relative bg-[var(--surface-1)] border-y border-[var(--border)]"
       data-testid="automation-lane"
       title="Open the Inspector → Open editor to edit these curves"
     >

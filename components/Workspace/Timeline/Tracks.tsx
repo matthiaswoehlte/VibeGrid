@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
+import { isAutomationCurve } from '@/lib/automation/resolve';
 import type { TrackKind } from '@/lib/timeline/types';
 import {
   PLUGIN_KIND_TO_TRACK_KIND,
@@ -19,8 +20,8 @@ import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
 import { TrackHeader } from './TrackHeader';
+import { MobileAutomationButton } from '@/components/Mobile/MobileAutomationButton';
 
-const TRACK_HEIGHT = 32;
 const BEAT_PX_BASE = 40;
 // Shared with Ruler.tsx and Playhead.tsx — the sticky left column width
 // reserved for track-name labels. All horizontal positioning of clips/ticks
@@ -347,7 +348,18 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
       // activation across earlier attempts).
       autoScroll={false}
     >
-      <div onDragOver={onNativeDragOver} onDrop={onNativeDrop}>
+      {/* Plan 5.10: touch-pan-x on Mobile hints to the browser that
+          horizontal pans are preferred within the timeline drop area;
+          vertical pans propagate up to the outer Timeline container so
+          the track-list still scrolls. Reset to touch-auto on Desktop
+          (where mouse drives both axes). dnd-kit's PointerSensor sets
+          its own touch-action: none on draggable handles, so clip-drag
+          isn't affected by this default. */}
+      <div
+        onDragOver={onNativeDragOver}
+        onDrop={onNativeDrop}
+        className="touch-pan-x md:touch-auto"
+      >
         {tracks.map((t) => {
           // Show the read-only inline lane under the selected clip's track
           // row whenever that clip has at least one automation curve. The
@@ -356,11 +368,23 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           const expandedClip = selectedClipId
             ? clips.find((c) => c.trackId === t.id && c.id === selectedClipId)
             : undefined;
+          // Plan 5.10: Mobile shows a "⚡ Open editor" button row below
+          // each track whose first clip carries any automation curve, in
+          // place of the AutomationLane preview (hidden on Mobile). Cheap
+          // O(clips-on-track) scan — runs per render, no memo needed at
+          // this list size.
+          const firstAutomationClip = clips.find(
+            (c) =>
+              c.trackId === t.id &&
+              Object.values((c.params ?? {}) as Record<string, unknown>).some(
+                isAutomationCurve
+              )
+          );
           return (
             <div key={t.id}>
               <div
-                className="flex border-b border-[var(--border)]"
-                style={{ height: TRACK_HEIGHT, width: TRACK_LABEL_WIDTH + totalBeats * px }}
+                className="flex border-b border-[var(--border)] h-14 md:h-8"
+                style={{ width: TRACK_LABEL_WIDTH + totalBeats * px }}
               >
                 <TrackHeader track={t} width={TRACK_LABEL_WIDTH} />
                 <div
@@ -376,6 +400,9 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
                     ))}
                 </div>
               </div>
+              {firstAutomationClip && (
+                <MobileAutomationButton clipId={firstAutomationClip.id} />
+              )}
               {expandedClip && (
                 <div
                   className="relative border-b border-[var(--border)]"
