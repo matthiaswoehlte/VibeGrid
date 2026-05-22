@@ -152,7 +152,10 @@ export const contourPlugin: FxPlugin<ContourParams> = {
       step: 0.25,
       default: 1,
       unit: 'cyc/bar',
-      label: 'Sweep speed'
+      label: 'Sweep speed',
+      // Plan 5.8b — `sweepDirection='all'` renders the contour without
+      // animation, so the speed slider has no effect there.
+      visibleWhen: (p) => p.sweepDirection !== 'all'
     }
   },
   getDefaultParams: () => ({
