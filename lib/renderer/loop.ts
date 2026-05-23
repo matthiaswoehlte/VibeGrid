@@ -94,10 +94,26 @@ function captureVideoFrame(el: HTMLVideoElement): ImageBitmap | undefined {
   }
   const fctx = frameCaptureCanvas.getContext('2d');
   if (!fctx) return undefined;
+  // WebCodecs path — pulls the decoded frame directly out of the
+  // video element's decoder pipeline, bypassing the compositor (which
+  // skips painting near-invisible elements like the offline export
+  // pool, leaving drawImage to read stale frame 0). When unavailable
+  // (older browsers), fall back to plain drawImage(videoEl).
+  let videoFrame: VideoFrame | null = null;
   try {
-    fctx.drawImage(el, 0, 0);
+    if (typeof VideoFrame !== 'undefined') {
+      videoFrame = new VideoFrame(el);
+    }
+    fctx.drawImage(
+      (videoFrame ?? el) as unknown as CanvasImageSource,
+      0,
+      0
+    );
   } catch {
+    videoFrame?.close();
     return undefined;
+  } finally {
+    videoFrame?.close();
   }
   if (typeof frameCaptureCanvas.transferToImageBitmap !== 'function') {
     return undefined;
@@ -113,8 +129,9 @@ function captureVideoFrame(el: HTMLVideoElement): ImageBitmap | undefined {
  */
 /** Returns the intrinsic width/height of a Canvas image source. Handles
  *  ImageBitmap (.width/.height), HTMLVideoElement (.videoWidth/.videoHeight),
- *  and other CanvasImageSource shapes via duck-typing. Falls back to 0/0
- *  which causes the contain-fit math to bail. */
+ *  WebCodecs VideoFrame (.displayWidth/.displayHeight), and other
+ *  CanvasImageSource shapes via duck-typing. Falls back to 0/0 which
+ *  causes the contain-fit math to bail. */
 function intrinsicSize(src: CanvasImageSource): { width: number; height: number } {
   const anySrc = src as {
     width?: number;
@@ -123,7 +140,15 @@ function intrinsicSize(src: CanvasImageSource): { width: number; height: number 
     videoHeight?: number;
     naturalWidth?: number;
     naturalHeight?: number;
+    displayWidth?: number;
+    displayHeight?: number;
   };
+  // VideoFrame (WebCodecs): displayWidth/displayHeight is the post-crop
+  // post-rotation render size; check this first so VideoFrame doesn't
+  // accidentally match the wider HTMLVideoElement path below.
+  if (typeof anySrc.displayWidth === 'number' && typeof anySrc.displayHeight === 'number') {
+    return { width: anySrc.displayWidth, height: anySrc.displayHeight };
+  }
   if (typeof anySrc.videoWidth === 'number' && typeof anySrc.videoHeight === 'number') {
     return { width: anySrc.videoWidth, height: anySrc.videoHeight };
   }
@@ -302,7 +327,38 @@ export function createRenderer(deps: RendererDeps): Renderer {
         ctx!.save();
         ctx!.globalAlpha *= alpha;
       }
-      drawImageContain(ctx!, source, w, h);
+      // Video clips: pull the current decoded frame via WebCodecs
+      // `new VideoFrame(videoElement)` if available. Synchronous,
+      // bypasses the compositor entirely (HTMLVideoElement frame
+      // buffer only updates after a paint; with the offline export's
+      // 1px / opacity:0.001 DOM-attach, modern Chromium optimises
+      // those paints away and drawImage(videoEl) reads stale frame 0
+      // every frame — the user-reported "videos frozen on first frame
+      // in MP4" symptom). VideoFrame reads the decoder output
+      // directly. Required by the encoder anyway, so always available
+      // on the offline path. Falls back to the raw video element for
+      // older browsers without WebCodecs (live preview is unaffected;
+      // its compositor paints the visible <canvas> normally).
+      let videoFrame: VideoFrame | null = null;
+      let drawSource: CanvasImageSource = source;
+      if (
+        isVideo &&
+        typeof VideoFrame !== 'undefined' &&
+        source instanceof HTMLVideoElement
+      ) {
+        try {
+          videoFrame = new VideoFrame(source);
+          drawSource = videoFrame as unknown as CanvasImageSource;
+        } catch {
+          // VideoFrame constructor throws if the video element isn't
+          // ready (no current frame to extract) — fall back to drawing
+          // the element directly. The next frame's seek + rVFC will
+          // typically catch up.
+        }
+      }
+      drawImageContain(ctx!, drawSource, w, h);
+      // VideoFrame must be released or memory leaks (each ~8 MB).
+      videoFrame?.close();
       if (usesAlpha) ctx!.restore();
     }
 
