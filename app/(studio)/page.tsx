@@ -9,6 +9,7 @@ import {
 } from '@dnd-kit/core';
 import { useAudioEngine } from '@/lib/hooks/useAudioEngine';
 import { useVideoEngine } from '@/lib/hooks/useVideoEngine';
+import { useVideoDecoderPool } from '@/lib/hooks/useVideoDecoderPool';
 import { TopBar } from '@/components/TopBar';
 import { Workspace } from '@/components/Workspace';
 import { TabBar } from '@/components/Mobile/TabBar';
@@ -24,6 +25,12 @@ export default function StudioPage() {
   // accessor through to both the renderer (live preview drawImage)
   // and the offline export (seekAllTo per frame).
   const { getElement: getVideoElement, engine: videoEngine } = useVideoEngine();
+  // Plan 5.10+ — long-lived VideoDecoderPool. Pre-loads video MP4s as
+  // soon as they appear in the timeline so the offline export doesn't
+  // re-download 150 MB on every click (the live preview's <video>
+  // element bytes aren't accessible to the WebCodecs decoder, so the
+  // pool needs its own fetch).
+  const videoDecoderPool = useVideoDecoderPool();
 
   // Canvas ref lives here so both Workspace (renders the Stage) and TopBar
   // (mounts the useVideoExporter hook) can reach the same DOM element.
@@ -66,6 +73,7 @@ export default function StudioPage() {
           canvasRef={canvasRef}
           getImageBitmap={getImageBitmap}
           videoEngine={videoEngine}
+          videoDecoderPool={videoDecoderPool}
         />
         <Workspace
           engine={engine}

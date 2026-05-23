@@ -8,12 +8,14 @@ import { FlowModeToggle } from './FlowModeToggle';
 import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
+import type { VideoDecoderPool } from '@/lib/video/decoder-pool';
 
 export function TopBar({
   engine,
   canvasRef,
   getImageBitmap,
-  videoEngine
+  videoEngine,
+  videoDecoderPool
 }: {
   engine: AudioEngine | null;
   canvasRef: React.RefObject<HTMLCanvasElement>;
@@ -21,12 +23,16 @@ export function TopBar({
   /** Plan-5.9b — threaded through to renderOffline so each frame's
    *  video element settles on the right time before encoding. */
   videoEngine?: VideoEngine | null;
+  /** Plan 5.10+ long-lived VideoDecoderPool — pre-loads MP4 binaries
+   *  in the background so Export click doesn't trigger a re-fetch. */
+  videoDecoderPool?: VideoDecoderPool | null;
 }) {
   const exporter = useVideoExporter({
     canvas: canvasRef.current,
     audioEngine: engine,
     getImageBitmap,
-    videoEngine
+    videoEngine,
+    videoDecoderPool
   });
   return (
     <header className="h-12 px-2 md:px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">

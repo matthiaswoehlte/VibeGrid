@@ -7,7 +7,7 @@ import { isWebCodecsSupported } from '@/lib/export/webcodecs';
 import { renderOffline } from '@/lib/export/offline-render';
 import { makeFilename } from '@/lib/export/filename';
 import { hasVisualClipAt } from '@/lib/timeline/selectors';
-import { createVideoDecoderPool } from '@/lib/video/decoder-pool';
+import type { VideoDecoderPool } from '@/lib/video/decoder-pool';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
 
@@ -24,6 +24,12 @@ export interface UseVideoExporterArgs {
    *  encoded MP4 is frame-accurate against the source videos. Projects
    *  with no video clips: this is a fast no-op. */
   videoEngine?: VideoEngine | null;
+  /** Plan 5.10+ long-lived pool — owned by useVideoDecoderPool in
+   *  page.tsx. Pre-loaded with every timeline-referenced video MP4
+   *  in the background. Export consumes it directly; never creates
+   *  a fresh pool (would re-fetch all videos) and never destroys it
+   *  (lifetime matches the studio page). */
+  videoDecoderPool?: VideoDecoderPool | null;
 }
 
 const REVOKE_DELAY_MS = 10_000;
@@ -45,7 +51,8 @@ export function useVideoExporter({
   canvas,
   audioEngine,
   getImageBitmap,
-  videoEngine
+  videoEngine,
+  videoDecoderPool
 }: UseVideoExporterArgs) {
   const setExportState = useAppStore((s) => s.setExportState);
   const exporterRef = useRef<VideoExporter | null>(null);
@@ -244,27 +251,15 @@ export function useVideoExporter({
             elapsedSeconds: 0
           });
 
-          // Plan 5.10+ — build a VideoDecoderPool for the export and
-          // pre-load every referenced video. Replaces the previous
-          // HTMLVideoElement-seek-and-draw pipeline (which broke on
-          // modern Chromium because the 1px DOM-attached <video>
-          // wasn't painted by the compositor → drawImage read stale
-          // frame 0 forever). The pool reads raw MP4 binary, demuxes
-          // via mp4box.js, and feeds encoded chunks to a WebCodecs
-          // VideoDecoder — no DOM, no compositor, deterministic.
-          //
-          // KNOWN COST: the pool's fetch() re-downloads the MP4 even
-          // though the live preview's <video> element already has it
-          // cached. With R2's Cache-Control: no-cache the browser
-          // revalidates and often re-fetches the body. Per-video
-          // 60s fetch timeout so a hanging request doesn't lock the
-          // export forever; serialised pre-load (not Promise.all) so
-          // progress updates are accurate and bandwidth isn't split.
-          //
-          // Falls back gracefully (decoderPool stays null) when
-          // WebCodecs is unavailable; offline-render then renders
-          // black for video clips.
-          const decoderPool = createVideoDecoderPool();
+          // Plan 5.10+ — long-lived VideoDecoderPool from
+          // useVideoDecoderPool has been pre-loading videos in the
+          // background since the user dropped them on the timeline.
+          // At export time we just ensure every needed video is loaded
+          // (pool.load is idempotent — if a background load is still
+          // in flight, we await the same promise; if it's already
+          // done, instant return). User typically sees no pre-load
+          // wait; only fast-clicks after drop incur a brief wait for
+          // the in-progress load.
           const videoMediaIds = Array.from(
             new Set(
               timeline.clips
@@ -274,9 +269,11 @@ export function useVideoExporter({
           );
           const PRELOAD_TIMEOUT_MS = 60_000;
           let failedCount = 0;
-          if (decoderPool && videoMediaIds.length > 0) {
+          if (videoDecoderPool && videoMediaIds.length > 0) {
+            const loadedSet = new Set(videoDecoderPool.loadedIds());
             for (let i = 0; i < videoMediaIds.length; i++) {
               const id = videoMediaIds[i];
+              if (loadedSet.has(id)) continue;
               const ref = mediaRefs.find((m) => m.id === id);
               const label = ref?.filename ?? id.slice(0, 8);
               setExportState({
@@ -291,12 +288,12 @@ export function useVideoExporter({
               const ctrl = new AbortController();
               const timer = setTimeout(() => ctrl.abort(), PRELOAD_TIMEOUT_MS);
               try {
-                await decoderPool.load(id, ref.url, ctrl.signal);
+                await videoDecoderPool.load(id, ref.url, ctrl.signal);
               } catch (err) {
                 failedCount++;
                 // eslint-disable-next-line no-console
                 console.warn(
-                  `[useVideoExporter] decoder pre-load failed for ${label}:`,
+                  `[useVideoExporter] decoder load failed for ${label}:`,
                   err
                 );
               } finally {
@@ -328,15 +325,17 @@ export function useVideoExporter({
                 sampleRate: audioBuffer.sampleRate,
                 numberOfChannels: audioBuffer.numberOfChannels,
                 getImageBitmap: getImageBitmap ?? (() => undefined),
-                // Plan 5.10+ — DecoderPool replaces videoEngine for the
-                // offline frame source. videoEngine is still passed for
-                // backwards-compat (the seekAllTo path), but the renderer
-                // will prefer getVideoFrame when available.
+                // Plan 5.10+ — long-lived DecoderPool from page.tsx
+                // (useVideoDecoderPool) supersedes videoEngine for the
+                // offline frame source. videoEngine still passed for
+                // backwards-compat fallback when WebCodecs isn't
+                // available. Pool is NOT destroyed here — owned by the
+                // hook for the page's lifetime.
                 videoEngine,
                 getVideoElement: videoEngine
                   ? (mediaId: string) => videoEngine.getElement(mediaId)
                   : undefined,
-                videoDecoderPool: decoderPool,
+                videoDecoderPool,
                 flowMode: useAppStore.getState().ui.flowMode
               },
               {
@@ -353,7 +352,7 @@ export function useVideoExporter({
                 signal: offlineAbortRef.current.signal
               }
             );
-            decoderPool?.destroy();
+            // Pool stays alive — useVideoDecoderPool owns it.
             setExportState({
               status: 'finalizing',
               mode: 'offline',
@@ -390,11 +389,8 @@ export function useVideoExporter({
             }
           } finally {
             offlineAbortRef.current = null;
-            // Belt-and-suspenders: decoderPool.destroy() in the success
-            // path runs before this finally, but errors / aborts must
-            // also release the decoded VideoFrames + decoder instances.
-            // destroy() is idempotent.
-            decoderPool?.destroy();
+            // videoDecoderPool is owned by useVideoDecoderPool — NEVER
+            // destroy here, the page-level hook handles its lifetime.
           }
         } else {
           // REALTIME PATH — Plan 6.
@@ -420,7 +416,7 @@ export function useVideoExporter({
         }
       }
     }),
-    [audioEngine, getImageBitmap, videoEngine, setExportState]
+    [audioEngine, getImageBitmap, videoEngine, videoDecoderPool, setExportState]
   );
 
   return api;
