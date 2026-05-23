@@ -300,16 +300,20 @@ export async function renderOffline(
       // the seek pipeline is working end-to-end.
       if (frameIdx < 3 || frameIdx >= totalFrames - 3) {
         const ids = deps.videoEngine.loadedIds();
-        const samples = ids.map((id) => {
-          const el = deps.videoEngine!.getElement(id);
-          return el
-            ? { id, ct: Number(el.currentTime.toFixed(3)), rs: el.readyState }
-            : { id, missing: true };
-        });
+        // Inline string per element so the values are visible at a glance
+        // in the Chrome console without expanding object refs.
+        const samplesStr = ids
+          .map((id) => {
+            const el = deps.videoEngine!.getElement(id);
+            if (!el) return `${id.slice(0, 8)}=MISSING`;
+            const ct = Number(el.currentTime.toFixed(3));
+            const dur = Number(el.duration.toFixed(3));
+            return `${id.slice(0, 8)} ct=${ct}/${dur} rs=${el.readyState} paused=${el.paused}`;
+          })
+          .join(' | ');
         // eslint-disable-next-line no-console
         console.log(
-          `[offline-render] frame ${frameIdx} timeSec=${timeSec.toFixed(3)} →`,
-          samples
+          `[offline-render] frame ${frameIdx} timeSec=${timeSec.toFixed(3)} → ${samplesStr}`
         );
       }
     }
