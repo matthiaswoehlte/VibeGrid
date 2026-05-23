@@ -35,6 +35,11 @@ export interface ExportState {
   errorCode?: ExportErrorCode;
   /** Human-readable codec label, set after pickCodec. Surfaces in the UI. */
   codecLabel?: string;
+  /** Free-form sub-status during `preparing` so the UI can show the
+   *  user WHAT we're preparing (decoder pre-load is the long pole;
+   *  multi-MB MP4 fetch can take 30-60s on flaky connections, looks
+   *  like a freeze without a status line). */
+  preparingPhase?: string;
 }
 
 export interface ExportOptions {

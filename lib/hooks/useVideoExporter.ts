@@ -253,11 +253,17 @@ export function useVideoExporter({
           // via mp4box.js, and feeds encoded chunks to a WebCodecs
           // VideoDecoder — no DOM, no compositor, deterministic.
           //
+          // KNOWN COST: the pool's fetch() re-downloads the MP4 even
+          // though the live preview's <video> element already has it
+          // cached. With R2's Cache-Control: no-cache the browser
+          // revalidates and often re-fetches the body. Per-video
+          // 60s fetch timeout so a hanging request doesn't lock the
+          // export forever; serialised pre-load (not Promise.all) so
+          // progress updates are accurate and bandwidth isn't split.
+          //
           // Falls back gracefully (decoderPool stays null) when
           // WebCodecs is unavailable; offline-render then renders
-          // black for video clips. On the codec/MP4 fetch failure
-          // path we toast and degrade: an export with frozen video
-          // is still better than no export at all.
+          // black for video clips.
           const decoderPool = createVideoDecoderPool();
           const videoMediaIds = Array.from(
             new Set(
@@ -266,26 +272,48 @@ export function useVideoExporter({
                 .map((c) => c.mediaId as string)
             )
           );
+          const PRELOAD_TIMEOUT_MS = 60_000;
+          let failedCount = 0;
           if (decoderPool && videoMediaIds.length > 0) {
-            const loadResults = await Promise.allSettled(
-              videoMediaIds.map((id) => {
-                const ref = mediaRefs.find((m) => m.id === id);
-                if (!ref?.url) return Promise.reject(new Error(`no url for ${id}`));
-                return decoderPool.load(id, ref.url);
-              })
-            );
-            const failed = loadResults.filter((r) => r.status === 'rejected');
-            if (failed.length > 0) {
-              // eslint-disable-next-line no-console
-              console.warn(
-                '[useVideoExporter] decoder pre-load failed for some videos:',
-                failed
-              );
+            for (let i = 0; i < videoMediaIds.length; i++) {
+              const id = videoMediaIds[i];
+              const ref = mediaRefs.find((m) => m.id === id);
+              const label = ref?.filename ?? id.slice(0, 8);
+              setExportState({
+                status: 'preparing',
+                mode: 'offline',
+                preparingPhase: `Lade Video ${i + 1}/${videoMediaIds.length}: ${label}`
+              });
+              if (!ref?.url) {
+                failedCount++;
+                continue;
+              }
+              const ctrl = new AbortController();
+              const timer = setTimeout(() => ctrl.abort(), PRELOAD_TIMEOUT_MS);
+              try {
+                await decoderPool.load(id, ref.url, ctrl.signal);
+              } catch (err) {
+                failedCount++;
+                // eslint-disable-next-line no-console
+                console.warn(
+                  `[useVideoExporter] decoder pre-load failed for ${label}:`,
+                  err
+                );
+              } finally {
+                clearTimeout(timer);
+              }
+            }
+            if (failedCount > 0) {
               toast.warning(
-                `${failed.length} Video(s) konnten für den Export nicht decodiert werden — diese erscheinen schwarz.`
+                `${failedCount} Video(s) konnten für den Export nicht decodiert werden — diese erscheinen schwarz.`
               );
             }
           }
+          setExportState({
+            status: 'preparing',
+            mode: 'offline',
+            preparingPhase: undefined
+          });
 
           try {
             const result = await renderOffline(

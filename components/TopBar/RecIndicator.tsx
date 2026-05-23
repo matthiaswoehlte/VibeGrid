@@ -25,6 +25,7 @@ export function RecIndicator({ onCancel }: { onCancel: () => void }) {
   const currentFrame = useAppStore((s) => s.ui.exportState.currentFrame);
   const totalFrames = useAppStore((s) => s.ui.exportState.totalFrames);
   const etaSeconds = useAppStore((s) => s.ui.exportState.etaSeconds);
+  const preparingPhase = useAppStore((s) => s.ui.exportState.preparingPhase);
 
   // Show during all "active" statuses so the user sees that something is
   // happening even before the first onProgress fires (preparing → finalizing).
@@ -46,7 +47,13 @@ export function RecIndicator({ onCancel }: { onCancel: () => void }) {
     const headline =
       status === 'finalizing'
         ? 'Finalizing…'
-        : `Rendering ${currentFrame ?? 0} / ${totalFrames ?? 0} (${percent}%) ${etaLabel}`;
+        : status === 'preparing'
+          ? // Pre-load phase: show what we're loading. The decoder pool
+            // refetches each video MP4 (~50-150 MB total), which can take
+            // 30-60 s on flaky connections — without this label the user
+            // sees a blank progress bar and thinks the app froze.
+            preparingPhase ?? 'Vorbereitung…'
+          : `Rendering ${currentFrame ?? 0} / ${totalFrames ?? 0} (${percent}%) ${etaLabel}`;
 
     return (
       <div className="flex items-center gap-2 px-2">

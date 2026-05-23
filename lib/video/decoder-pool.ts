@@ -75,19 +75,20 @@ class VideoDecoderSource {
   private outputQueue: VideoFrame[] = [];
   private nextSampleIdx = 0;
 
-  async load(url: string): Promise<void> {
+  async load(url: string, signal?: AbortSignal): Promise<void> {
     if (!isClient()) throw new Error('VideoDecoderSource: client only');
     if (typeof VideoDecoder === 'undefined') {
       throw new Error('VideoDecoder unavailable (WebCodecs required)');
     }
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) {
       throw new Error(
         `VideoDecoderSource: fetch failed (${response.status} ${response.statusText})`
       );
     }
     const arrayBuffer = await response.arrayBuffer();
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     await this.demux(arrayBuffer);
     this.configureDecoder();
   }
@@ -322,8 +323,10 @@ function extractDescription(
 export interface VideoDecoderPool {
   /** Fetch + demux + configure the decoder for `url`. Idempotent per
    *  `mediaId`. Throws on fetch/demux/codec failure — caller decides
-   *  whether to retry or abort. */
-  load(mediaId: string, url: string): Promise<void>;
+   *  whether to retry or abort. Optional `signal` lets the caller
+   *  abort a long-running fetch (e.g. user cancels the export
+   *  during pre-load). */
+  load(mediaId: string, url: string, signal?: AbortSignal): Promise<void>;
   /**
    * Returns the latest VideoFrame whose timestamp is at or before
    * `timeSec`. The frame is OWNED by the pool — the caller may pass it
@@ -346,11 +349,11 @@ export function createVideoDecoderPool(): VideoDecoderPool | null {
   const sources = new Map<string, VideoDecoderSource>();
 
   return {
-    async load(mediaId, url) {
+    async load(mediaId, url, signal) {
       if (sources.has(mediaId)) return;
       const source = new VideoDecoderSource();
       try {
-        await source.load(url);
+        await source.load(url, signal);
         sources.set(mediaId, source);
       } catch (err) {
         source.destroy();
