@@ -8,6 +8,7 @@ import { FlowModeToggle } from './FlowModeToggle';
 import { LogoutButton } from './LogoutButton';
 import { SaveProjectButton } from './SaveProjectButton';
 import { ProjectNameField } from './ProjectNameField';
+import { ProjectsButton } from './ProjectsButton';
 import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
@@ -47,6 +48,7 @@ export function TopBar({
             session-scope identity controls. */}
         <ProjectNameField />
         <SaveProjectButton />
+        <ProjectsButton />
       </div>
       <div className="flex items-center gap-1 md:gap-2">
         {/* RecIndicator hides itself when status === 'idle'; on Mobile the
