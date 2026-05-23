@@ -5,6 +5,7 @@ import { createTimelineSlice, INITIAL_TRACKS_V5 } from './timeline-slice';
 import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
 import { createMobileUISlice } from './mobile-ui-slice';
+import { toPersistedShape, STORE_VERSION } from './persist-shape';
 import type { Track } from '@/lib/timeline/types';
 import { TRACK_FX_KINDS } from '@/lib/timeline/plugin-mapping';
 import { EXPORT_INITIAL_STATE, reduceExportState } from '@/lib/export/state-machine';
@@ -85,7 +86,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'vibegrid-store',
-      version: 6,
+      version: STORE_VERSION,
       storage: createJSONStorage(() => localStorage),
       // v1 → v2: ensure all default TrackKind tracks exist (Plan 5 fix).
       // v2 → v3: same merge re-runs after Plan 5.5 adds the zoom-pulse track.
@@ -131,35 +132,11 @@ export const useAppStore = create<AppState>()(
       },
 
       // Persist only serializable data slices — never actions, never blobs.
-      // playhead.playing is forced to false on persist: after a page reload
-      // the audio element is gone and "playing" would be a lie.
-      // media.mediaRefs are URLs + metadata only — never the underlying blobs.
-      partialize: (state) => ({
-        // selectedClipId, automationEditorClipId, automationSnap,
-        // exportState, and flowMode are all transient UI state. Persisting
-        // them would confuse users on reload (Inspector jumps to a clip
-        // they didn't select; editor re-opens without context; snap mode
-        // resets; exportState would resume a recording session that no
-        // longer has a MediaRecorder; flowMode would silently keep beat
-        // triggers disabled). Only `zoom` survives reloads.
-        //
-        // Plan 5.10: `mobileUI` is intentionally absent from this return
-        // object too — opt-in persistence means anything not listed is
-        // dropped, so the active mobile tab resets to 'timeline' on
-        // every refresh. Matches the rest of the transient UI state.
-        ui: { zoom: state.ui.zoom },
-        timeline: {
-          ...state.timeline,
-          playhead: {
-            ...state.timeline.playhead,
-            playing: false
-          }
-        },
-        audio: state.audio,
-        // Only persist mediaRefs — videoLoadProgress is transient
-        // (recomputed by the live VideoEngine on every page mount).
-        media: { mediaRefs: state.media.mediaRefs }
-      })
+      // Shape lives in lib/store/persist-shape.ts so the DB save/load path
+      // (lib/project/serialize.ts) shares the same selector. Transient UI
+      // fields (selectedClipId, exportState, flowMode, mobileUI, …) and
+      // transient media fields (videoLoadProgress) are excluded by design.
+      partialize: (state) => toPersistedShape(state)
     }
   )
 );
