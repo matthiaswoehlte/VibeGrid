@@ -7,6 +7,7 @@ import { isWebCodecsSupported } from '@/lib/export/webcodecs';
 import { renderOffline } from '@/lib/export/offline-render';
 import { makeFilename } from '@/lib/export/filename';
 import { hasVisualClipAt } from '@/lib/timeline/selectors';
+import { createVideoDecoderPool } from '@/lib/video/decoder-pool';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
 
@@ -243,6 +244,49 @@ export function useVideoExporter({
             elapsedSeconds: 0
           });
 
+          // Plan 5.10+ — build a VideoDecoderPool for the export and
+          // pre-load every referenced video. Replaces the previous
+          // HTMLVideoElement-seek-and-draw pipeline (which broke on
+          // modern Chromium because the 1px DOM-attached <video>
+          // wasn't painted by the compositor → drawImage read stale
+          // frame 0 forever). The pool reads raw MP4 binary, demuxes
+          // via mp4box.js, and feeds encoded chunks to a WebCodecs
+          // VideoDecoder — no DOM, no compositor, deterministic.
+          //
+          // Falls back gracefully (decoderPool stays null) when
+          // WebCodecs is unavailable; offline-render then renders
+          // black for video clips. On the codec/MP4 fetch failure
+          // path we toast and degrade: an export with frozen video
+          // is still better than no export at all.
+          const decoderPool = createVideoDecoderPool();
+          const videoMediaIds = Array.from(
+            new Set(
+              timeline.clips
+                .filter((c) => c.kind === 'video' && typeof c.mediaId === 'string')
+                .map((c) => c.mediaId as string)
+            )
+          );
+          if (decoderPool && videoMediaIds.length > 0) {
+            const loadResults = await Promise.allSettled(
+              videoMediaIds.map((id) => {
+                const ref = mediaRefs.find((m) => m.id === id);
+                if (!ref?.url) return Promise.reject(new Error(`no url for ${id}`));
+                return decoderPool.load(id, ref.url);
+              })
+            );
+            const failed = loadResults.filter((r) => r.status === 'rejected');
+            if (failed.length > 0) {
+              // eslint-disable-next-line no-console
+              console.warn(
+                '[useVideoExporter] decoder pre-load failed for some videos:',
+                failed
+              );
+              toast.warning(
+                `${failed.length} Video(s) konnten für den Export nicht decodiert werden — diese erscheinen schwarz.`
+              );
+            }
+          }
+
           try {
             const result = await renderOffline(
               {
@@ -256,13 +300,15 @@ export function useVideoExporter({
                 sampleRate: audioBuffer.sampleRate,
                 numberOfChannels: audioBuffer.numberOfChannels,
                 getImageBitmap: getImageBitmap ?? (() => undefined),
-                // Plan 5.9b — videoEngine is the shared element pool;
-                // getVideoElement is the per-frame source for the renderer's
-                // video draw step. Both stay null in projects without video.
+                // Plan 5.10+ — DecoderPool replaces videoEngine for the
+                // offline frame source. videoEngine is still passed for
+                // backwards-compat (the seekAllTo path), but the renderer
+                // will prefer getVideoFrame when available.
                 videoEngine,
                 getVideoElement: videoEngine
                   ? (mediaId: string) => videoEngine.getElement(mediaId)
                   : undefined,
+                videoDecoderPool: decoderPool,
                 flowMode: useAppStore.getState().ui.flowMode
               },
               {
@@ -279,6 +325,7 @@ export function useVideoExporter({
                 signal: offlineAbortRef.current.signal
               }
             );
+            decoderPool?.destroy();
             setExportState({
               status: 'finalizing',
               mode: 'offline',
@@ -315,6 +362,11 @@ export function useVideoExporter({
             }
           } finally {
             offlineAbortRef.current = null;
+            // Belt-and-suspenders: decoderPool.destroy() in the success
+            // path runs before this finally, but errors / aborts must
+            // also release the decoded VideoFrames + decoder instances.
+            // destroy() is idempotent.
+            decoderPool?.destroy();
           }
         } else {
           // REALTIME PATH — Plan 6.

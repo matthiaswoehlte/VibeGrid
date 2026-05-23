@@ -23,8 +23,16 @@ export interface RendererDeps {
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   /** Plan-5.9b: optional video-frame source per video MediaRef id.
    *  Returns null when the video isn't loaded yet — the renderer skips
-   *  the draw for that frame rather than throwing. */
+   *  the draw for that frame rather than throwing.
+   *  Legacy path used by live preview AND as fallback when no
+   *  getVideoFrame is provided. */
   getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
+  /** Plan 5.10+: optional decoded-VideoFrame source per video MediaRef
+   *  id (from VideoDecoderPool). Preferred over getVideoElement when
+   *  set. The returned frame is owned by the pool — the renderer draws
+   *  it synchronously and never closes it. Returns null when no frame
+   *  is available at the current time. */
+  getVideoFrame?: (mediaId: string) => VideoFrame | null;
   /** Increments on each seek so the loop can clear lastFired state. */
   getSeekCounter?: () => number;
   /** Optional — when missing, the loop defaults to Beat Mode (false). The
@@ -79,6 +87,34 @@ const CONTOUR_VIDEO_BUCKET_SEC = 0.5;
 // instead of by bitmap identity, so Contour can re-use extraction
 // results across the per-tick bitmaps that ZoomPulse needs fresh.
 let frameCaptureCanvas: OffscreenCanvas | null = null;
+
+/** Materialise an ImageBitmap from a WebCodecs VideoFrame so FX plugins
+ *  that consume `rc.imageBitmap` (Contour edges, ZoomPulse scale) get
+ *  the same source shape as for image clips. The frame stays open
+ *  (caller owns it via the VideoDecoderPool's sliding cache). */
+function captureVideoFrameFrom(frame: VideoFrame): ImageBitmap | undefined {
+  if (typeof OffscreenCanvas === 'undefined') return undefined;
+  const vw = frame.displayWidth;
+  const vh = frame.displayHeight;
+  if (!vw || !vh) return undefined;
+  if (!frameCaptureCanvas) {
+    frameCaptureCanvas = new OffscreenCanvas(vw, vh);
+  } else if (frameCaptureCanvas.width !== vw || frameCaptureCanvas.height !== vh) {
+    frameCaptureCanvas.width = vw;
+    frameCaptureCanvas.height = vh;
+  }
+  const fctx = frameCaptureCanvas.getContext('2d');
+  if (!fctx) return undefined;
+  try {
+    fctx.drawImage(frame as unknown as CanvasImageSource, 0, 0);
+  } catch {
+    return undefined;
+  }
+  if (typeof frameCaptureCanvas.transferToImageBitmap !== 'function') {
+    return undefined;
+  }
+  return frameCaptureCanvas.transferToImageBitmap();
+}
 
 function captureVideoFrame(el: HTMLVideoElement): ImageBitmap | undefined {
   if (typeof OffscreenCanvas === 'undefined') return undefined;
@@ -290,33 +326,49 @@ export function createRenderer(deps: RendererDeps): Renderer {
           firstImageBitmapKey = ic.mediaId;
         }
       } else {
-        const el = deps.getVideoElement?.(ic.mediaId);
-        if (!el) continue;
-        source = el;
-        // Plan 5.9d — opt-in video audio. Default behaviour (param
-        // absent or `false`) is muted, matching the pre-5.9d wire-up
-        // in `lib/video/engine.ts`. Param is treated as static —
-        // automating audioEnabled per beat isn't supported in v0.1
-        // (see KNOWN_LIMITATIONS).
-        const audioEnabledRaw = (ic.params as { audioEnabled?: unknown } | undefined)?.audioEnabled;
-        el.muted = audioEnabledRaw !== true;
-        // Plan 5.9b hotfix: capture the current video frame as an
-        // ImageBitmap so ZoomPulse / Contour can operate on it via
-        // `rc.imageBitmap`, same as for image clips. Falls back to
-        // undefined when OffscreenCanvas / transferToImageBitmap isn't
-        // available (jsdom test env) — the existing skip-guard at
-        // line 244 then bypasses the bitmap-consuming FX silently.
-        if (!firstImageBitmap) {
-          const snap = captureVideoFrame(el);
-          if (snap) {
-            firstImageBitmap = snap;
-            ownsFirstImageBitmap = true;
-            // ~500 ms bucket: Contour re-extracts only when the video
-            // crosses into a new bucket. Within a bucket, plugins that
-            // cache by this key hit on every tick.
-            const t = typeof el.currentTime === 'number' ? el.currentTime : 0;
-            const bucket = Math.floor(t / CONTOUR_VIDEO_BUCKET_SEC);
-            firstImageBitmapKey = `${ic.mediaId}|${bucket}`;
+        // Plan 5.10+ — VideoDecoderPool path takes priority when set.
+        // Decoded VideoFrame from mp4box + WebCodecs, deterministic,
+        // compositor-independent. Frame is pool-owned (sliding cache);
+        // we draw it but DON'T close it.
+        const decodedFrame = deps.getVideoFrame?.(ic.mediaId) ?? null;
+        if (decodedFrame) {
+          source = decodedFrame as unknown as CanvasImageSource;
+          if (!firstImageBitmap) {
+            // For Plugin consumption (Contour / ZoomPulse) we need an
+            // ImageBitmap. Materialise one from the VideoFrame via an
+            // OffscreenCanvas drawImage round-trip. Same ~500 ms bucket
+            // key semantic as the HTMLVideoElement path.
+            const snap = captureVideoFrameFrom(decodedFrame);
+            if (snap) {
+              firstImageBitmap = snap;
+              ownsFirstImageBitmap = true;
+              const bucket = Math.floor(
+                (decodedFrame.timestamp / 1_000_000) / CONTOUR_VIDEO_BUCKET_SEC
+              );
+              firstImageBitmapKey = `${ic.mediaId}|${bucket}`;
+            }
+          }
+        } else {
+          // Legacy HTMLVideoElement path.
+          const el = deps.getVideoElement?.(ic.mediaId);
+          if (!el) continue;
+          source = el;
+          // Plan 5.9d — opt-in video audio. Default behaviour (param
+          // absent or `false`) is muted, matching the pre-5.9d wire-up
+          // in `lib/video/engine.ts`. Param is treated as static —
+          // automating audioEnabled per beat isn't supported in v0.1
+          // (see KNOWN_LIMITATIONS).
+          const audioEnabledRaw = (ic.params as { audioEnabled?: unknown } | undefined)?.audioEnabled;
+          el.muted = audioEnabledRaw !== true;
+          if (!firstImageBitmap) {
+            const snap = captureVideoFrame(el);
+            if (snap) {
+              firstImageBitmap = snap;
+              ownsFirstImageBitmap = true;
+              const t = typeof el.currentTime === 'number' ? el.currentTime : 0;
+              const bucket = Math.floor(t / CONTOUR_VIDEO_BUCKET_SEC);
+              firstImageBitmapKey = `${ic.mediaId}|${bucket}`;
+            }
           }
         }
       }
@@ -327,19 +379,12 @@ export function createRenderer(deps: RendererDeps): Renderer {
         ctx!.save();
         ctx!.globalAlpha *= alpha;
       }
-      // Video clips: pull the current decoded frame via WebCodecs
-      // `new VideoFrame(videoElement)` if available. Synchronous,
-      // bypasses the compositor entirely (HTMLVideoElement frame
-      // buffer only updates after a paint; with the offline export's
-      // 1px / opacity:0.001 DOM-attach, modern Chromium optimises
-      // those paints away and drawImage(videoEl) reads stale frame 0
-      // every frame — the user-reported "videos frozen on first frame
-      // in MP4" symptom). VideoFrame reads the decoder output
-      // directly. Required by the encoder anyway, so always available
-      // on the offline path. Falls back to the raw video element for
-      // older browsers without WebCodecs (live preview is unaffected;
-      // its compositor paints the visible <canvas> normally).
-      let videoFrame: VideoFrame | null = null;
+      // For HTMLVideoElement sources (legacy live + fallback offline)
+      // pull the current decoded frame via WebCodecs
+      // `new VideoFrame(videoElement)` if available — bypasses the
+      // compositor stall that drawImage(videoEl) hits. Pool-sourced
+      // VideoFrames skip this step entirely (they're already decoded).
+      let ephemeralVideoFrame: VideoFrame | null = null;
       let drawSource: CanvasImageSource = source;
       if (
         isVideo &&
@@ -347,18 +392,19 @@ export function createRenderer(deps: RendererDeps): Renderer {
         source instanceof HTMLVideoElement
       ) {
         try {
-          videoFrame = new VideoFrame(source);
-          drawSource = videoFrame as unknown as CanvasImageSource;
+          ephemeralVideoFrame = new VideoFrame(source);
+          drawSource = ephemeralVideoFrame as unknown as CanvasImageSource;
         } catch {
           // VideoFrame constructor throws if the video element isn't
           // ready (no current frame to extract) — fall back to drawing
-          // the element directly. The next frame's seek + rVFC will
-          // typically catch up.
+          // the element directly.
         }
       }
       drawImageContain(ctx!, drawSource, w, h);
-      // VideoFrame must be released or memory leaks (each ~8 MB).
-      videoFrame?.close();
+      // Ephemeral VideoFrame (HTMLVideoElement path) must be released
+      // or memory leaks (each ~8 MB). Pool-sourced VideoFrames are
+      // owned by the pool and stay open in its sliding cache.
+      ephemeralVideoFrame?.close();
       if (usesAlpha) ctx!.restore();
     }
 

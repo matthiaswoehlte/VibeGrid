@@ -239,6 +239,52 @@ button and an optional per-session ceiling.
 
 ---
 
+## Plan 5.10+ — Offline-Export Video Pipeline (VideoDecoderPool)
+
+The offline MP4 export now uses **WebCodecs `VideoDecoder` + mp4box.js**
+to source video frames, replacing the previous HTMLVideoElement
+seek-and-draw pipeline. Background and gotchas:
+
+- **Why the switch:** the HTMLVideoElement path relied on the browser
+  compositor painting a near-invisible (`<video>` 1px / opacity:0.001)
+  element so `requestVideoFrameCallback` would fire and the frame
+  buffer would refresh. Modern Chromium aggressively optimises away
+  paints of effectively-invisible elements → no rVFC → seekElement's
+  fallback (`seeked` + rAF) resolved with `readyState=1` (metadata
+  only, no decoded frame) → `drawImage(videoEl)` read stale frame 0
+  on every output frame → exported MP4 = first-frame still image.
+  Smoke-confirmed via per-frame diagnostic logs in the export path.
+- **New path:** `lib/video/decoder-pool.ts` fetches the MP4 binary,
+  demuxes via mp4box, feeds `EncodedVideoChunk`s to a `VideoDecoder`,
+  and serves decoded `VideoFrame`s out of an 8-frame sliding cache.
+  No DOM, no compositor, no `<video>` element. Frame-accurate by
+  construction.
+- **Live preview is unaffected:** `lib/video/engine.ts` (HTMLVideoElement
+  pool) still powers the studio's real-time playback. The two systems
+  coexist — different consumers, different access patterns.
+- **Browser support:** WebCodecs `VideoDecoder` is Chrome 94+,
+  Edge 94+, Firefox 130+, Safari 16.5+. Plan 6-R already requires
+  WebCodecs for the encoder, so the compatibility matrix is unchanged.
+- **Decoder pre-load failure handling:** if a video can't be decoded
+  (network, codec unsupported by user's browser, malformed MP4),
+  `useVideoExporter` toasts a warning and continues. Affected clips
+  render black in the output; the user can re-encode the source and
+  re-import.
+- **Per-clip start-time offset is NOT yet handled:** the renderer
+  fetches `getFrameAt(mediaId, globalTimeSec)` — same semantic as the
+  old `seekAllTo(globalTimeSec)`. A video clip with `startBeat > 0`
+  will show frame N (= globalTimeSec) of its source rather than frame
+  0 at the clip's start. v0.1 export gate requires a visual clip at
+  beat 0 (`hasVisualClipAt(timeline, 0)`) which keeps the common case
+  correct; per-clip-relative time is a v0.2 follow-up.
+- **Backward seek cost:** when `getFrameAt` is called with a target
+  before the decoder's current position, the source flushes and
+  re-feeds from the nearest preceding keyframe. Offline export
+  iterates frames forward sequentially so this almost never fires;
+  manual scrubbing on a clip-trim would hit it.
+
+---
+
 ## Plan 5.8b — Inspector Conditional Visibility
 
 `visibleWhen` is purely a render-time filter in the Inspector. Three

@@ -13,15 +13,22 @@ export interface OfflineRendererDeps {
   flowMode: boolean;
   /** Plan-5.9b — per-mediaId HTMLVideoElement source for video tracks.
    *  Returns null when the video isn't loaded yet; renderer skips the
-   *  draw for that frame. Pass-through to RendererDeps.getVideoElement. */
+   *  draw for that frame. Pass-through to RendererDeps.getVideoElement.
+   *  Legacy fallback when the orchestrator doesn't pass a VideoFrame map. */
   getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
 }
 
 export interface OfflineRenderer {
   /** Renders one frame at the given playback time. Synchronous — runs the
    *  same `tick()` machinery the live renderer uses, just with `time` bound
-   *  to whatever the orchestrator passes. */
-  renderAt(timeSec: number): void;
+   *  to whatever the orchestrator passes.
+   *
+   *  Plan 5.10+: optional `videoFrames` map (mediaId → decoded VideoFrame
+   *  from the VideoDecoderPool). When provided, the renderer prefers
+   *  these over the HTMLVideoElement source for video clips. The frames
+   *  are pool-owned — drawn into the canvas synchronously, NOT closed
+   *  by the renderer. */
+  renderAt(timeSec: number, videoFrames?: Map<string, VideoFrame>): void;
 }
 
 /**
@@ -37,6 +44,7 @@ export interface OfflineRenderer {
  */
 export function makeOfflineRenderer(deps: OfflineRendererDeps): OfflineRenderer {
   let currentTime = 0;
+  let currentVideoFrames: Map<string, VideoFrame> | undefined;
   const renderer = createRenderer({
     // The renderer types canvas as HTMLCanvasElement; OffscreenCanvas has
     // the same .width/.height/.getContext('2d') surface we need, so the
@@ -47,12 +55,17 @@ export function makeOfflineRenderer(deps: OfflineRendererDeps): OfflineRenderer 
     getTimelineState: () => deps.timeline,
     getImageBitmap: deps.getImageBitmap,
     getVideoElement: deps.getVideoElement,
+    // Plan 5.10+ — preferred over getVideoElement when set. Pulls
+    // decoded VideoFrames from the per-frame map prepared by the
+    // offline orchestrator (VideoDecoderPool path).
+    getVideoFrame: (mediaId: string) => currentVideoFrames?.get(mediaId) ?? null,
     getFlowMode: () => deps.flowMode
   });
 
   return {
-    renderAt(timeSec: number): void {
+    renderAt(timeSec: number, videoFrames?: Map<string, VideoFrame>): void {
       currentTime = timeSec;
+      currentVideoFrames = videoFrames;
       renderer.tick();
     }
   };

@@ -52,16 +52,23 @@ export interface OfflineRenderDeps {
   numberOfChannels: number;
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   flowMode: boolean;
-  /** Plan-5.9b — optional. When provided, each frame awaits
-   *  `videoEngine.seekAllTo(timeSec)` BEFORE the canvas snapshot so the
-   *  encoded video is frame-accurate against the source clips. Adds
-   *  ~10-100 ms per frame depending on whether the browser implements
-   *  `requestVideoFrameCallback`. Projects without video clips pass
-   *  null and the seek-step is skipped entirely. */
+  /** Plan-5.9b legacy: HTMLVideoElement-based seek pipeline. Kept for
+   *  back-compat / fallback when WebCodecs VideoDecoder is unavailable
+   *  (older browsers, jsdom tests). When `videoDecoderPool` is also
+   *  provided, the renderer prefers the pool's deterministic frame
+   *  output and skips the HTMLVideoElement seek per frame. */
   videoEngine?: import('@/lib/video/engine').VideoEngine | null;
-  /** Plan-5.9b — optional accessor for the renderer's video draw step.
-   *  Required when videoEngine is set, ignored otherwise. */
+  /** Plan-5.9b legacy: HTMLVideoElement accessor for the renderer's
+   *  draw step. Ignored when `videoDecoderPool` is set. */
   getVideoElement?: (mediaId: string) => HTMLVideoElement | null;
+  /** Plan-5.10+ replacement for the HTMLVideoElement pipeline. When
+   *  set: per frame the orchestrator calls `getFrameAt(mediaId,
+   *  timeSec)` on the pool and the renderer draws the returned
+   *  VideoFrame directly. mp4box + WebCodecs VideoDecoder — no DOM,
+   *  no compositor, deterministic. Eliminates the "video frozen on
+   *  first frame in MP4" smoke bug that the HTMLVideoElement path
+   *  exhibited on modern Chromium. */
+  videoDecoderPool?: import('@/lib/video/decoder-pool').VideoDecoderPool | null;
 }
 
 export interface OfflineRenderResult {
@@ -231,55 +238,34 @@ export async function renderOffline(
   // rVFC fires per seek, and the decoder pipeline stays hot. Removed
   // again in `finally` so the live preview returns to its original
   // detached state.
+  // Plan 5.10+ — DOM-attach of HTMLVideoElement pool is only needed
+  // for the legacy `videoEngine` seek-and-draw path. When a
+  // VideoDecoderPool is provided, the pool reads MP4 binary + decodes
+  // via WebCodecs without any DOM involvement, so we skip the DOM
+  // attach entirely. Live preview's video pool is unaffected.
   let videoDomContainer: HTMLDivElement | null = null;
-  if (deps.videoEngine && typeof document !== 'undefined') {
+  if (
+    deps.videoEngine &&
+    !deps.videoDecoderPool &&
+    typeof document !== 'undefined'
+  ) {
     const ids = deps.videoEngine.loadedIds();
-    // eslint-disable-next-line no-console
-    console.log('[offline-render] videoEngine present, loaded ids:', ids);
     if (ids.length > 0) {
       videoDomContainer = document.createElement('div');
       videoDomContainer.setAttribute('data-vibegrid-export-video-pool', '');
-      // Render-forcing CSS: compositor MUST paint a visible element.
-      // opacity:0.001 + z-index:-2B (the original 519df8d setup) was
-      // optimised away by modern Chromium → no paint → no rVFC →
-      // seekElement fell back to seeked+rAF which resolved BEFORE the
-      // decoder caught up (readyState=1 at draw time, drawImage read
-      // stale frame 0). 1×1 px in the corner, default opacity, no
-      // z-index hack — visible to compositor, practically invisible
-      // to the user.
+      // Visible to compositor (1px in corner, default opacity), not the
+      // opacity:0.001 hack that modern Chromium optimised away.
       videoDomContainer.style.cssText =
         'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;pointer-events:none;';
       for (const id of ids) {
         const el = deps.videoEngine.getElement(id);
-        if (!el) {
-          // eslint-disable-next-line no-console
-          console.warn('[offline-render] getElement returned null for id:', id);
-          continue;
-        }
+        if (!el) continue;
         el.style.width = '1px';
         el.style.height = '1px';
         videoDomContainer.appendChild(el);
-        // eslint-disable-next-line no-console
-        console.log('[offline-render] DOM-attached video', id, {
-          currentTime: el.currentTime,
-          duration: el.duration,
-          readyState: el.readyState,
-          paused: el.paused,
-          videoWidth: el.videoWidth,
-          videoHeight: el.videoHeight
-        });
       }
       document.body.appendChild(videoDomContainer);
-    } else {
-      // eslint-disable-next-line no-console
-      console.warn('[offline-render] videoEngine has 0 loaded ids — no DOM-attach, no per-frame seek');
     }
-  } else if (deps.videoEngine) {
-    // eslint-disable-next-line no-console
-    console.warn('[offline-render] document undefined — skipping DOM-attach');
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('[offline-render] no videoEngine — projects without video');
   }
 
   try {
@@ -292,41 +278,53 @@ export async function renderOffline(
     throwIfVideo();
     const timeSec = frameIdx / fps;
 
-    // Plan-5.9b — frame-accurate video sync. Wait until every loaded
-    // video element has settled on the requested frame BEFORE we
-    // snapshot the canvas. Adds ~10-100 ms per frame depending on the
-    // browser (Chrome/Edge: rVFC fast path; Firefox/Safari: seeked
-    // event). Projects without video clips have an empty engine pool
-    // and seekAllTo resolves immediately.
-    if (deps.videoEngine) {
+    // Plan 5.10+ — video frame sourcing.
+    //
+    // PREFERRED path: VideoDecoderPool (mp4box + WebCodecs). Fetch the
+    // decoded VideoFrame for each active video clip's mediaId at this
+    // timestamp. Frames are pool-owned (sliding cache); we pass them
+    // to renderAt which draws them synchronously, then loops to the
+    // next frame.
+    //
+    // FALLBACK path: videoEngine.seekAllTo (HTMLVideoElement seek-and-
+    // draw). Kept for browsers without WebCodecs; fragile but
+    // functional when working.
+    //
+    // Projects without video skip both paths.
+    let videoFrames: Map<string, VideoFrame> | undefined;
+    if (deps.videoDecoderPool) {
+      // Beat-space conversion mirrors the renderer's per-tick math so
+      // the active-clip set matches what the renderer would draw.
+      const beats =
+        ((timeSec - deps.beatGrid.offsetMs / 1000) * deps.beatGrid.bpm) / 60;
+      const activeMediaIds = new Set<string>();
+      for (const clip of deps.timeline.clips) {
+        if (clip.kind !== 'video' || typeof clip.mediaId !== 'string') continue;
+        if (clip.startBeat <= beats && beats < clip.startBeat + clip.lengthBeats) {
+          activeMediaIds.add(clip.mediaId);
+        }
+      }
+      if (activeMediaIds.size > 0) {
+        videoFrames = new Map();
+        const ids = Array.from(activeMediaIds);
+        const frames = await Promise.all(
+          ids.map((id) => deps.videoDecoderPool!.getFrameAt(id, timeSec))
+        );
+        for (let i = 0; i < ids.length; i++) {
+          const f = frames[i];
+          if (f) videoFrames.set(ids[i], f);
+        }
+      }
+      throwIfAborted();
+      throwIfVideo();
+    } else if (deps.videoEngine) {
+      // Legacy seek-based path.
       await deps.videoEngine.seekAllTo(timeSec);
       throwIfAborted();
       throwIfVideo();
-      // Diag: log first 3 + last 3 frame seek results to verify the
-      // video element's currentTime is actually advancing per frame.
-      // High-frequency log would flood; bookend is enough to confirm
-      // the seek pipeline is working end-to-end.
-      if (frameIdx < 3 || frameIdx >= totalFrames - 3) {
-        const ids = deps.videoEngine.loadedIds();
-        // Inline string per element so the values are visible at a glance
-        // in the Chrome console without expanding object refs.
-        const samplesStr = ids
-          .map((id) => {
-            const el = deps.videoEngine!.getElement(id);
-            if (!el) return `${id.slice(0, 8)}=MISSING`;
-            const ct = Number(el.currentTime.toFixed(3));
-            const dur = Number(el.duration.toFixed(3));
-            return `${id.slice(0, 8)} ct=${ct}/${dur} rs=${el.readyState} paused=${el.paused}`;
-          })
-          .join(' | ');
-        // eslint-disable-next-line no-console
-        console.log(
-          `[offline-render] frame ${frameIdx} timeSec=${timeSec.toFixed(3)} → ${samplesStr}`
-        );
-      }
     }
 
-    offlineRenderer.renderAt(timeSec);
+    offlineRenderer.renderAt(timeSec, videoFrames);
 
     while (videoEncoder.encodeQueueSize > BACKPRESSURE_QUEUE_HIGH) {
       await new Promise<void>((r) => setTimeout(r, 0));
