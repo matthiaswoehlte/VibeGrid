@@ -3,7 +3,7 @@ import { useAppStore } from '@/lib/store';
 
 /**
  * Global Beat ↔ Flow toggle. Lives in the TopBar between RecIndicator
- * and ClearProjectButton so it's always visible regardless of which clip
+ * and NewProjectButton so it's always visible regardless of which clip
  * is selected. Teal (--a3) when active — bewusst anders als Selection
  * (--a1) und Automation Points (--a2). Transient state: a page reload
  * brings the user back to Beat Mode.

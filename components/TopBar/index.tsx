@@ -3,7 +3,7 @@ import { Transport } from './Transport';
 import { BPMBadge } from './BPMBadge';
 import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
-import { ClearProjectButton } from './ClearProjectButton';
+import { NewProjectButton } from './NewProjectButton';
 import { FlowModeToggle } from './FlowModeToggle';
 import { LogoutButton } from './LogoutButton';
 import { SaveProjectButton } from './SaveProjectButton';
@@ -56,10 +56,13 @@ export function TopBar({
             unchanged because export happens once per session, edge-case. */}
         <RecIndicator onCancel={() => exporter.cancel()} />
         <FlowModeToggle />
-        {/* ClearProjectButton + Dev: Clear are dangerous actions. Keep
+        {/* NewProjectButton + Dev: Clear are dangerous actions. Keep
             them visible on Mobile too — the native window.confirm()
-            dialog already protects against misclicks at any size. */}
-        <ClearProjectButton />
+            dialog already protects against misclicks at any size.
+            Plan 7: 'New' replaced 'Clear' — same wipe semantics, plus
+            it detaches the current-project pointer so the next Save
+            creates a fresh VG_projects row. */}
+        <NewProjectButton />
         {process.env.NODE_ENV === 'development' && (
           <button
             type="button"
