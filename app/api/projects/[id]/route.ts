@@ -1,12 +1,58 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/better-auth-server';
+import { loadProject, updateProject, deleteProject } from '@/lib/project/db';
+import type { SerializedProject } from '@/lib/project/types';
+
 export const runtime = 'nodejs';
 
-/** GET /api/projects/:id — v0.1: 404. Active in v0.2 when D1 is wired. */
+async function getUserId(req: Request): Promise<string | null> {
+  const session = await auth.api.getSession({ headers: req.headers });
+  return session?.user.id ?? null;
+}
+
 export async function GET(
-  _request: Request,
-  { params: _params }: { params: { id: string } }
+  req: Request,
+  { params }: { params: { id: string } }
 ): Promise<Response> {
-  return Response.json(
-    { error: 'not found', note: 'v0.1 stub — D1 not yet active' },
-    { status: 404 }
-  );
+  const userId = await getUserId(req);
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const rec = await loadProject({ userId, projectId: params.id });
+  if (!rec) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json(rec);
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+): Promise<Response> {
+  const userId = await getUserId(req);
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
+  }
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'invalid body' }, { status: 400 });
+  }
+  const patch = body as { name?: string; serialized?: SerializedProject };
+  const ok = await updateProject({
+    userId,
+    projectId: params.id,
+    patch: { name: patch.name, serialized: patch.serialized }
+  });
+  if (!ok) return NextResponse.json({ error: 'not found or unchanged' }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } }
+): Promise<Response> {
+  const userId = await getUserId(req);
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const ok = await deleteProject({ userId, projectId: params.id });
+  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }

@@ -1,28 +1,38 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/better-auth-server';
+import { createProject, listProjects } from '@/lib/project/db';
+
 export const runtime = 'nodejs';
 
-/** GET /api/projects — list. v0.1: always empty until D1 is active. */
-export async function GET(): Promise<Response> {
-  return Response.json({ projects: [] }, { status: 200 });
+export async function GET(req: Request): Promise<Response> {
+  const session = await auth.api.getSession({ headers: req.headers });
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const list = await listProjects(session.user.id);
+  return NextResponse.json({ projects: list });
 }
 
-/** POST /api/projects — create. v0.1: echo back with a generated id; no persistence. */
-export async function POST(request: Request): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
+  const session = await auth.api.getSession({ headers: req.headers });
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   let body: unknown;
   try {
-    body = await request.json();
+    body = await req.json();
   } catch {
-    return Response.json({ error: 'invalid json' }, { status: 400 });
+    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
-  if (typeof body !== 'object' || body === null) {
-    return Response.json({ error: 'invalid body' }, { status: 400 });
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    typeof (body as { name?: unknown }).name !== 'string' ||
+    typeof (body as { serialized?: unknown }).serialized !== 'object' ||
+    (body as { serialized?: unknown }).serialized === null
+  ) {
+    return NextResponse.json({ error: 'invalid body' }, { status: 400 });
   }
-  return Response.json(
-    {
-      ...(body as Record<string, unknown>),
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      note: 'v0.1 stub — not persisted'
-    },
-    { status: 201 }
-  );
+  const { name, serialized } = body as {
+    name: string;
+    serialized: Parameters<typeof createProject>[0]['serialized'];
+  };
+  const id = await createProject({ userId: session.user.id, name, serialized });
+  return NextResponse.json({ id }, { status: 201 });
 }
