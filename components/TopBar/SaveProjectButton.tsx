@@ -13,16 +13,22 @@ export function SaveProjectButton() {
     setBusy(true);
     const state = useAppStore.getState();
     const cur = useCurrentProject.getState();
+    console.log('[save] click — projectId=', cur.projectId, 'name=', cur.projectName);
     try {
       if (cur.projectId === null) {
-        const { id } = await apiCreateProject(cur.projectName, serializeProject(state));
+        const payload = serializeProject(state);
+        console.log('[save] POST /api/projects', { name: cur.projectName, store_version: payload.store_version });
+        const { id } = await apiCreateProject(cur.projectName, payload);
+        console.log('[save] success, id=', id);
         useCurrentProject.getState().setProject(id, cur.projectName);
         toast.success('Projekt gespeichert');
       } else {
+        console.log('[save] PATCH /api/projects/' + cur.projectId);
         await apiPatchProject(cur.projectId, { serialized: serializeProject(state) });
         toast.success('Gespeichert');
       }
     } catch (e) {
+      console.error('[save] threw', e);
       toast.error('Speichern fehlgeschlagen: ' + (e as Error).message);
     } finally {
       setBusy(false);
