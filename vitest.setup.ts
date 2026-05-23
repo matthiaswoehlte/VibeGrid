@@ -2,6 +2,20 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
+// Plan 7 — modules under test (`lib/db/pg.ts`, `lib/auth/better-auth-server.ts`)
+// throw at import time when these env vars are missing. Set safe placeholders
+// here so any test that pulls them in transitively succeeds. The Pool is lazy
+// (no connection opens until query()), so a fake URL never reaches a real DB.
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+}
+if (!process.env.BETTER_AUTH_SECRET) {
+  process.env.BETTER_AUTH_SECRET = 'test-secret-not-used-in-prod-test-secret-not-used-in-prod';
+}
+if (!process.env.NEXT_PUBLIC_BASE_URL) {
+  process.env.NEXT_PUBLIC_BASE_URL = 'http://localhost:3000';
+}
+
 // @testing-library/react does not auto-cleanup when vitest's `globals: false`
 // is set — `afterEach` isn't on globalThis. Wire it explicitly so multi-render
 // component tests don't leak DOM between cases (would cause "multiple elements
