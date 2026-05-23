@@ -120,6 +120,32 @@ export function createVideoEngine(): VideoEngine | null {
   // unload (a leaked blob URL pins the entire MP4 in memory).
   const blobUrls = new Map<string, string>();
 
+  // Plan 7 hotfix — modern Chromium optimises away the decoder pipeline
+  // when a <video> isn't attached to the DOM. Result: el.play() advances
+  // currentTime, but new VideoFrame(el) / drawImage(el) return the
+  // initial frame forever. Live preview shows a still image.
+  //
+  // Fix: park every element in a fixed-position off-screen host so the
+  // browser keeps the decoder warm and rVFC fires. Position-offscreen
+  // beats display:none / visibility:hidden — Chromium also optimises
+  // those away. The host is mounted once on first load and torn down
+  // by destroy().
+  let domHost: HTMLDivElement | null = null;
+  function ensureHost(): HTMLDivElement {
+    if (!domHost) {
+      const host = document.createElement('div');
+      // Off-screen but laid out + painted by the compositor. 1×1 px keeps
+      // the GPU memory cost down.
+      host.style.cssText =
+        'position:fixed;left:-9999px;top:0;width:1px;height:1px;pointer-events:none;opacity:0';
+      host.setAttribute('aria-hidden', 'true');
+      host.dataset.vibegridVideoHost = '';
+      document.body.appendChild(host);
+      domHost = host;
+    }
+    return domHost;
+  }
+
   return {
     async load(mediaId, url, onProgress) {
       if (elements.has(mediaId)) {
@@ -157,6 +183,19 @@ export function createVideoEngine(): VideoEngine | null {
       }
       // Guard against a double-load race — only the first inflight wins.
       if (!elements.has(mediaId)) {
+        // Plan 7 hotfix — park the element in the off-screen host so the
+        // browser keeps the decoder pipeline warm. Detached <video>
+        // elements get aggressively optimised by modern Chromium → live
+        // preview reads stale Frame 0 forever.
+        //
+        // The try/catch handles MockVideoElement (extends EventTarget,
+        // not HTMLElement) in tests — appendChild throws there. Real
+        // production HTMLVideoElement always appendable.
+        try {
+          ensureHost().appendChild(el);
+        } catch {
+          /* test mock — skip attach */
+        }
         elements.set(mediaId, el);
         blobUrls.set(mediaId, blobUrl);
       } else {
@@ -169,6 +208,16 @@ export function createVideoEngine(): VideoEngine | null {
       if (!el) return;
       el.pause();
       el.src = '';
+      // Remove from the DOM host. Safe even if the element was never
+      // attached (test mock or attach throw above).
+      const parent = (el as { parentNode?: Node | null }).parentNode;
+      if (parent && typeof (parent as Node).removeChild === 'function') {
+        try {
+          (parent as Node).removeChild(el);
+        } catch {
+          /* defensive — already removed */
+        }
+      }
       const blobUrl = blobUrls.get(mediaId);
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
@@ -214,10 +263,21 @@ export function createVideoEngine(): VideoEngine | null {
       elements.forEach((el) => {
         el.pause();
         el.src = '';
+        const parent = (el as { parentNode?: Node | null }).parentNode;
+        if (parent && typeof (parent as Node).removeChild === 'function') {
+          try {
+            (parent as Node).removeChild(el);
+          } catch {
+            /* defensive — already removed */
+          }
+        }
       });
       elements.clear();
       blobUrls.forEach((u) => URL.revokeObjectURL(u));
       blobUrls.clear();
+      // Tear down the off-screen host last.
+      if (domHost?.parentNode) domHost.parentNode.removeChild(domHost);
+      domHost = null;
     }
   };
 }
