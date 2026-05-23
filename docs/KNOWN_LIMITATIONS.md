@@ -364,6 +364,56 @@ roadmap:
 
 ---
 
+## Plan 7 — Better-Auth Login + VG_projects
+
+### Auth-Stack: Better-Auth, NOT Supabase Auth
+
+VibeGrid teilt eine bestehende Supabase-Postgres-Instanz mit anderen Apps der gleichen Org. Die Instanz nutzt **Better-Auth** für User-Management (Tabellen: `"user"`, `account`, `session`, `passkey`, `twoFactor`, `verification`). Konsequenzen:
+
+- VibeGrid läuft Better-Auth in einer eigenen Instanz (`lib/auth/better-auth-server.ts`) mit `cookiePrefix: 'vibegrid'`. Die Cookie ist getrennt von anderen Apps.
+- v0.1 aktiviert NUR `emailAndPassword`. Keine OAuth-Provider, kein Signup, keine 2FA/Passkey-Flows in VibeGrid (auch wenn die DB-Tabellen für andere Apps existieren).
+- User mit aktivem 2FA bei der Schwester-App: Login in VibeGrid schlägt fehl. Workaround v0.1: 2FA-User loggt sich bei der Schwester-App ein, dort 2FA deaktivieren, in VibeGrid neu einloggen, später wieder aktivieren. v0.2: 2FA-Plugin in VibeGrid Better-Auth aktivieren.
+- Domain-Strategie v0.1: VibeGrid läuft auf eigener Domain → separater Login-Schritt. SSO-Cookie-Share via Parent-Domain ist v0.2 wenn Subdomain-Setup steht.
+
+### Service-Role-only DB-Zugriff für VG_projects
+
+Better-Auth gibt keine Supabase-Auth-JWTs aus → klassische Supabase-RLS-Policies via `auth.uid() = user_id` funktionieren nicht. Authz läuft server-side:
+
+- VG_projects ist `REVOKE ALL FROM anon, authenticated` + RLS-Policy `USING (false)` für Defense-in-Depth.
+- Schreib-/Lesezugriff ausschließlich via Next.js API-Routes mit Service-Role-Connection (`lib/db/pg.ts`), gefiltert nach `session.user.id`.
+- Falls jemals der Anon-Key in einem Client-Bundle leaked: VG_projects bleibt unerreichbar.
+
+### Two-tier session enforcement (cookie-check + API-side validation)
+
+Next.js 14 Middleware läuft im Edge Runtime — `pg` ist dort nicht ladbar. Die Middleware (`middleware.ts`) prüft daher NUR die Anwesenheit der `vibegrid.session_token`-Cookie, ohne DB-Roundtrip. Die echte Session-Validierung passiert in jeder API-Route via `auth.api.getSession({ headers })` (Node-Runtime).
+
+Konsequenzen:
+
+- **Tampered oder DB-seitig abgelaufene Cookie** kann durch die Middleware durch → `/studio`-Shell rendert. Beim ersten API-Call (Project-Liste laden) kommt 401 zurück. Der `api-client.ts`-`json<T>`-Helper fängt 401 ab und redirected via `window.location.assign('/login?expired=1')`.
+- **Window flash für expired sessions**: Wenige Millisekunden zwischen Shell-Render und Redirect zeigen den leeren Studio-Skelett-State. In v0.1 akzeptiert; v0.2 fügt einen Server-Component-Session-Check im `/studio`-Layout hinzu, der diesen Flash eliminiert.
+- **Logout-Race**: Falls ein User in Tab A Logout klickt und Tab B parallel ein API-Action triggert, kann Tab B den Server-401 erst nach dem Logout-Roundtrip sehen. Akzeptabel.
+
+### Store-Migration beim Projekt-Laden
+
+Beim `Load Project` läuft die existierende `migrate(persistedState, version)`-Kette (`lib/store/index.ts:14`) auch für DB-gespeicherte Snapshots. Ein Projekt das mit Store-v4 gespeichert wurde wird beim Laden zu v6 migriert. Der DB-Eintrag selbst bleibt unverändert (no in-place upgrade) — erst beim nächsten Save wird der upgraded State zurückgeschrieben.
+
+### Auto-Save-Semantik
+
+- Nur aktiv wenn `useCurrentProject.projectId !== null` (Projekt wurde mindestens einmal explizit gespeichert).
+- 30 Sekunden debounced — schnelle Sequenz von Store-Updates ergibt EIN Netzwerk-Roundtrip.
+- Fehler werden silently swallow'd — der nächste explizite Save zeigt den Toast. v0.2: Sticky Toast mit Retry für persistente Save-Failures.
+- **Tab-Close verliert pending Auto-Save** — `setTimeout` läuft nach Unmount nicht mehr. v0.2: `beforeunload`-Handler + `navigator.sendBeacon`-Endpunkt der PATCH verarbeitet.
+
+### R2-Key-Format
+
+`{userId}/{projectId}/{kind}/{uuid}.{ext}` (Spec §7) bleibt in v0.1 weiterhin `anonymous/default/…` — der Upload-Pfad wurde von Plan 7 NICHT angefasst, weil Bestandsuploads vorher unter dem Anonymous-Key liegen und ein Live-Rename komplex wäre. Konsequenz: in v0.1 sehen alle eingeloggten User dieselben R2-Buckets-Inhalte, sind aber per VG_projects.state.media.mediaRefs-Sichtbarkeit nur an ihre eigenen Projekt-Snapshots gebunden. v0.2 migriert Upload-Pfade auf echte userId/projectId und stellt einen Backfill-Script bereit.
+
+### Hidden params bei Auto-Preset (carry-over aus Plan 5.8b)
+
+Unverändert — siehe Plan 5.8b-Section.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
