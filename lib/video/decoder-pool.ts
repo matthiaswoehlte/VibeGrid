@@ -347,18 +347,33 @@ export function createVideoDecoderPool(): VideoDecoderPool | null {
   if (typeof VideoDecoder === 'undefined') return null;
 
   const sources = new Map<string, VideoDecoderSource>();
+  // In-progress loads dedup: useVideoDecoderPool's reconciler may call
+  // load() before the user-clicked Export does, and the export's own
+  // pre-load shouldn't duplicate the fetch. Returning the same Promise
+  // for concurrent callers prevents the orphan-source leak (two parallel
+  // VideoDecoderSource instances, one overwritten in `sources`, the
+  // other never close()'d).
+  const inProgress = new Map<string, Promise<void>>();
 
   return {
-    async load(mediaId, url, signal) {
-      if (sources.has(mediaId)) return;
+    load(mediaId, url, signal) {
+      if (sources.has(mediaId)) return Promise.resolve();
+      const existing = inProgress.get(mediaId);
+      if (existing) return existing;
       const source = new VideoDecoderSource();
-      try {
-        await source.load(url, signal);
-        sources.set(mediaId, source);
-      } catch (err) {
-        source.destroy();
-        throw err;
-      }
+      const promise = source.load(url, signal).then(
+        () => {
+          sources.set(mediaId, source);
+          inProgress.delete(mediaId);
+        },
+        (err: unknown) => {
+          source.destroy();
+          inProgress.delete(mediaId);
+          throw err;
+        }
+      );
+      inProgress.set(mediaId, promise);
+      return promise;
     },
     async getFrameAt(mediaId, timeSec) {
       const source = sources.get(mediaId);
@@ -371,6 +386,7 @@ export function createVideoDecoderPool(): VideoDecoderPool | null {
     destroy() {
       for (const source of sources.values()) source.destroy();
       sources.clear();
+      inProgress.clear();
     }
   };
 }
