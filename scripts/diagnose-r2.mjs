@@ -3,15 +3,30 @@
 import { readFileSync } from 'node:fs';
 import { connect as tlsConnect } from 'node:tls';
 
-const env = Object.fromEntries(
+function stripQuotes(v) {
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    return v.slice(1, -1);
+  }
+  return v;
+}
+const raw = Object.fromEntries(
   readFileSync('.env.local', 'utf8')
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#'))
     .map((l) => {
       const i = l.indexOf('=');
-      return [l.slice(0, i), l.slice(i + 1)];
+      return [l.slice(0, i), stripQuotes(l.slice(i + 1))];
     })
+);
+
+// Mimic Next.js dotenv-expand semantics: replace ${VAR} with raw[VAR].
+// Single pass is enough for our use (no recursive references).
+const env = Object.fromEntries(
+  Object.entries(raw).map(([k, v]) => [
+    k,
+    v.replace(/\$\{([^}]+)\}/g, (_m, name) => raw[name] ?? '')
+  ])
 );
 
 const endpoint = env.R2_ENDPOINT || '';
