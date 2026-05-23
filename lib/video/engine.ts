@@ -45,30 +45,61 @@ function seekElement(el: HTMLVideoElement, timeSec: number): Promise<void> {
   return new Promise<void>((resolve) => {
     let done = false;
     const elAny = el as VideoElementWithFrameCallback;
-    // `seeked` always fires after the seek operation completes, but BEFORE
-    // the new frame is composited — using it alone makes `drawImage` pick
-    // up the previous frame ("stuck on first frame" symptom in the offline
-    // export). Defer one rAF tick (or 16 ms fallback) so the decoder has
-    // time to deliver the frame before drawImage reads from the element.
-    const onSeeked = (): void => {
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => finish());
-      } else {
-        setTimeout(finish, 16);
-      }
-    };
+    // OFFLINE EXPORT path (live preview never calls seekElement — it just
+    // plays the video). Three-layered wait so drawImage / new VideoFrame
+    // reads the actually-decoded frame at the new currentTime:
+    //
+    // 1. rVFC: paint-accurate, fires AFTER a new frame is composited.
+    //    Fastest path on Chrome — but requires the compositor to paint
+    //    the element. The export pool's DOM-attach CSS (1×1 px, no
+    //    opacity hack) makes that reliable on modern Chromium.
+    // 2. `seeked` event + `readyState ≥ 2` poll: fallback for browsers
+    //    where rVFC doesn't fire (Firefox/Safari) or when the
+    //    compositor still skips (older fix had opacity:0.001 → modern
+    //    Chrome silently dropped paint scheduling → seeked+rAF
+    //    resolved at readyState=1 with no decoded frame → drawImage
+    //    read stale frame 0 → the "videos frozen on first frame in
+    //    MP4" smoke bug). Now we explicitly poll until the decoder
+    //    delivers HAVE_CURRENT_DATA.
+    // 3. Hard timeout (500 ms): never hang the export. If the decoder
+    //    really can't deliver, we let drawImage read whatever it can
+    //    (probably stale) and move on — at least the export finishes.
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     const finish = (): void => {
       if (done) return;
       done = true;
+      if (pollTimer !== null) clearTimeout(pollTimer);
       el.removeEventListener('seeked', onSeeked);
       resolve();
     };
-    // rVFC: paint-accurate, fires AFTER the new frame is composited.
-    // For offline export the orchestrator attaches the element to the
-    // DOM (off-screen but visible to the compositor) so rVFC fires —
-    // see `lib/export/offline-render.ts`. The `seeked` listener is
-    // kept as a defensive fallback for both detached usage and
-    // Firefox/Safari without rVFC.
+    const POLL_INTERVAL_MS = 10;
+    const POLL_TIMEOUT_MS = 500;
+    let pollStart = 0;
+    const pollDecoder = (): void => {
+      if (done) return;
+      // HAVE_CURRENT_DATA (2) = the frame at currentTime is decoded
+      // and readable. drawImage / new VideoFrame work at this point.
+      // Below 2 we'd race the decoder.
+      if (el.readyState >= 2) {
+        finish();
+        return;
+      }
+      if (
+        typeof performance !== 'undefined'
+          ? performance.now() - pollStart > POLL_TIMEOUT_MS
+          : Date.now() - pollStart > POLL_TIMEOUT_MS
+      ) {
+        // Decoder gave up; resolve anyway so the export finishes.
+        finish();
+        return;
+      }
+      pollTimer = setTimeout(pollDecoder, POLL_INTERVAL_MS);
+    };
+    const onSeeked = (): void => {
+      pollStart =
+        typeof performance !== 'undefined' ? performance.now() : Date.now();
+      pollDecoder();
+    };
     if (typeof elAny.requestVideoFrameCallback === 'function') {
       elAny.requestVideoFrameCallback(() => finish());
     }

@@ -239,8 +239,16 @@ export async function renderOffline(
     if (ids.length > 0) {
       videoDomContainer = document.createElement('div');
       videoDomContainer.setAttribute('data-vibegrid-export-video-pool', '');
+      // Render-forcing CSS: compositor MUST paint a visible element.
+      // opacity:0.001 + z-index:-2B (the original 519df8d setup) was
+      // optimised away by modern Chromium → no paint → no rVFC →
+      // seekElement fell back to seeked+rAF which resolved BEFORE the
+      // decoder caught up (readyState=1 at draw time, drawImage read
+      // stale frame 0). 1×1 px in the corner, default opacity, no
+      // z-index hack — visible to compositor, practically invisible
+      // to the user.
       videoDomContainer.style.cssText =
-        'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0.001;pointer-events:none;z-index:-2147483648;';
+        'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;pointer-events:none;';
       for (const id of ids) {
         const el = deps.videoEngine.getElement(id);
         if (!el) {
