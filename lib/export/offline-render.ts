@@ -291,33 +291,38 @@ export async function renderOffline(
     // functional when working.
     //
     // Projects without video skip both paths.
-    // Per-frame hard timeout — if a single output frame takes more than
-    // FRAME_HARD_TIMEOUT_MS, abort the export with a diagnostic error.
-    // Without this, a stalled hardware encoder (encodeQueueSize stays
-    // above backpressure threshold forever) or a stuck decoder (no new
-    // VideoFrames despite chunks fed) silently freezes the user with
-    // no UI feedback. The race wraps the entire per-frame work
-    // (video frame fetch + render + backpressure + encode) so any of
-    // those stalls bubbles up.
+    // Per-frame hard timeout. The error message names the EXACT stage
+    // we got stuck in so we can diagnose without per-frame logging.
+    // Stages: 'fetch-video' (pool.getFrameAt or seekAllTo) /
+    // 'render' (sync canvas draw) / 'backpressure' (encoder queue) /
+    // 'encode' (new VideoFrame + encoder.encode). Each is updated
+    // synchronously before its await.
     const FRAME_HARD_TIMEOUT_MS = 10_000;
+    let stallStage = 'init';
     let frameTimeoutId: ReturnType<typeof setTimeout> | undefined;
     const frameTimeout = new Promise<never>((_, reject) => {
-      frameTimeoutId = setTimeout(
-        () =>
-          reject(
-            new Error(
-              `Frame ${frameIdx} took longer than ${FRAME_HARD_TIMEOUT_MS}ms — export aborted to avoid silent hang`
-            )
-          ),
-        FRAME_HARD_TIMEOUT_MS
-      );
+      frameTimeoutId = setTimeout(() => {
+        // Snapshot diagnostic state at the moment of timeout.
+        const encoderState = videoEncoder.state;
+        const encoderQueueLen = videoEncoder.encodeQueueSize;
+        const poolReport = deps.videoDecoderPool
+          ? deps.videoDecoderPool
+              .loadedIds()
+              .map((id) => `${id.slice(0, 8)}=loaded`)
+              .join(',')
+          : 'no-pool';
+        reject(
+          new Error(
+            `Frame ${frameIdx} stalled at stage="${stallStage}" for >${FRAME_HARD_TIMEOUT_MS}ms ` +
+              `(encoder.state=${encoderState} encoder.queueSize=${encoderQueueLen} pool=[${poolReport}])`
+          )
+        );
+      }, FRAME_HARD_TIMEOUT_MS);
     });
 
     const renderOneFrame = async (): Promise<void> => {
       let videoFrames: Map<string, VideoFrame> | undefined;
       if (deps.videoDecoderPool) {
-        // Beat-space conversion mirrors the renderer's per-tick math so
-        // the active-clip set matches what the renderer would draw.
         const beats =
           ((timeSec - deps.beatGrid.offsetMs / 1000) * deps.beatGrid.bpm) / 60;
         const activeMediaIds = new Set<string>();
@@ -330,6 +335,7 @@ export async function renderOffline(
         if (activeMediaIds.size > 0) {
           videoFrames = new Map();
           const ids = Array.from(activeMediaIds);
+          stallStage = `fetch-video pool [${ids.map((id) => id.slice(0, 8)).join(',')}]`;
           const frames = await Promise.all(
             ids.map((id) => deps.videoDecoderPool!.getFrameAt(id, timeSec))
           );
@@ -341,16 +347,16 @@ export async function renderOffline(
         throwIfAborted();
         throwIfVideo();
       } else if (deps.videoEngine) {
+        stallStage = 'fetch-video engine.seekAllTo';
         await deps.videoEngine.seekAllTo(timeSec);
         throwIfAborted();
         throwIfVideo();
       }
 
+      stallStage = 'render';
       offlineRenderer.renderAt(timeSec, videoFrames);
 
-      // Backpressure — but with a sane bound. If the encoder is genuinely
-      // overwhelmed for a few hundred ms, that's normal. The OUTER
-      // per-frame timeout (10 s) catches actual stalls.
+      stallStage = 'backpressure';
       let backpressureWaits = 0;
       while (videoEncoder.encodeQueueSize > BACKPRESSURE_QUEUE_HIGH) {
         await new Promise<void>((r) => setTimeout(r, 0));
@@ -364,6 +370,7 @@ export async function renderOffline(
           `[offline-render] frame ${frameIdx}: encoder backpressure ${backpressureWaits} wait cycles (encodeQueueSize=${videoEncoder.encodeQueueSize})`
         );
       }
+      stallStage = 'done';
     };
 
     try {

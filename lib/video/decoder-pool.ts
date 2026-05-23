@@ -186,7 +186,9 @@ class VideoDecoderSource {
     // Rare on offline export (sequential frame iteration), can happen
     // on clip-trim manual scrubbing.
     if (sampleIdx < this.nextSampleIdx) {
-      await this.decoder.flush();
+      // eslint-disable-next-line no-console
+      console.log('[VideoDecoderSource] backward seek — flushing decoder');
+      await this.flushWithTimeout('backward-seek');
       while (this.outputQueue.length > 0) this.outputQueue.shift()!.close();
       let keyIdx = sampleIdx;
       while (keyIdx > 0 && !this.samples[keyIdx].isKey) keyIdx--;
@@ -241,8 +243,11 @@ class VideoDecoderSource {
         }
       } else {
         // All chunks fed — force any remaining buffered output out.
-        await this.decoder.flush();
-        // Final check after flush
+        // eslint-disable-next-line no-console
+        console.log(
+          `[VideoDecoderSource] end-of-source flush at target ${target.ts}us (samples.length=${this.samples.length})`
+        );
+        await this.flushWithTimeout('end-of-source');
         const found = this.outputQueue.findIndex(
           (f) => f.timestamp >= target.ts
         );
@@ -252,7 +257,6 @@ class VideoDecoderSource {
           if (found > 0) return this.outputQueue[found - 1];
           return f;
         }
-        // Latest available preceding frame
         return this.outputQueue.length > 0
           ? this.outputQueue[this.outputQueue.length - 1]
           : null;
@@ -280,6 +284,32 @@ class VideoDecoderSource {
     }
     this.decoder = null;
     this.samples = [];
+  }
+
+  /** flush() is known to occasionally hang in some Chromium builds when
+   *  the decoder is in an inconsistent state. Race against a timeout so
+   *  the export doesn't freeze; if the timeout fires we proceed with
+   *  whatever frames the decoder already emitted (drop the rest). */
+  private async flushWithTimeout(reason: string): Promise<void> {
+    if (!this.decoder) return;
+    const FLUSH_TIMEOUT_MS = 3000;
+    try {
+      await Promise.race([
+        this.decoder.flush(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`decoder.flush() timeout (${reason})`)),
+            FLUSH_TIMEOUT_MS
+          )
+        )
+      ]);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[VideoDecoderSource] flush failed (${reason}):`,
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 }
 
