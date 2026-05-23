@@ -5,6 +5,9 @@ import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
 import { ClearProjectButton } from './ClearProjectButton';
 import { FlowModeToggle } from './FlowModeToggle';
+import { LogoutButton } from './LogoutButton';
+import { SaveProjectButton } from './SaveProjectButton';
+import { ProjectNameField } from './ProjectNameField';
 import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
@@ -39,6 +42,11 @@ export function TopBar({
       <div className="flex items-center gap-2 md:gap-3">
         <Transport engine={engine} />
         <BPMBadge />
+        {/* Plan 7 — current project name + Save sit next to BPM,
+            visually grouped with Transport because they're the
+            session-scope identity controls. */}
+        <ProjectNameField />
+        <SaveProjectButton />
       </div>
       <div className="flex items-center gap-1 md:gap-2">
         {/* RecIndicator hides itself when status === 'idle'; on Mobile the
@@ -64,6 +72,7 @@ export function TopBar({
           </button>
         )}
         <ExportButton onStart={() => exporter.start()} />
+        <LogoutButton />
       </div>
     </header>
   );

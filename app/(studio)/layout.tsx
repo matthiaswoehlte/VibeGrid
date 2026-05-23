@@ -1,9 +1,11 @@
 import { Toaster } from 'sonner';
+import { AutoSaveMount } from '@/components/AutoSaveMount';
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-bg text-text">
       {children}
+      <AutoSaveMount />
       <Toaster
         position="bottom-right"
         theme="dark"
