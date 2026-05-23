@@ -25,20 +25,17 @@ interface EncodedSample {
   isKey: boolean;
 }
 
-interface CachedFrame {
-  ts: number;
-  frame: VideoFrame;
-}
+/** How many encoded chunks to feed per pass of the wait-for-output loop.
+ *  Decoders typically have an internal lookahead of 4-16 chunks before
+ *  they start emitting, so feeding in small batches and yielding lets
+ *  the output callback fire reliably without overshooting too far. */
+const FEED_BATCH_SIZE = 8;
 
-/** Sliding-window cap. 8 frames * ~8 MB at 1080p = ~64 MB per video. Sufficient
- *  for sequential export access; backward jumps trigger a flush + re-decode
- *  from the nearest preceding keyframe. */
-const CACHE_SIZE = 8;
-
-/** Hard timeout per getFrameAt — if the decoder silently stalls we don't want
- *  the export to hang forever. 2 s is plenty for a single frame even on
- *  slow hardware; in practice frames arrive in 1-20 ms. */
-const FRAME_TIMEOUT_MS = 2000;
+/** Safety cap on the wait-for-output loop in getFrameAt. Each iteration
+ *  yields to the event loop (~1 ms), so 500 iterations ≈ 500 ms max
+ *  per frame. Real-world per-frame latency on a modern hardware decoder
+ *  is 5-30 ms. */
+const MAX_WAIT_ITERATIONS = 500;
 
 /**
  * Binary search for the latest sample whose ts is at or below `target`.
@@ -68,9 +65,15 @@ class VideoDecoderSource {
   private codedWidth = 0;
   private codedHeight = 0;
   private decoder: VideoDecoder | null = null;
-  private cache: CachedFrame[] = [];
+  /** Frames emitted by the decoder, in presentation order. The output
+   *  callback simply pushes; getFrameAt walks/evicts. Old approach
+   *  (Map<ts, resolver>) didn't work because the decoder's lookahead
+   *  meant the awaited resolver for a target timestamp often hit the
+   *  per-frame timeout before its frame was emitted. Sequential queue
+   *  matches how the decoder + sequential-export access pattern
+   *  actually work. */
+  private outputQueue: VideoFrame[] = [];
   private nextSampleIdx = 0;
-  private pendingResolvers = new Map<number, (frame: VideoFrame) => void>();
 
   async load(url: string): Promise<void> {
     if (!isClient()) throw new Error('VideoDecoderSource: client only');
@@ -152,17 +155,11 @@ class VideoDecoderSource {
   private configureDecoder(): void {
     this.decoder = new VideoDecoder({
       output: (frame) => {
-        const ts = frame.timestamp;
-        this.cache.push({ ts, frame });
-        while (this.cache.length > CACHE_SIZE) {
-          const evicted = this.cache.shift();
-          evicted?.frame.close();
-        }
-        const resolver = this.pendingResolvers.get(ts);
-        if (resolver) {
-          this.pendingResolvers.delete(ts);
-          resolver(frame);
-        }
+        // Just push — getFrameAt walks the queue to find target + evict
+        // pre-target frames. No timestamp matching here. Output order
+        // is presentation order (cts), which matches what getFrameAt
+        // expects.
+        this.outputQueue.push(frame);
       },
       error: (e) => {
         // eslint-disable-next-line no-console
@@ -182,64 +179,101 @@ class VideoDecoderSource {
     const targetTs = Math.round(timeSec * 1_000_000);
     const sampleIdx = findSampleForTime(this.samples, targetTs);
     if (sampleIdx < 0) return null;
-    const sample = this.samples[sampleIdx];
+    const target = this.samples[sampleIdx];
 
-    // Cache hit: return immediately.
-    const cached = this.cache.find((c) => c.ts === sample.ts);
-    if (cached) return cached.frame;
-
-    // Backward seek — flush and rewind to the nearest preceding keyframe.
-    // (Rare in offline export; the loop iterates forward.)
+    // Backward seek — flush, drop queue, rewind to preceding keyframe.
+    // Rare on offline export (sequential frame iteration), can happen
+    // on clip-trim manual scrubbing.
     if (sampleIdx < this.nextSampleIdx) {
       await this.decoder.flush();
-      for (const c of this.cache) c.frame.close();
-      this.cache = [];
+      while (this.outputQueue.length > 0) this.outputQueue.shift()!.close();
       let keyIdx = sampleIdx;
       while (keyIdx > 0 && !this.samples[keyIdx].isKey) keyIdx--;
       this.nextSampleIdx = keyIdx;
     }
 
-    // Set up the waiter BEFORE feeding chunks so we don't miss the output.
-    const framePromise = new Promise<VideoFrame>((resolve) => {
-      this.pendingResolvers.set(sample.ts, resolve);
-    });
+    // Walk the queue, feeding more chunks and yielding to let outputs
+    // accumulate. Exit when target frame is present OR we've fed all
+    // remaining chunks and flushed.
+    for (let iter = 0; iter < MAX_WAIT_ITERATIONS; iter++) {
+      // Evict frames strictly before target while there's still a frame
+      // at-or-before target to keep as the answer. This keeps memory
+      // bounded as we walk forward through the video.
+      while (
+        this.outputQueue.length >= 2 &&
+        this.outputQueue[1].timestamp <= target.ts
+      ) {
+        this.outputQueue.shift()!.close();
+      }
 
-    while (this.nextSampleIdx <= sampleIdx) {
-      const s = this.samples[this.nextSampleIdx];
-      this.decoder.decode(
-        new EncodedVideoChunk({
-          type: s.isKey ? 'key' : 'delta',
-          timestamp: s.ts,
-          duration: s.duration,
-          data: s.data
-        })
-      );
-      this.nextSampleIdx++;
+      // Have we reached target?
+      const matchIdx = this.outputQueue.findIndex((f) => f.timestamp >= target.ts);
+      if (matchIdx >= 0) {
+        const matchFrame = this.outputQueue[matchIdx];
+        if (matchFrame.timestamp === target.ts) {
+          return matchFrame;
+        }
+        // Decoder skipped past target (shouldn't happen with proper
+        // sample feeding, but be defensive). Use the latest frame
+        // before target if any, else the one after.
+        if (matchIdx > 0) return this.outputQueue[matchIdx - 1];
+        return matchFrame;
+      }
+
+      // Need more frames. Feed the next batch of chunks if any remain.
+      if (this.nextSampleIdx < this.samples.length) {
+        const batchEnd = Math.min(
+          this.nextSampleIdx + FEED_BATCH_SIZE,
+          this.samples.length
+        );
+        while (this.nextSampleIdx < batchEnd) {
+          const s = this.samples[this.nextSampleIdx];
+          this.decoder.decode(
+            new EncodedVideoChunk({
+              type: s.isKey ? 'key' : 'delta',
+              timestamp: s.ts,
+              duration: s.duration,
+              data: s.data
+            })
+          );
+          this.nextSampleIdx++;
+        }
+      } else {
+        // All chunks fed — force any remaining buffered output out.
+        await this.decoder.flush();
+        // Final check after flush
+        const found = this.outputQueue.findIndex(
+          (f) => f.timestamp >= target.ts
+        );
+        if (found >= 0) {
+          const f = this.outputQueue[found];
+          if (f.timestamp === target.ts) return f;
+          if (found > 0) return this.outputQueue[found - 1];
+          return f;
+        }
+        // Latest available preceding frame
+        return this.outputQueue.length > 0
+          ? this.outputQueue[this.outputQueue.length - 1]
+          : null;
+      }
+
+      // Yield to event loop so decoder output callback can fire
+      await new Promise<void>((r) => setTimeout(r, 0));
     }
 
-    // If we just fed the last sample, force a flush so the decoder emits
-    // any buffered B-frames.
-    if (this.nextSampleIdx >= this.samples.length) {
-      await this.decoder.flush();
-    }
-
-    // Race against a timeout so a silently-stalled decoder doesn't hang
-    // the entire export.
-    const timeout = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), FRAME_TIMEOUT_MS)
+    // Safety net hit (decoder isn't producing output despite chunks fed).
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[VideoDecoderSource] gave up on frame at ${timeSec}s after ${MAX_WAIT_ITERATIONS} iterations`
     );
-    const result = await Promise.race([framePromise, timeout]);
-    if (result === null) {
-      // Clean up the dangling resolver to avoid a leak.
-      this.pendingResolvers.delete(sample.ts);
-    }
-    return result;
+    return this.outputQueue.length > 0
+      ? this.outputQueue[this.outputQueue.length - 1]
+      : null;
   }
 
   destroy(): void {
-    for (const c of this.cache) c.frame.close();
-    this.cache = [];
-    this.pendingResolvers.clear();
+    for (const f of this.outputQueue) f.close();
+    this.outputQueue = [];
     if (this.decoder && this.decoder.state !== 'closed') {
       this.decoder.close();
     }
