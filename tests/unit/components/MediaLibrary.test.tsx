@@ -24,7 +24,7 @@ vi.mock('@/lib/storage/r2-adapter', () => ({
 
 describe('MediaLibrary', () => {
   beforeEach(() => {
-    useAppStore.setState({ media: { mediaRefs: [] } });
+    useAppStore.setState({ media: { mediaRefs: [], videoLoadProgress: {} } });
   });
 
   it('renders existing media refs', () => {
@@ -40,7 +40,8 @@ describe('MediaLibrary', () => {
             height: 50,
             uploadedAt: '2026-05-19T00:00:00.000Z'
           }
-        ]
+        ],
+        videoLoadProgress: {}
       }
     });
     render(<MediaLibrary />);
@@ -72,7 +73,8 @@ describe('MediaLibrary', () => {
             filename: 'x.jpg',
             uploadedAt: '2026-05-19T00:00:00.000Z'
           }
-        ]
+        ],
+        videoLoadProgress: {}
       }
     });
     const { container } = render(<MediaLibrary />);
@@ -100,7 +102,8 @@ describe('MediaLibrary', () => {
             duration: 107, // 1:47
             thumbnailUrl: 'data:image/jpeg;base64,/9j/'
           }
-        ]
+        ],
+        videoLoadProgress: {}
       }
     });
     render(<MediaLibrary />);
@@ -122,7 +125,8 @@ describe('MediaLibrary', () => {
             uploadedAt: '2026-05-21T00:00:00.000Z',
             duration: 30
           }
-        ]
+        ],
+        videoLoadProgress: {}
       }
     });
     const { container } = render(<MediaLibrary />);

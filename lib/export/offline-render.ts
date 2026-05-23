@@ -325,23 +325,47 @@ export async function renderOffline(
       if (deps.videoDecoderPool) {
         const beats =
           ((timeSec - deps.beatGrid.offsetMs / 1000) * deps.beatGrid.bpm) / 60;
-        const activeMediaIds = new Set<string>();
+        // SOURCE-RELATIVE time per clip — NOT the global timeSec.
+        // sourceTime = (globalTime - clipStartTime) + clipSourceInPoint
+        //
+        // - clipStartTime accounts for clips that don't start at beat 0
+        //   (otherwise the decoder would seek to frame `globalTime` in
+        //   the source, which is wrong for any clip with startBeat > 0).
+        // - sourceInPoint (optional, default 0) supports the future
+          //   trim feature: clip plays from offset N seconds within the
+        //   source. Stored on clip.params.sourceInPointSec. No UI yet,
+        //   but the pipeline reads it so the trim feature can ship by
+        //   just wiring up an Inspector slider.
+        //
+        // Map keyed by mediaId — multiple clips of the same media at
+        // overlapping times would collide (only one wins). v0.1
+        // limitation: dropping the same video onto two tracks at the
+        // same time isn't a real workflow yet.
+        const requests: Array<{ mediaId: string; sourceTime: number }> = [];
         for (const clip of deps.timeline.clips) {
           if (clip.kind !== 'video' || typeof clip.mediaId !== 'string') continue;
           if (clip.startBeat <= beats && beats < clip.startBeat + clip.lengthBeats) {
-            activeMediaIds.add(clip.mediaId);
+            const clipStartSec =
+              (clip.startBeat * 60) / deps.beatGrid.bpm +
+              deps.beatGrid.offsetMs / 1000;
+            const sourceInPointSec =
+              (clip.params as { sourceInPointSec?: number } | undefined)
+                ?.sourceInPointSec ?? 0;
+            const sourceTime = timeSec - clipStartSec + sourceInPointSec;
+            requests.push({ mediaId: clip.mediaId, sourceTime });
           }
         }
-        if (activeMediaIds.size > 0) {
+        if (requests.length > 0) {
           videoFrames = new Map();
-          const ids = Array.from(activeMediaIds);
-          stallStage = `fetch-video pool [${ids.map((id) => id.slice(0, 8)).join(',')}]`;
+          stallStage = `fetch-video pool [${requests.map((r) => r.mediaId.slice(0, 8)).join(',')}]`;
           const frames = await Promise.all(
-            ids.map((id) => deps.videoDecoderPool!.getFrameAt(id, timeSec))
+            requests.map((r) =>
+              deps.videoDecoderPool!.getFrameAt(r.mediaId, r.sourceTime)
+            )
           );
-          for (let i = 0; i < ids.length; i++) {
+          for (let i = 0; i < requests.length; i++) {
             const f = frames[i];
-            if (f) videoFrames.set(ids[i], f);
+            if (f) videoFrames.set(requests[i].mediaId, f);
           }
         }
         throwIfAborted();

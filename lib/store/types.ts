@@ -78,6 +78,11 @@ export interface AudioActions {
 
 export interface MediaState {
   mediaRefs: MediaRef[];
+  /** Plan 5.10+ — per-mediaId download progress for videos that the
+   *  VideoEngine pre-fetches at page-load via the shared bytes cache.
+   *  MediaLibrary reads this to render a progress bar under each
+   *  video item. Transient (never persisted). */
+  videoLoadProgress: Record<string, { received: number; total: number }>;
 }
 
 export interface MediaActions {
@@ -85,6 +90,9 @@ export interface MediaActions {
   removeMediaRef(id: string): void;
   getMediaRef(id: string): MediaRef | undefined;
   addMediaRefMeta(id: string, partial: Pick<MediaRef, 'width' | 'height' | 'duration'>): void;
+  /** Plan 5.10+ — VideoEngine calls this from its bytes-cache progress
+   *  callback so the MediaLibrary can render live download status. */
+  setVideoLoadProgress(mediaId: string, received: number, total: number): void;
 }
 
 export interface AppState {

@@ -1,4 +1,5 @@
 import { isClient } from '@/lib/utils/is-client';
+import { videoBytesCache, type ProgressCallback } from './bytes-cache';
 
 /**
  * Plan 5.9b — `HTMLVideoElement` pool with lazy load + seek-frame helpers.
@@ -15,7 +16,10 @@ import { isClient } from '@/lib/utils/is-client';
  * SSR-safe: factory returns `null` when `window` is unavailable.
  */
 export interface VideoEngine {
-  load(mediaId: string, url: string): Promise<void>;
+  /** `onProgress` is invoked while the bytes-cache streams the MP4 in.
+   *  It fires once with `received === total` when the bytes are already
+   *  cached (re-load, second call). */
+  load(mediaId: string, url: string, onProgress?: ProgressCallback): Promise<void>;
   unload(mediaId: string): void;
   /** Seeks one element. Resolves once the new frame is painted. */
   seekTo(mediaId: string, timeSec: number): Promise<void>;
@@ -112,40 +116,52 @@ export function createVideoEngine(): VideoEngine | null {
   if (!isClient()) return null;
 
   const elements = new Map<string, HTMLVideoElement>();
+  // blob:-URLs minted from cached bytes — kept so we can revoke them on
+  // unload (a leaked blob URL pins the entire MP4 in memory).
+  const blobUrls = new Map<string, string>();
 
   return {
-    async load(mediaId, url) {
-      if (elements.has(mediaId)) return;
+    async load(mediaId, url, onProgress) {
+      if (elements.has(mediaId)) {
+        // Already loaded — caller expects a final progress notification
+        // so the UI can clear any in-flight bar.
+        onProgress?.(1, 1);
+        return;
+      }
+      // Stream bytes through the shared cache (deduped with the offline
+      // decoder pool's fetch). Then point the <video> at a blob URL so
+      // the browser plays from in-memory bytes — no second network hit.
+      const buffer = await videoBytesCache.fetch(url, onProgress);
+      const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'video/mp4' }));
       const el = document.createElement('video');
-      // `crossOrigin` MUST be set before `src` — the browser starts the
-      // fetch the instant `src` is assigned, and the `Origin` header is
-      // only added when crossOrigin is already configured. Setting it
-      // afterwards yields a no-cors opaque response that taints any
-      // OffscreenCanvas the frame is drawn into, which silently breaks
-      // the WebCodecs `new VideoFrame(canvas)` step in the offline
-      // export (live preview is unaffected because HTMLCanvasElement
-      // only enforces taint on pixel-read operations).
-      el.crossOrigin = 'anonymous'; // R2 GET must allow this Origin
+      el.crossOrigin = 'anonymous'; // harmless on blob: but kept for parity
       el.preload = 'auto';
       el.muted = true;
       el.playsInline = true;
-      el.src = url;
-      await new Promise<void>((resolve, reject) => {
-        el.onloadeddata = () => resolve();
-        el.onerror = () => {
-          // Surface the MediaError detail so a failed load shows up with
-          // an actionable message in the console (code 4 typically means
-          // CORS or unsupported codec).
-          const err = el.error;
-          const detail = err
-            ? `code=${err.code} (${err.message || 'no message'})`
-            : 'no MediaError';
-          reject(new Error(`Video load failed: ${url} — ${detail}`));
-        };
-        el.load();
-      });
+      el.src = blobUrl;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          el.onloadeddata = () => resolve();
+          el.onerror = () => {
+            const err = el.error;
+            const detail = err
+              ? `code=${err.code} (${err.message || 'no message'})`
+              : 'no MediaError';
+            reject(new Error(`Video load failed: ${url} — ${detail}`));
+          };
+          el.load();
+        });
+      } catch (err) {
+        URL.revokeObjectURL(blobUrl);
+        throw err;
+      }
       // Guard against a double-load race — only the first inflight wins.
-      if (!elements.has(mediaId)) elements.set(mediaId, el);
+      if (!elements.has(mediaId)) {
+        elements.set(mediaId, el);
+        blobUrls.set(mediaId, blobUrl);
+      } else {
+        URL.revokeObjectURL(blobUrl);
+      }
     },
 
     unload(mediaId) {
@@ -153,6 +169,11 @@ export function createVideoEngine(): VideoEngine | null {
       if (!el) return;
       el.pause();
       el.src = '';
+      const blobUrl = blobUrls.get(mediaId);
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        blobUrls.delete(mediaId);
+      }
       elements.delete(mediaId);
     },
 
@@ -195,6 +216,8 @@ export function createVideoEngine(): VideoEngine | null {
         el.src = '';
       });
       elements.clear();
+      blobUrls.forEach((u) => URL.revokeObjectURL(u));
+      blobUrls.clear();
     }
   };
 }

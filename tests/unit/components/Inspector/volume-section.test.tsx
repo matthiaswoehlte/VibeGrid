@@ -47,7 +47,8 @@ beforeEach(() => {
           duration: 30,
           uploadedAt: new Date().toISOString()
         }
-      ]
+      ],
+      videoLoadProgress: {}
     }
   });
 });

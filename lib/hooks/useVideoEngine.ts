@@ -106,7 +106,14 @@ export function useVideoEngine(): UseVideoEngineReturn {
       state.timerId = null;
       retryState.set(mediaId, state);
 
-      void newEngine!.load(mediaId, url).then(
+      const { setVideoLoadProgress } = useAppStore.getState().mediaActions;
+      void newEngine!
+        .load(mediaId, url, (received, total) => {
+          // Push live download progress into the store so MediaLibrary
+          // can render a progress bar under the video tile.
+          setVideoLoadProgress(mediaId, received, total);
+        })
+        .then(
         () => {
           // Success — drop the entry so future re-additions get a clean slate.
           retryState.delete(mediaId);

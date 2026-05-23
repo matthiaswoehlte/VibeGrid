@@ -1,5 +1,6 @@
 import { createFile, DataStream, Endianness, type ISOFile } from 'mp4box';
 import { isClient } from '@/lib/utils/is-client';
+import { videoBytesCache } from './bytes-cache';
 
 /**
  * Plan 5.10+ offline-export-only video frame source.
@@ -38,24 +39,47 @@ const FEED_BATCH_SIZE = 8;
 const MAX_WAIT_ITERATIONS = 500;
 
 /**
- * Binary search for the latest sample whose ts is at or below `target`.
+ * Linear scan for the latest sample whose ts is at or below `target`.
  * Exported for unit testing without the full mp4box / WebCodecs setup.
  *
+ * Linear (not binary search): with B-frames, mp4box delivers samples
+ * in DECODE order but we store the COMPOSITION timestamp (`cts`) as
+ * `ts` so the WebCodecs decoder emits matching VideoFrame timestamps.
+ * That makes `samples[i].ts` non-monotonic (typical IBBP pattern:
+ * I=0, B=2, B=3, P=1, ...). Binary search on non-monotonic data
+ * returns nonsense — that was the root cause of the second-video
+ * freeze in the smoke test. Linear scan is O(N) but N≤a few thousand
+ * for typical videos; export latency unchanged.
+ *
  * - Returns -1 if `samples` is empty.
- * - Returns 0 if `target` is before the first sample (use the first frame
- *   as a sensible "preview" of the source).
+ * - Returns the index of the FIRST (lowest-ts) sample when `target` is
+ *   before any sample — gives the caller a sensible "preview" frame.
+ * - Among samples with ts <= target, returns the one with the LATEST ts
+ *   (in case of a tie on ts, the first occurrence wins — irrelevant for
+ *   well-formed MP4s where ts values are unique).
  */
-export function findSampleForTime(samples: ReadonlyArray<{ ts: number }>, target: number): number {
+export function findSampleForTime(
+  samples: ReadonlyArray<{ ts: number }>,
+  target: number
+): number {
   if (samples.length === 0) return -1;
-  if (target < samples[0].ts) return 0;
-  let lo = 0;
-  let hi = samples.length - 1;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi + 1) / 2);
-    if (samples[mid].ts <= target) lo = mid;
-    else hi = mid - 1;
+  let bestIdx = -1;
+  let bestTs = Number.NEGATIVE_INFINITY;
+  let minIdx = 0;
+  let minTs = samples[0].ts;
+  for (let i = 0; i < samples.length; i++) {
+    const ts = samples[i].ts;
+    if (ts <= target && ts > bestTs) {
+      bestTs = ts;
+      bestIdx = i;
+    }
+    if (ts < minTs) {
+      minTs = ts;
+      minIdx = i;
+    }
   }
-  return lo;
+  // target is before any sample — return the first-presented frame
+  return bestIdx >= 0 ? bestIdx : minIdx;
 }
 
 class VideoDecoderSource {
@@ -81,13 +105,11 @@ class VideoDecoderSource {
       throw new Error('VideoDecoder unavailable (WebCodecs required)');
     }
 
-    const response = await fetch(url, { signal });
-    if (!response.ok) {
-      throw new Error(
-        `VideoDecoderSource: fetch failed (${response.status} ${response.statusText})`
-      );
-    }
-    const arrayBuffer = await response.arrayBuffer();
+    // Pull bytes from the shared cache. By the time Export is clicked
+    // the live preview's VideoEngine has already streamed the file in —
+    // this resolves synchronously with the cached ArrayBuffer instead
+    // of triggering a second full R2 download.
+    const arrayBuffer = await videoBytesCache.fetch(url, undefined, signal);
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     await this.demux(arrayBuffer);
     this.configureDecoder();
@@ -138,6 +160,26 @@ class VideoDecoderSource {
         }
         if (!resolved) {
           resolved = true;
+          // Diagnostic: dump key facts about the loaded video so
+          // we can spot codec-specific issues (B-frames cause
+          // non-monotonic ts; weird timescale → wrong mapping).
+          const n = this.samples.length;
+          const tsMin = n > 0 ? this.samples[0].ts : 0;
+          const tsMax = n > 0 ? this.samples[n - 1].ts : 0;
+          let monotonic = true;
+          for (let i = 1; i < n; i++) {
+            if (this.samples[i].ts < this.samples[i - 1].ts) {
+              monotonic = false;
+              break;
+            }
+          }
+          // eslint-disable-next-line no-console
+          console.log(
+            `[VideoDecoderSource] loaded: codec=${this.codec} samples=${n} ` +
+              `ts=${tsMin}..${tsMax}us (~${((tsMax - tsMin) / 1_000_000).toFixed(2)}s) ` +
+              `monotonic=${monotonic} (B-frames if false) ` +
+              `${this.codedWidth}x${this.codedHeight}`
+          );
           resolve();
         }
       };
@@ -182,22 +224,67 @@ class VideoDecoderSource {
     if (sampleIdx < 0) return null;
     const target = this.samples[sampleIdx];
 
-    // Backward seek — flush, drop queue, rewind to preceding keyframe.
-    // Rare on offline export (sequential frame iteration), can happen
-    // on clip-trim manual scrubbing.
-    if (sampleIdx < this.nextSampleIdx) {
+    // Quick cache hit — handles the common case AND the past-end loop
+    // (caller keeps asking for frames past source duration; sampleIdx
+    // clamps to last sample, the corresponding frame is already in
+    // the queue from when we hit end-of-source). Crucial: this MUST
+    // come before the backward-seek check, otherwise past-end queries
+    // trigger a false backward seek (sampleIdx=N-1 < nextSampleIdx=N).
+    const cachedExact = this.outputQueue.find((f) => f.timestamp === target.ts);
+    if (cachedExact) return cachedExact;
+    // If queue has a frame whose ts is past target, the predecessor
+    // (or that very frame) is the answer — and we have it.
+    const matchIdxQuick = this.outputQueue.findIndex(
+      (f) => f.timestamp > target.ts
+    );
+    if (matchIdxQuick > 0) return this.outputQueue[matchIdxQuick - 1];
+
+    // Backward seek — compare TIMESTAMPS not DTS indices.
+    //
+    // Old check compared `sampleIdx + 1 < this.nextSampleIdx` which is
+    // wrong for B-frame videos: DTS order (the order chunks must be
+    // fed to the decoder) differs from CTS order (presentation order).
+    // For a typical IBBP GOP `samples[1].cts < samples[0].cts +
+    // frameInterval`, so any target with cts < latest-fed-cts triggered
+    // a false backward seek — every frame for B-frame videos.
+    //
+    // Correct semantic: "have we already DECODED past this target?"
+    // Measured by the LATEST emitted frame's timestamp vs target's
+    // timestamp. If latest emitted > target by more than one frame
+    // worth (we use 100 ms slack for safety against rounding), we've
+    // moved past it and need to rewind to a keyframe.
+    //
+    // For forward sequential access (the offline export's natural
+    // pattern), latestEmittedTs grows monotonically and target.ts
+    // also grows. The check never fires. Only real backward seeks
+    // (user scrubbing back in a future timeline UI) trigger flush.
+    const latestEmittedTs =
+      this.outputQueue.length > 0
+        ? this.outputQueue[this.outputQueue.length - 1].timestamp
+        : Number.NEGATIVE_INFINITY;
+    const BACKWARD_SLACK_US = 100_000; // 100 ms
+    if (target.ts + BACKWARD_SLACK_US < latestEmittedTs) {
       // eslint-disable-next-line no-console
-      console.log('[VideoDecoderSource] backward seek — flushing decoder');
+      console.log(
+        `[VideoDecoderSource] backward seek (target ${target.ts}us << latest emitted ${latestEmittedTs}us) — flushing decoder`
+      );
       await this.flushWithTimeout('backward-seek');
       while (this.outputQueue.length > 0) this.outputQueue.shift()!.close();
-      let keyIdx = sampleIdx;
-      while (keyIdx > 0 && !this.samples[keyIdx].isKey) keyIdx--;
+      // Rewind nextSampleIdx to the nearest preceding keyframe in DTS order.
+      // For backward seek correctness we need to find a keyframe whose
+      // ts (cts) is <= target.ts.
+      let keyIdx = 0;
+      let keyTs = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < this.samples.length; i++) {
+        const s = this.samples[i];
+        if (s.isKey && s.ts <= target.ts && s.ts > keyTs) {
+          keyIdx = i;
+          keyTs = s.ts;
+        }
+      }
       this.nextSampleIdx = keyIdx;
     }
 
-    // Walk the queue, feeding more chunks and yielding to let outputs
-    // accumulate. Exit when target frame is present OR we've fed all
-    // remaining chunks and flushed.
     for (let iter = 0; iter < MAX_WAIT_ITERATIONS; iter++) {
       // Evict frames strictly before target while there's still a frame
       // at-or-before target to keep as the answer. This keeps memory
@@ -216,14 +303,18 @@ class VideoDecoderSource {
         if (matchFrame.timestamp === target.ts) {
           return matchFrame;
         }
-        // Decoder skipped past target (shouldn't happen with proper
-        // sample feeding, but be defensive). Use the latest frame
-        // before target if any, else the one after.
         if (matchIdx > 0) return this.outputQueue[matchIdx - 1];
         return matchFrame;
       }
 
-      // Need more frames. Feed the next batch of chunks if any remain.
+      // Feed more chunks if any remain. DON'T call decoder.flush() —
+      // it hangs in some Chromium configurations (confirmed in the
+      // wild, both backward-seek and end-of-source flush time out
+      // at 3s and leave the decoder in a worse state than before).
+      // Instead: if all chunks are fed and we still don't have target,
+      // return the latest cached frame (decoder's natural emission
+      // will fill the queue with any in-flight B-frames over the next
+      // few yields; subsequent calls will see them).
       if (this.nextSampleIdx < this.samples.length) {
         const batchEnd = Math.min(
           this.nextSampleIdx + FEED_BATCH_SIZE,
@@ -241,32 +332,18 @@ class VideoDecoderSource {
           );
           this.nextSampleIdx++;
         }
-      } else {
-        // All chunks fed — force any remaining buffered output out.
-        // eslint-disable-next-line no-console
-        console.log(
-          `[VideoDecoderSource] end-of-source flush at target ${target.ts}us (samples.length=${this.samples.length})`
-        );
-        await this.flushWithTimeout('end-of-source');
-        const found = this.outputQueue.findIndex(
-          (f) => f.timestamp >= target.ts
-        );
-        if (found >= 0) {
-          const f = this.outputQueue[found];
-          if (f.timestamp === target.ts) return f;
-          if (found > 0) return this.outputQueue[found - 1];
-          return f;
-        }
-        return this.outputQueue.length > 0
-          ? this.outputQueue[this.outputQueue.length - 1]
-          : null;
+      } else if (this.outputQueue.length > 0) {
+        // All chunks fed, but queue has SOMETHING — return the latest
+        // frame at-or-before target. Skip flush.
+        return this.outputQueue[this.outputQueue.length - 1];
       }
+      // else: all chunks fed AND queue empty — keep yielding so
+      // decoder can emit final buffered frames naturally. After
+      // MAX_WAIT_ITERATIONS we give up via the safety net below.
 
-      // Yield to event loop so decoder output callback can fire
       await new Promise<void>((r) => setTimeout(r, 0));
     }
 
-    // Safety net hit (decoder isn't producing output despite chunks fed).
     // eslint-disable-next-line no-console
     console.warn(
       `[VideoDecoderSource] gave up on frame at ${timeSec}s after ${MAX_WAIT_ITERATIONS} iterations`

@@ -10,7 +10,26 @@ const MockVideoElement = (globalThis as Record<string, unknown>)
   onerror: (() => void) | null;
 };
 
+// Stub videoBytesCache.fetch so engine.load() doesn't hit real network
+// (every test calls load(); the bytes-cache is exercised separately).
+vi.mock('@/lib/video/bytes-cache', () => ({
+  videoBytesCache: {
+    fetch: vi.fn(async () => new ArrayBuffer(8)),
+    get: () => null,
+    bytesUsed: () => 0,
+    clear: () => {}
+  }
+}));
+
+// jsdom stubs for URL.createObjectURL — return a predictable blob URL so
+// assertions can pattern-match it.
+let blobUrlCounter = 0;
 beforeEach(() => {
+  blobUrlCounter = 0;
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(
+    () => `blob:test/${++blobUrlCounter}`
+  );
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
   const orig = document.createElement.bind(document);
   vi.spyOn(document, 'createElement').mockImplementation((tag) => {
     if (tag === 'video') {
@@ -38,17 +57,20 @@ describe('createVideoEngine', () => {
     expect(el).not.toBeNull();
     expect((el as unknown as { muted: boolean }).muted).toBe(true);
     expect((el as unknown as { playsInline: boolean }).playsInline).toBe(true);
-    expect(el!.src).toBe('https://x/v.mp4');
+    // Engine routes the network URL through the bytes-cache and
+    // points the <video> at a blob URL of the cached bytes.
+    expect(el!.src.startsWith('blob:')).toBe(true);
   });
 
   it('load() is idempotent — second call for the same id is a no-op', async () => {
     const engine = createVideoEngine()!;
     await engine.load('m1', 'https://x/v.mp4');
     const first = engine.getElement('m1');
+    const firstSrc = first!.src;
     await engine.load('m1', 'https://other/v.mp4');
     const second = engine.getElement('m1');
     expect(first).toBe(second);
-    expect(first!.src).toBe('https://x/v.mp4');
+    expect(first!.src).toBe(firstSrc);
   });
 
   it('unload() removes the element and clears src', async () => {

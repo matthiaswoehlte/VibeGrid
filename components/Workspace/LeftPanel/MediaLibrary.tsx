@@ -14,6 +14,10 @@ function formatDurationSec(s: number): string {
 
 export function MediaLibrary() {
   const refs = useAppStore((s) => s.media.mediaRefs);
+  // Plan 5.10+ — VideoEngine pushes streaming download progress here
+  // via the shared bytes-cache. Used to render a slim bar under each
+  // video tile while bytes are still arriving.
+  const videoLoadProgress = useAppStore((s) => s.media.videoLoadProgress);
   const { upload, uploadVideo } = useMediaUpload();
   const imageInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
@@ -150,6 +154,16 @@ export function MediaLibrary() {
               }
             : undefined;
 
+          // Plan 5.10+ — show a streaming download bar under videos that
+          // are still being pulled from R2 by VideoEngine. The bar
+          // hides itself once the bytes-cache reports received===total
+          // (also covers the "already cached" case — setVideoLoadProgress
+          // is fired with received === total in that path too).
+          const dl =
+            isVideo && videoLoadProgress[r.id] ? videoLoadProgress[r.id] : null;
+          const dlActive = dl !== null && (dl.total === 0 || dl.received < dl.total);
+          const dlPct = dl && dl.total > 0 ? (dl.received / dl.total) * 100 : 0;
+
           return (
             <li
               key={r.id}
@@ -162,7 +176,7 @@ export function MediaLibrary() {
                     ? `${r.filename} — drag onto a Video track`
                     : audioTitle
               }
-              className={`flex items-center gap-2 p-2 rounded text-xs ${
+              className={`flex flex-col gap-1 p-2 rounded text-xs ${
                 draggable
                   ? 'bg-[var(--surface-2)] cursor-grab active:cursor-grabbing'
                   : `cursor-default select-none ${
@@ -172,31 +186,51 @@ export function MediaLibrary() {
                     }`
               }`}
             >
-              {isVideo && r.thumbnailUrl && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={r.thumbnailUrl}
-                  alt=""
-                  className="shrink-0 w-12 h-7 rounded object-cover bg-black"
-                />
-              )}
-              {isVideo && !r.thumbnailUrl && (
-                <span className="shrink-0 w-12 h-7 rounded bg-black flex items-center justify-center text-[10px] text-[var(--text-dim)]">
-                  ▶
+              <div className="flex items-center gap-2">
+                {isVideo && r.thumbnailUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={r.thumbnailUrl}
+                    alt=""
+                    className="shrink-0 w-12 h-7 rounded object-cover bg-black"
+                  />
+                )}
+                {isVideo && !r.thumbnailUrl && (
+                  <span className="shrink-0 w-12 h-7 rounded bg-black flex items-center justify-center text-[10px] text-[var(--text-dim)]">
+                    ▶
+                  </span>
+                )}
+                <span className="flex-1 truncate">
+                  {r.filename}
+                  <span className="block text-[var(--text-muted)]">
+                    {isImage && r.width && r.height ? `${r.width}×${r.height}` : null}
+                    {isVideo && r.duration ? `▶ ${formatDurationSec(r.duration)}` : null}
+                    {r.kind === 'audio' && r.duration
+                      ? `♪ ${formatDurationSec(r.duration)}`
+                      : null}
+                    {r.kind === 'audio' && !r.duration ? '♪ audio' : null}
+                  </span>
                 </span>
+                {isImage && <AutoPresetButton mediaRef={r} />}
+              </div>
+              {dlActive && dl && (
+                <div className="space-y-0.5">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                    <span>Lade…</span>
+                    <span className="font-mono">
+                      {dl.total > 0
+                        ? `${Math.round(dlPct)}% · ${Math.round(dl.received / 1024)} KB`
+                        : `${Math.round(dl.received / 1024)} KB`}
+                    </span>
+                  </div>
+                  <div className="h-1 rounded bg-[var(--surface-3)] overflow-hidden">
+                    <div
+                      className="h-full bg-[var(--a1)] transition-all"
+                      style={{ width: `${Math.min(100, dlPct)}%` }}
+                    />
+                  </div>
+                </div>
               )}
-              <span className="flex-1 truncate">
-                {r.filename}
-                <span className="block text-[var(--text-muted)]">
-                  {isImage && r.width && r.height ? `${r.width}×${r.height}` : null}
-                  {isVideo && r.duration ? `▶ ${formatDurationSec(r.duration)}` : null}
-                  {r.kind === 'audio' && r.duration
-                    ? `♪ ${formatDurationSec(r.duration)}`
-                    : null}
-                  {r.kind === 'audio' && !r.duration ? '♪ audio' : null}
-                </span>
-              </span>
-              {isImage && <AutoPresetButton mediaRef={r} />}
             </li>
           );
         })}

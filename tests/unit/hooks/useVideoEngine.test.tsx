@@ -5,6 +5,17 @@ import { useAppStore } from '@/lib/store';
 import { initialTimelineState } from '@/lib/store/timeline-slice';
 import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
 
+// Engine pulls bytes through the cache before creating the <video>.
+// Stub it so tests don't hit real network.
+vi.mock('@/lib/video/bytes-cache', () => ({
+  videoBytesCache: {
+    fetch: vi.fn(async () => new ArrayBuffer(8)),
+    get: () => null,
+    bytesUsed: () => 0,
+    clear: () => {}
+  }
+}));
+
 const MockVideoElement = (globalThis as Record<string, unknown>)
   .MockVideoElement as new () => HTMLVideoElement & {
   src: string;
@@ -33,6 +44,8 @@ const VIDEO_CLIP = {
 };
 
 beforeEach(() => {
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:test/1');
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
   const orig = document.createElement.bind(document);
   vi.spyOn(document, 'createElement').mockImplementation((tag) => {
     if (tag === 'video') return new MockVideoElement() as unknown as HTMLVideoElement;
@@ -40,7 +53,7 @@ beforeEach(() => {
   });
   useAppStore.setState((s) => ({
     timeline: { ...initialTimelineState, tracks: [...initialTimelineState.tracks], clips: [] },
-    media: { mediaRefs: [] },
+    media: { mediaRefs: [], videoLoadProgress: {} },
     audio: { ...s.audio, grid: { bpm: 120, source: 'manual', beatsPerBar: 4, offsetMs: 0 } },
     ui: {
       zoom: 1,
@@ -73,7 +86,7 @@ describe('useVideoEngine', () => {
 
     await act(async () => {
       useAppStore.setState((s) => ({
-        media: { mediaRefs: [VIDEO_REF] },
+        media: { mediaRefs: [VIDEO_REF], videoLoadProgress: {} },
         timeline: { ...s.timeline, clips: [VIDEO_CLIP] }
       }));
       // Wait for the load microtask chain.
@@ -88,7 +101,7 @@ describe('useVideoEngine', () => {
 
     await act(async () => {
       useAppStore.setState((s) => ({
-        media: { mediaRefs: [VIDEO_REF] },
+        media: { mediaRefs: [VIDEO_REF], videoLoadProgress: {} },
         timeline: { ...s.timeline, clips: [VIDEO_CLIP] }
       }));
       await new Promise((r) => setTimeout(r, 0));

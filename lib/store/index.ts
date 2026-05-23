@@ -119,6 +119,13 @@ export const useAppStore = create<AppState>()(
           ui: {
             ...currentState.ui,
             ...(persisted?.ui ?? {})
+          },
+          // Same shape-merge for media so new transient fields
+          // (videoLoadProgress) keep their defaults when the
+          // persisted partial only has mediaRefs.
+          media: {
+            ...currentState.media,
+            ...(persisted?.media ?? {})
           }
         };
       },
@@ -149,7 +156,9 @@ export const useAppStore = create<AppState>()(
           }
         },
         audio: state.audio,
-        media: state.media
+        // Only persist mediaRefs — videoLoadProgress is transient
+        // (recomputed by the live VideoEngine on every page mount).
+        media: { mediaRefs: state.media.mediaRefs }
       })
     }
   )

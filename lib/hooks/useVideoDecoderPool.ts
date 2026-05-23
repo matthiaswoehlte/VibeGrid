@@ -1,89 +1,42 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import { useAppStore } from '@/lib/store';
+import { useEffect, useState } from 'react';
 import {
   createVideoDecoderPool,
   type VideoDecoderPool
 } from '@/lib/video/decoder-pool';
 
 /**
- * Plan 5.10+ — long-lived VideoDecoderPool that pre-loads video MP4s
- * as soon as they're referenced by a timeline clip. Mirrors the
- * reconciler pattern in `useVideoEngine` (mediaRefs + clips → engine
- * state) but for the decoder pool, so by the time the user clicks
- * Export every needed video is already demuxed + decoder-configured.
- * Avoids the 30-60s "downloading 143 MB" wait on every Export click.
+ * Plan 5.10+ — long-lived VideoDecoderPool. Creates the pool ONCE per
+ * page mount and returns the SAME instance for the entire session.
  *
- * Loads are tracked in three states:
- *   - in `pool.loadedIds()` → done, ready for getFrameAt
- *   - in `loadingRef` → fetch in flight, don't re-trigger
- *   - in `failedRef` → load rejected, don't retry this session
+ * Why long-lived but NO auto-load:
+ * - Auto-load (reconcile against timeline clips on mount) doubled the
+ *   bandwidth: live preview's <video> elements already fetch the
+ *   videos via the browser's media pipeline; an additional fetch
+ *   from the decoder pool ran in parallel, since neither path shares
+ *   bytes with the other. R2's `Cache-Control: no-cache` forces full
+ *   re-download on the second fetch too (browser revalidates but
+ *   gets 200 not 304). Result: 2× MB on app start.
+ * - On-demand only (load at Export click) avoided the bandwidth
+ *   waste but meant 30-60s wait every export.
+ * - Compromise (this hook): pool is long-lived, useVideoExporter
+ *   triggers loads at first Export click. SECOND export reuses the
+ *   already-loaded videos — instant. Iterative debugging (re-export
+ *   to test a small change) doesn't re-fetch.
  *
- * Live-preview video pool (`useVideoEngine` / VideoEngine /
- * HTMLVideoElement) is unaffected — different concern, different
- * access pattern, runs in parallel.
+ * Live preview's VideoEngine (HTMLVideoElement pool) is completely
+ * independent — different consumer, different access pattern.
  */
 export function useVideoDecoderPool(): VideoDecoderPool | null {
   const [pool, setPool] = useState<VideoDecoderPool | null>(null);
-  const loadingRef = useRef<Set<string>>(new Set());
-  const failedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const newPool = createVideoDecoderPool();
     if (!newPool) return;
     setPool(newPool);
-
-    function reconcile(): void {
-      const state = useAppStore.getState();
-      const wanted = new Set<string>();
-      for (const clip of state.timeline.clips) {
-        if (clip.kind === 'video' && typeof clip.mediaId === 'string') {
-          wanted.add(clip.mediaId);
-        }
-      }
-      const loaded = new Set(newPool!.loadedIds());
-      for (const id of wanted) {
-        if (loaded.has(id)) continue;
-        if (loadingRef.current.has(id)) continue;
-        if (failedRef.current.has(id)) continue;
-        const ref = state.media.mediaRefs.find(
-          (m) => m.id === id && m.kind === 'video'
-        );
-        if (!ref?.url) continue;
-        loadingRef.current.add(id);
-        newPool!.load(id, ref.url).then(
-          () => {
-            loadingRef.current.delete(id);
-          },
-          (err: unknown) => {
-            loadingRef.current.delete(id);
-            failedRef.current.add(id);
-            // eslint-disable-next-line no-console
-            console.warn(
-              `[useVideoDecoderPool] background pre-load failed for ${id}:`,
-              err
-            );
-          }
-        );
-      }
-    }
-
-    reconcile();
-    const unsub = useAppStore.subscribe((state, prev) => {
-      if (
-        state.timeline.clips !== prev.timeline.clips ||
-        state.media.mediaRefs !== prev.media.mediaRefs
-      ) {
-        reconcile();
-      }
-    });
-
     return () => {
-      unsub();
       newPool.destroy();
-      loadingRef.current.clear();
-      failedRef.current.clear();
       setPool(null);
     };
   }, []);

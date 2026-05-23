@@ -73,7 +73,8 @@ describe('useAudioEngine — multi-clip reconciler (Plan 5.9d)', () => {
             duration: 10,
             uploadedAt: new Date().toISOString()
           }
-        ]
+        ],
+        videoLoadProgress: {}
       }
     });
     // Stub fetch / decodeAudioData so loadClip resolves.
