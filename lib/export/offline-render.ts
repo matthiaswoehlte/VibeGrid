@@ -291,45 +291,85 @@ export async function renderOffline(
     // functional when working.
     //
     // Projects without video skip both paths.
-    let videoFrames: Map<string, VideoFrame> | undefined;
-    if (deps.videoDecoderPool) {
-      // Beat-space conversion mirrors the renderer's per-tick math so
-      // the active-clip set matches what the renderer would draw.
-      const beats =
-        ((timeSec - deps.beatGrid.offsetMs / 1000) * deps.beatGrid.bpm) / 60;
-      const activeMediaIds = new Set<string>();
-      for (const clip of deps.timeline.clips) {
-        if (clip.kind !== 'video' || typeof clip.mediaId !== 'string') continue;
-        if (clip.startBeat <= beats && beats < clip.startBeat + clip.lengthBeats) {
-          activeMediaIds.add(clip.mediaId);
+    // Per-frame hard timeout — if a single output frame takes more than
+    // FRAME_HARD_TIMEOUT_MS, abort the export with a diagnostic error.
+    // Without this, a stalled hardware encoder (encodeQueueSize stays
+    // above backpressure threshold forever) or a stuck decoder (no new
+    // VideoFrames despite chunks fed) silently freezes the user with
+    // no UI feedback. The race wraps the entire per-frame work
+    // (video frame fetch + render + backpressure + encode) so any of
+    // those stalls bubbles up.
+    const FRAME_HARD_TIMEOUT_MS = 10_000;
+    let frameTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    const frameTimeout = new Promise<never>((_, reject) => {
+      frameTimeoutId = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Frame ${frameIdx} took longer than ${FRAME_HARD_TIMEOUT_MS}ms — export aborted to avoid silent hang`
+            )
+          ),
+        FRAME_HARD_TIMEOUT_MS
+      );
+    });
+
+    const renderOneFrame = async (): Promise<void> => {
+      let videoFrames: Map<string, VideoFrame> | undefined;
+      if (deps.videoDecoderPool) {
+        // Beat-space conversion mirrors the renderer's per-tick math so
+        // the active-clip set matches what the renderer would draw.
+        const beats =
+          ((timeSec - deps.beatGrid.offsetMs / 1000) * deps.beatGrid.bpm) / 60;
+        const activeMediaIds = new Set<string>();
+        for (const clip of deps.timeline.clips) {
+          if (clip.kind !== 'video' || typeof clip.mediaId !== 'string') continue;
+          if (clip.startBeat <= beats && beats < clip.startBeat + clip.lengthBeats) {
+            activeMediaIds.add(clip.mediaId);
+          }
         }
+        if (activeMediaIds.size > 0) {
+          videoFrames = new Map();
+          const ids = Array.from(activeMediaIds);
+          const frames = await Promise.all(
+            ids.map((id) => deps.videoDecoderPool!.getFrameAt(id, timeSec))
+          );
+          for (let i = 0; i < ids.length; i++) {
+            const f = frames[i];
+            if (f) videoFrames.set(ids[i], f);
+          }
+        }
+        throwIfAborted();
+        throwIfVideo();
+      } else if (deps.videoEngine) {
+        await deps.videoEngine.seekAllTo(timeSec);
+        throwIfAborted();
+        throwIfVideo();
       }
-      if (activeMediaIds.size > 0) {
-        videoFrames = new Map();
-        const ids = Array.from(activeMediaIds);
-        const frames = await Promise.all(
-          ids.map((id) => deps.videoDecoderPool!.getFrameAt(id, timeSec))
+
+      offlineRenderer.renderAt(timeSec, videoFrames);
+
+      // Backpressure — but with a sane bound. If the encoder is genuinely
+      // overwhelmed for a few hundred ms, that's normal. The OUTER
+      // per-frame timeout (10 s) catches actual stalls.
+      let backpressureWaits = 0;
+      while (videoEncoder.encodeQueueSize > BACKPRESSURE_QUEUE_HIGH) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        throwIfAborted();
+        throwIfVideo();
+        backpressureWaits++;
+      }
+      if (backpressureWaits > 1000 && frameIdx % 100 === 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[offline-render] frame ${frameIdx}: encoder backpressure ${backpressureWaits} wait cycles (encodeQueueSize=${videoEncoder.encodeQueueSize})`
         );
-        for (let i = 0; i < ids.length; i++) {
-          const f = frames[i];
-          if (f) videoFrames.set(ids[i], f);
-        }
       }
-      throwIfAborted();
-      throwIfVideo();
-    } else if (deps.videoEngine) {
-      // Legacy seek-based path.
-      await deps.videoEngine.seekAllTo(timeSec);
-      throwIfAborted();
-      throwIfVideo();
-    }
+    };
 
-    offlineRenderer.renderAt(timeSec, videoFrames);
-
-    while (videoEncoder.encodeQueueSize > BACKPRESSURE_QUEUE_HIGH) {
-      await new Promise<void>((r) => setTimeout(r, 0));
-      throwIfAborted();
-      throwIfVideo();
+    try {
+      await Promise.race([renderOneFrame(), frameTimeout]);
+    } finally {
+      if (frameTimeoutId !== undefined) clearTimeout(frameTimeoutId);
     }
 
     const videoFrame = new VideoFrameCtor(canvas, {
