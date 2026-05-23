@@ -15,16 +15,27 @@ function LoginForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const res = await signIn.email({ email, password });
-    setBusy(false);
-    if (res.error) {
-      toast.error(res.error.message ?? 'Login fehlgeschlagen');
-      return;
+    // Plan 7 debug instrumentation — surfaces hangs and silent throws.
+    // Remove these console.logs once login is verified working.
+    console.log('[login] submit start, baseURL=', process.env.NEXT_PUBLIC_BASE_URL);
+    try {
+      const res = await signIn.email({ email, password });
+      console.log('[login] signIn.email returned', res);
+      setBusy(false);
+      if (res.error) {
+        console.warn('[login] error path', res.error);
+        toast.error(res.error.message ?? 'Login fehlgeschlagen');
+        return;
+      }
+      // Studio is mounted at `/` (app/(studio) is a route group).
+      const target = search.get('from') ?? '/';
+      console.log('[login] success, pushing', target);
+      router.push(target as Parameters<typeof router.push>[0]);
+    } catch (err) {
+      setBusy(false);
+      console.error('[login] signIn.email threw', err);
+      toast.error('Login error: ' + (err as Error).message);
     }
-    // `from` is a runtime-supplied URL — typed routes expect a literal
-    // route string. Cast: middleware only ever writes safe in-app paths.
-    const target = search.get('from') ?? '/studio';
-    router.push(target as Parameters<typeof router.push>[0]);
   }
 
   return (

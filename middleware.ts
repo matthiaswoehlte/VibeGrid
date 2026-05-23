@@ -28,5 +28,9 @@ export function middleware(req: NextRequest): NextResponse {
 export const config = {
   // Edge runtime by default — middleware does not import pg / better-auth/server,
   // so the bundle stays Edge-compatible.
-  matcher: ['/studio/:path*']
+  //
+  // The studio lives on `/` (app/(studio) is a Next.js route group whose
+  // parentheses suppress the URL segment). Guard the root AND any future
+  // sub-routes; exclude /login, /api/*, and static assets from the matcher.
+  matcher: ['/((?!api|_next|favicon.ico|login).*)']
 };
