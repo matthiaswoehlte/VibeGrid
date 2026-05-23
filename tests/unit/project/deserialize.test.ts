@@ -22,7 +22,7 @@ beforeEach(() => {
       zoom: 1,
       snap: 'beat'
     },
-    audio: { grid: { bpm: 120, offsetMs: 0, source: 'manual' } },
+    audio: { grid: { bpm: 120, offsetMs: 0, source: 'manual', beatsPerBar: 4 } },
     media: { mediaRefs: [], videoLoadProgress: {} }
   });
 });
@@ -50,7 +50,7 @@ describe('applySerializedProject', () => {
           zoom: 1,
           snap: 'beat'
         },
-        audio: { grid: { bpm: 124, offsetMs: 0, source: 'detected' } },
+        audio: { grid: { bpm: 124, offsetMs: 0, source: 'detected', beatsPerBar: 4 } },
         media: { mediaRefs: [] }
       }
     });
@@ -73,7 +73,7 @@ describe('applySerializedProject', () => {
           zoom: 1,
           snap: 'beat'
         },
-        audio: { grid: { bpm: 120, offsetMs: 0, source: 'manual' } },
+        audio: { grid: { bpm: 120, offsetMs: 0, source: 'manual', beatsPerBar: 4 } },
         media: { mediaRefs: [] }
       }
     });
@@ -94,7 +94,7 @@ describe('applySerializedProject', () => {
           zoom: 1,
           snap: 'beat'
         },
-        audio: { grid: { bpm: 120, offsetMs: 0, source: 'manual' } },
+        audio: { grid: { bpm: 120, offsetMs: 0, source: 'manual', beatsPerBar: 4 } },
         media: { mediaRefs: [] }
       }
     });
