@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -10,8 +10,10 @@ import {
 import { useAudioEngine } from '@/lib/hooks/useAudioEngine';
 import { useVideoEngine } from '@/lib/hooks/useVideoEngine';
 import { useVideoDecoderPool } from '@/lib/hooks/useVideoDecoderPool';
+import { useAppStore } from '@/lib/store';
 import { TopBar } from '@/components/TopBar';
 import { Workspace } from '@/components/Workspace';
+import { SceneFlowShell } from '@/components/SceneFlow/SceneFlowShell';
 import { TabBar } from '@/components/Mobile/TabBar';
 import { MediaDrawer } from '@/components/Mobile/MediaDrawer';
 import { FXDrawer } from '@/components/Mobile/FXDrawer';
@@ -65,6 +67,17 @@ export default function StudioPage() {
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
   );
 
+  // Plan 8a — mode-aware page. Workspace and SceneFlowShell both stay
+  // mounted once visited, toggling via `display: none` so the AudioEngine
+  // and VideoDecoderPool keep their pre-loads across tab switches. The
+  // SceneFlow shell lazy-mounts: a user who never opens that tab never
+  // pays for its initial render.
+  const appMode = useAppStore((s) => s.appMode);
+  const [sceneFlowMounted, setSceneFlowMounted] = useState(false);
+  useEffect(() => {
+    if (appMode === 'sceneflow' && !sceneFlowMounted) setSceneFlowMounted(true);
+  }, [appMode, sceneFlowMounted]);
+
   return (
     <DndContext sensors={sensors} autoScroll={false}>
       <div className="flex flex-col h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -75,12 +88,21 @@ export default function StudioPage() {
           videoEngine={videoEngine}
           videoDecoderPool={videoDecoderPool}
         />
-        <Workspace
-          engine={engine}
-          canvasRef={canvasRef}
-          getBitmapRef={getBitmapRef}
-          getVideoElement={getVideoElement}
-        />
+        <div className={appMode === 'vibegrid' ? 'flex flex-1 min-h-0' : 'hidden'}>
+          <Workspace
+            engine={engine}
+            canvasRef={canvasRef}
+            getBitmapRef={getBitmapRef}
+            getVideoElement={getVideoElement}
+          />
+        </div>
+        {sceneFlowMounted && (
+          <div
+            className={appMode === 'sceneflow' ? 'flex flex-1 min-h-0' : 'hidden'}
+          >
+            <SceneFlowShell />
+          </div>
+        )}
         <TabBar />
         {/* Mobile-only drawers. Each component early-returns null on
             Desktop AND when the matching mobileTab is not active, so
