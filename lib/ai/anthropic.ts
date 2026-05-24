@@ -5,11 +5,16 @@ import type { ParamSchema } from '@/lib/renderer/types';
 
 let client: Anthropic | null = null;
 
-function getClient(): Anthropic {
+export function getAnthropicClient(): Anthropic {
   if (client) return client;
   const cfg = getAnthropicConfig();
   client = new Anthropic({ apiKey: cfg.apiKey });
   return client;
+}
+
+// Internal alias kept so analyzeImageForFx code below stays untouched.
+function getClient(): Anthropic {
+  return getAnthropicClient();
 }
 
 export function _resetAnthropicClientForTests(): void {
