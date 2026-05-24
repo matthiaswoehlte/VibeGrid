@@ -88,7 +88,14 @@ export default function StudioPage() {
           videoEngine={videoEngine}
           videoDecoderPool={videoDecoderPool}
         />
-        <div className={appMode === 'vibegrid' ? 'flex flex-1 min-h-0' : 'hidden'}>
+        {/* Plan 8a — mode-aware mount. The wrapper uses `display: contents`
+            so it's transparent to the column flex: Workspace's own outer
+            `<div className="flex flex-1 min-h-0">` becomes a direct child
+            of the column, exactly as it was pre-8a (no extra flex nesting,
+            no canvas-width regression). In sceneflow mode the wrapper
+            switches to `hidden`, dropping Workspace from layout without
+            unmounting it (AudioEngine + VideoDecoderPool stay warm). */}
+        <div className={appMode === 'vibegrid' ? 'contents' : 'hidden'}>
           <Workspace
             engine={engine}
             canvasRef={canvasRef}
@@ -97,9 +104,7 @@ export default function StudioPage() {
           />
         </div>
         {sceneFlowMounted && (
-          <div
-            className={appMode === 'sceneflow' ? 'flex flex-1 min-h-0' : 'hidden'}
-          >
+          <div className={appMode === 'sceneflow' ? 'contents' : 'hidden'}>
             <SceneFlowShell />
           </div>
         )}
