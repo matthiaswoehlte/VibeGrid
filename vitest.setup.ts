@@ -15,6 +15,12 @@ if (!process.env.BETTER_AUTH_SECRET) {
 if (!process.env.NEXT_PUBLIC_BASE_URL) {
   process.env.NEXT_PUBLIC_BASE_URL = 'http://localhost:3000';
 }
+// Plan 8a — `lib/fal/client.ts` throws on import when FAL_KEY is unset.
+// Seed a dummy so any transitive import (server-route tests pulling in
+// the route module) doesn't fail at parse time.
+if (!process.env.FAL_KEY) {
+  process.env.FAL_KEY = 'test-fal-key-not-real';
+}
 
 // @testing-library/react does not auto-cleanup when vitest's `globals: false`
 // is set — `afterEach` isn't on globalThis. Wire it explicitly so multi-render
