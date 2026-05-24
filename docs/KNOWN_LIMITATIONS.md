@@ -461,6 +461,67 @@ nur server-side genutzt.
 
 ---
 
+## Plan 8b — Story-Input + Sonnet-Aufteilung + Storyboard
+
+### Sonnet-Aufteilung ist destruktiv bei Re-Generate
+
+"Mit KI aufteilen" löscht alle bestehenden Szenen und ersetzt sie
+durch frische Sonnet-Ausgabe. Manuelle Bearbeitungen gehen verloren.
+Der Confirm-Dialog warnt explizit. Merge-Logik (User-Edits zu
+generierten Szenen mergen) ist out of scope für 8b — wird wenn
+nötig in spätem Plan ergänzt.
+
+### Sonnet-Fehler → alte Szenen bleiben (Transaction-Rollback)
+
+Der Sonnet-Call passiert AUSSERHALB der DB-Transaction. Erst wenn
+Sonnet erfolgreich geantwortet hat, beginnt die DELETE+INSERT-
+Transaktion. Bei Sonnet-Timeout oder API-Fehler bleibt das Storyboard
+unverändert. Verifiziert in `tests/integration/api/sceneflow-generate-scenes.test.ts`
+und im manuellen DevTools-Network-Block-Smoke-Check.
+
+### `tts_text` als CTA-Slot für Endcard ist pragmatisch
+
+Die Endcard-Karte nutzt `VG_story_scenes.tts_text` für den CTA-Text
+("Folge mir für mehr ..."). Eine eigene `cta_text`-Spalte wäre
+semantisch sauberer — wird in einem späteren Plan als eigene Spalte
+nachgezogen. Bis dahin: der Endcard-Renderer (8c) liest `tts_text`
+als CTA, der TTS-Pfad ignoriert Endcards.
+
+### `speaking_character_id` Hallucination-Schutz
+
+Sonnet bekommt die Character-UUIDs als Kontext. Wenn das Modell
+trotzdem eine erfundene UUID liefert (passiert bei langen Listen),
+würde der FK-Constraint den INSERT brechen. Server-side Coerce-Logik
+in `lib/sceneflow/sonnet.ts:coerceSonnetScenes()` validiert jede UUID
+gegen die Story-Character-Liste und null-t bei Miss. Plus
+`console.warn` für Cost-Audit (häufige Hallucination → System-Prompt
+ergänzen).
+
+### Anthropic prompt cache (5-Min-TTL)
+
+System-Prompt + Charakter-Kontext sind mit `cache_control: ephemeral`
+markiert. Mehrfaches "Mit KI aufteilen" innerhalb von 5 Minuten
+spart ~80% Input-Tokens. Token-Usage wird über `console.log` aus der
+generate-scenes-Route in den Server-Log geschrieben — für
+Production-Cost-Audit auswerten.
+
+### `@anthropic-ai/sdk@^0.30.1` — Tool-Use mit `system: [...]`-Array
+
+Plan 8b nutzt System-Prompt als Array (zwei Blöcke mit eigenem
+Cache-Control), nicht als String. Das SDK akzeptiert beides;
+`@anthropic-ai/sdk@^0.30.1` unterstützt die Array-Form. Die TS-Typen
+des SDK kennen `cache_control` auf Text-Blocks noch nicht — daher
+ein gezielter `as unknown as MessageCreateParamsNonStreaming`-Cast
+in `lib/sceneflow/sonnet.ts`. Bei SDK-Update prüfen ob der Cast
+entfallen kann.
+
+### Drag-and-Drop für Szenen-Reihenfolge fehlt
+
+Plan 8b liefert nur [↑][↓]-Buttons. DnD kommt wenn die
+Storyboard-Nutzung in der Praxis zeigt dass es gebraucht wird.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
