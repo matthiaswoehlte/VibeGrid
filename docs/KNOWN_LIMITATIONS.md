@@ -522,6 +522,56 @@ Storyboard-Nutzung in der Praxis zeigt dass es gebraucht wird.
 
 ---
 
+## Voice picker (Edge TTS + ElevenLabs) — post-Plan-8b
+
+### `msedge-tts` uses an unofficial Microsoft endpoint
+
+The `msedge-tts` npm package talks to `speech.platform.bing.com` over a
+WebSocket using a trusted client token shipped inside the library. This
+is the same wire protocol the Microsoft Edge browser uses for "Read
+aloud" — it's free and needs no key, but Microsoft makes no SLA
+guarantees. If Microsoft rotates the token or changes the protocol, the
+Edge provider stops working until `msedge-tts` releases a fix. For
+production-grade TTS use paid Azure Speech Services (the `azure`
+provider enum value is reserved for that future path).
+
+### ElevenLabs voice list and TTS hit api.elevenlabs.io directly
+
+The voice list (`/v1/voices`) is fetched server-side and cached in
+process memory for 1 hour. The cache is per-Node-process — Vercel
+serverless invocations don't share it, so each cold start re-fetches.
+ElevenLabs has generous per-minute limits, so this is fine in practice.
+
+### No rate / pitch / volume controls yet
+
+The picker captures only voice ID + test text. The DB schema does not
+have rate/pitch/volume columns. Adding them is a separate migration
+when the need arises (SSML for Edge, voice_settings for ElevenLabs).
+
+### `voice_test_text` semantic
+
+Per-character free-text used solely as the sample sentence in the
+picker's Play button. It is NOT used by the actual scene-rendering
+pipeline (Plan 8c) — that pipeline reads `VG_story_scenes.tts_text`.
+The `voice_test_text` column is only an authoring affordance.
+
+### Cookie-domain reminder
+
+The TTS routes are session-checked via Better-Auth (`/api/tts/preview`
+and `/api/tts/voices/[provider]` both return 401 without a session).
+This means the picker only works after login.
+
+### ElevenLabs key opt-in
+
+`ELEVENLABS_API_KEY` is optional. When absent:
+- `GET /api/tts/voices/elevenlabs` → 503 with `ELEVENLABS_API_KEY not set`
+- `POST /api/tts/preview` for provider=elevenlabs → 503 with same message
+- VoicePicker UI shows the hint inline (no toast)
+
+Edge TTS works without any key.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
