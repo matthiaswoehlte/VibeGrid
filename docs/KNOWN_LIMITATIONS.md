@@ -414,6 +414,53 @@ Unverändert — siehe Plan 5.8b-Section.
 
 ---
 
+## Plan 8a — SceneFlow Fundament
+
+### Reine Fundament-Schicht — kein KI-Funktionsumfang
+
+Plan 8a liefert nur die Infrastruktur: zweiter Tab "SceneFlow", drei neue
+DB-Tabellen (`VG_characters`, `VG_stories`, `VG_story_scenes`), CRUD-API,
+Character Manager UI, leere Storyboard-Shell. Echte fal.ai-Calls, Sonnet-
+Aufteilung, TTS und der "In-VibeGrid-öffnen"-Transfer kommen in 8b/8c/8d.
+
+Konsequenzen für Tester:
+- `+ Neue Story` legt einen Story-Record an, der bis 8b leer bleibt (keine
+  Szenen-Befüllung möglich, kein Storyboard-View).
+- `Bild-Prompt → Generieren`-Button in der Character-Form ist disabled
+  und mit Tooltip "Aktiv ab Plan 8c" versehen.
+- `lib/fal/client.ts` ist ein Stub — jeder Call wirft `Error('… not
+  implemented until Plan 8c')`. Tests pinnen das.
+
+### Mode-Switch erhält State, kostet aber Render-Cost
+
+Beim Tab-Wechsel werden Workspace und SceneFlowShell NICHT unmounted —
+sie bekommen `display: none`. Begründung: ein Unmount würde den AudioEngine
+und den VideoDecoderPool zerstören, alle Pre-Loads wären weg. State-
+Persistenz übersteigt die paar Frames Render-Cost.
+
+SceneFlow-Shell ist `lazy-mounted`: der erste Klick auf "SceneFlow" mountet
+sie, danach bleibt sie im Tree. Ein User, der ausschließlich VibeGrid nutzt,
+zahlt keinen Initial-Render für SceneFlow.
+
+### Character-Reference-Image-Upload re-uses `/api/upload`
+
+Character-Bilder laufen durch denselben R2-Upload-Pfad wie VibeGrid-
+Medien (`createR2StorageAdapter().uploadImage()`). Sie landen unter
+`anonymous/default/image/{uuid}.png` — der R2-Key-Migration-Punkt aus
+Plan 7 KNOWN_LIMITATIONS gilt unverändert. Wir extrahieren nur die `.url`
+und schreiben sie in `VG_characters.reference_image_url`; der MediaRef
+wird NICHT in die VibeGrid-Mediathek eingehängt.
+
+### fal.ai-Setup vor Plan 8c
+
+`FAL_KEY` muss in `.env.local` gesetzt sein bevor 8c implementiert wird.
+In Plan 8a reicht ein beliebiger nicht-leerer Wert (das Modul wirft beim
+Import wenn die Variable fehlt). Echte Keys aus
+[fal.ai dashboard/keys](https://fal.ai/dashboard/keys) — kein Public-Key,
+nur server-side genutzt.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
