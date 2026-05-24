@@ -11,6 +11,7 @@ import type {
   CharacterType,
   VoiceProvider
 } from '@/lib/sceneflow/types';
+import { VoicePicker } from './VoicePicker';
 
 export function CharacterForm({
   existing,
@@ -29,7 +30,10 @@ export function CharacterForm({
   const [voiceProvider, setVoiceProvider] = useState<VoiceProvider | null>(
     existing?.voice_provider ?? null
   );
-  const [voiceId, setVoiceId] = useState(existing?.voice_id ?? '');
+  const [voiceId, setVoiceId] = useState<string | null>(existing?.voice_id ?? null);
+  const [voiceTestText, setVoiceTestText] = useState<string | null>(
+    existing?.voice_test_text ?? null
+  );
   const [imagePrompt, setImagePrompt] = useState(existing?.image_prompt ?? '');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -62,7 +66,8 @@ export function CharacterForm({
           type,
           referenceImageUrl,
           voiceProvider,
-          voiceId: voiceId.trim() || null,
+          voiceId,
+          voiceTestText,
           imagePrompt: imagePrompt.trim() || null
         });
         toast.success('Charakter aktualisiert');
@@ -72,8 +77,8 @@ export function CharacterForm({
           type,
           referenceImageUrl,
           voiceProvider,
-          voiceId: voiceId.trim() || null,
-          voiceTestText: null,
+          voiceId,
+          voiceTestText,
           imagePrompt: imagePrompt.trim() || null
         });
         toast.success('Charakter angelegt');
@@ -165,36 +170,20 @@ export function CharacterForm({
         </button>
       </label>
 
-      <div className="flex gap-3 items-end">
-        <label className="flex-1">
-          <span className="text-xs text-[var(--text-dim)]">Stimme</span>
-          <select
-            value={voiceProvider ?? ''}
-            onChange={(e) =>
-              setVoiceProvider((e.target.value as VoiceProvider) || null)
-            }
-            className="mt-1 w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)]"
-          >
-            <option value="">—</option>
-            <option value="azure">Azure Neural</option>
-            <option value="elevenlabs">ElevenLabs</option>
-          </select>
-        </label>
-        {voiceProvider && (
-          <label className="flex-1">
-            <span className="text-xs text-[var(--text-dim)]">
-              {voiceProvider === 'azure' ? 'Azure Voice Name' : 'ElevenLabs Voice ID'}
-            </span>
-            <input
-              value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
-              placeholder={
-                voiceProvider === 'azure' ? 'de-DE-KillianNeural' : 'voice_id_xyz'
-              }
-              className="mt-1 w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)]"
-            />
-          </label>
-        )}
+      <div>
+        <span className="text-xs text-[var(--text-dim)]">Stimme</span>
+        <div className="mt-1">
+          <VoicePicker
+            provider={voiceProvider}
+            voiceId={voiceId}
+            testText={voiceTestText}
+            onChange={(next) => {
+              setVoiceProvider(next.provider);
+              setVoiceId(next.voiceId);
+              setVoiceTestText(next.testText);
+            }}
+          />
+        </div>
       </div>
 
       <div className="flex justify-end gap-2 pt-2">

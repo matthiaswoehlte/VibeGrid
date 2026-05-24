@@ -103,6 +103,57 @@ export async function apiPatchStory(
   );
 }
 
+// TTS
+
+export interface TtsVoice {
+  id: string;
+  name: string;
+  locale?: string;       // edge
+  gender?: string;       // edge
+  category?: string;     // elevenlabs
+  description?: string | null;
+  labels?: Record<string, string>;
+}
+
+export async function apiListTtsVoices(
+  provider: 'edge' | 'elevenlabs'
+): Promise<{ voices: TtsVoice[] }> {
+  return json(
+    await fetch(`/api/tts/voices/${encodeURIComponent(provider)}`)
+  );
+}
+
+/**
+ * Returns a Blob of audio/mpeg. Caller is responsible for creating an
+ * object URL + playing it (and revoking the URL after).
+ */
+export async function apiTtsPreview(input: {
+  provider: 'edge' | 'elevenlabs';
+  voiceId: string;
+  text: string;
+}): Promise<Blob> {
+  const res = await fetch('/api/tts/preview', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input)
+  });
+  if (res.status === 401 && typeof window !== 'undefined') {
+    window.location.assign('/login?expired=1');
+    throw new Error('Session expired');
+  }
+  if (!res.ok) {
+    let msg = `API ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) msg += `: ${body.error}`;
+    } catch {
+      /* non-JSON body */
+    }
+    throw new Error(msg);
+  }
+  return res.blob();
+}
+
 // Scenes
 export async function apiListScenes(
   storyId: string
