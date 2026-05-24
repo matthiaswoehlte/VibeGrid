@@ -156,7 +156,7 @@ export function StorySetupForm({
         )}
       </div>
       <p className="text-[10px] text-[var(--text-muted)]">
-        Änderungen wirken sich erst beim nächsten „Mit KI aufteilen" auf
+        Änderungen wirken sich erst beim nächsten „Mit KI aufteilen“ auf
         bestehende Szenen aus.
       </p>
     </section>
