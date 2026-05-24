@@ -1,4 +1,5 @@
 import 'server-only';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getAnthropicClient } from '@/lib/ai/anthropic';
 import { getAnthropicConfig } from '@/lib/ai/env';
 import type { CharacterRecord, StoryRecord } from './types';
@@ -175,7 +176,10 @@ export async function generateScenesViaSonnet(
     `Format: ${args.story.format}\n` +
     (args.story.visual_style ? `Visual style: ${args.story.visual_style}\n` : '');
 
-  const res = await cli.messages.create({
+  // SDK 0.30 typing doesn't model `cache_control` on system text blocks
+  // even though the wire protocol supports it. Build the params loosely,
+  // then narrow the result back to `Message` so the response stays typed.
+  const params = {
     model: cfg.model,
     max_tokens: 16000,
     system: [
@@ -198,10 +202,8 @@ export async function generateScenesViaSonnet(
         content: `${storyContext}\n\nStory:\n${args.storyText}`
       }
     ]
-  // SDK 0.30 typing for tools/cache-control parameters is narrower than the
-  // wire protocol — cast to any so the runtime-valid request compiles.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any);
+  } as unknown as Anthropic.MessageCreateParamsNonStreaming;
+  const res = (await cli.messages.create(params)) as Anthropic.Message;
 
   const block = res.content.find(
     (b): b is Extract<typeof b, { type: 'tool_use' }> =>

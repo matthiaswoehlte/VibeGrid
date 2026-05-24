@@ -1,5 +1,11 @@
-import type { CharacterRecord, StoryRecord, StoryFormat } from './types';
+import type {
+  CharacterRecord,
+  StoryRecord,
+  StoryFormat,
+  SceneRecord
+} from './types';
 import type { UpdateCharacterPatch } from './characters-db';
+import type { UpdateScenePatch } from './scenes-db';
 
 async function json<T>(res: Response): Promise<T> {
   if (res.status === 401 && typeof window !== 'undefined') {
@@ -74,5 +80,91 @@ export async function apiDeleteStory(id: string): Promise<{ ok: true }> {
     await fetch('/api/sceneflow/stories/' + encodeURIComponent(id), {
       method: 'DELETE'
     })
+  );
+}
+
+export async function apiPatchStory(
+  storyId: string,
+  patch: {
+    title?: string;
+    format?: StoryFormat;
+    visualStyle?: string | null;
+    characters?: string[];
+    storyText?: string | null;
+  }
+): Promise<{ ok: true }> {
+  return json(
+    await fetch('/api/sceneflow/stories/' + encodeURIComponent(storyId), {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch)
+    })
+  );
+}
+
+// Scenes
+export async function apiListScenes(
+  storyId: string
+): Promise<{ scenes: SceneRecord[] }> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/scenes`
+    )
+  );
+}
+
+export async function apiPatchScene(
+  sceneId: string,
+  patch: UpdateScenePatch,
+  signal?: AbortSignal
+): Promise<{ ok: true }> {
+  return json(
+    await fetch(`/api/sceneflow/scenes/${encodeURIComponent(sceneId)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+      signal
+    })
+  );
+}
+
+export async function apiDeleteScene(sceneId: string): Promise<{ ok: true }> {
+  return json(
+    await fetch(`/api/sceneflow/scenes/${encodeURIComponent(sceneId)}`, {
+      method: 'DELETE'
+    })
+  );
+}
+
+export async function apiReorderScenes(
+  storyId: string,
+  aId: string,
+  bId: string
+): Promise<{ ok: true }> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/scenes/reorder`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ aId, bId })
+      }
+    )
+  );
+}
+
+export async function apiGenerateScenes(
+  storyId: string,
+  storyText: string
+): Promise<{ scenes: SceneRecord[] }> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/generate-scenes`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ storyText })
+      }
+    )
   );
 }
