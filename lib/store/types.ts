@@ -5,6 +5,7 @@ import type { AutomationPoint, Interpolation } from '@/lib/automation/types';
 import type { AutomationSnap } from '@/lib/automation/snap';
 import type { ExportState } from '@/lib/export/types';
 import type { MobileUIState, MobileUIActions } from './mobile-ui-slice';
+import type { AppMode } from './app-mode-slice';
 
 export interface UIState {
   zoom: number;
@@ -113,4 +114,8 @@ export interface AppState {
    *  excluded from `partialize`. See `lib/store/mobile-ui-slice.ts`. */
   mobileUI: MobileUIState;
   mobileUIActions: MobileUIActions;
+  /** Plan 8a — top-level workspace mode (VibeGrid vs SceneFlow tab).
+   *  Transient, excluded from `partialize`. See `lib/store/app-mode-slice.ts`. */
+  appMode: AppMode;
+  setAppMode(mode: AppMode): void;
 }

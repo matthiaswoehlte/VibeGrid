@@ -5,6 +5,7 @@ import { createTimelineSlice, INITIAL_TRACKS_V5 } from './timeline-slice';
 import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
 import { createMobileUISlice } from './mobile-ui-slice';
+import { createAppModeSlice } from './app-mode-slice';
 import { toPersistedShape, STORE_VERSION } from './persist-shape';
 import type { Track } from '@/lib/timeline/types';
 import { TRACK_FX_KINDS } from '@/lib/timeline/plugin-mapping';
@@ -82,7 +83,8 @@ export const useAppStore = create<AppState>()(
       ...createTimelineSlice(set, get, store),
       ...createAudioSlice(set, get, store),
       ...createMediaSlice(set, get, store),
-      ...createMobileUISlice(set, get, store)
+      ...createMobileUISlice(set, get, store),
+      ...createAppModeSlice(set, get, store)
     }),
     {
       name: 'vibegrid-store',
