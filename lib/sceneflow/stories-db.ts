@@ -20,11 +20,64 @@ export async function createStory(input: CreateStoryInput): Promise<string> {
 
 export async function listStories(userId: string): Promise<StoryRecord[]> {
   const { rows } = await pool.query<StoryRecord>(
-    `SELECT id, user_id, title, format, visual_style, status, created_at, updated_at
+    `SELECT id, user_id, title, format, visual_style, status,
+            characters, story_text, created_at, updated_at
      FROM "VG_stories" WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,
     [userId]
   );
   return rows;
+}
+
+export async function loadStory(args: {
+  userId: string;
+  storyId: string;
+}): Promise<StoryRecord | null> {
+  const { rows } = await pool.query<StoryRecord>(
+    `SELECT id, user_id, title, format, visual_style, status,
+            characters, story_text, created_at, updated_at
+     FROM "VG_stories" WHERE id = $1 AND user_id = $2`,
+    [args.storyId, args.userId]
+  );
+  return rows[0] ?? null;
+}
+
+export interface UpdateStoryPatch {
+  title?: string;
+  format?: StoryFormat;
+  visualStyle?: string | null;
+  characters?: string[];
+  storyText?: string | null;
+}
+
+export async function updateStory(args: {
+  userId: string;
+  storyId: string;
+  patch: UpdateStoryPatch;
+}): Promise<boolean> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let n = 1;
+  const p = args.patch;
+  if (p.title !== undefined) { sets.push(`title = $${n++}`); vals.push(p.title); }
+  if (p.format !== undefined) { sets.push(`format = $${n++}`); vals.push(p.format); }
+  if (p.visualStyle !== undefined) {
+    sets.push(`visual_style = $${n++}`); vals.push(p.visualStyle);
+  }
+  if (p.characters !== undefined) {
+    sets.push(`characters = $${n++}::jsonb`); vals.push(JSON.stringify(p.characters));
+  }
+  if (p.storyText !== undefined) {
+    sets.push(`story_text = $${n++}`); vals.push(p.storyText);
+  }
+  if (sets.length === 0) return false;
+  const sceneIdParam = n++;
+  const userIdParam = n;
+  vals.push(args.storyId, args.userId);
+  const { rowCount } = await pool.query(
+    `UPDATE "VG_stories" SET ${sets.join(', ')} WHERE id = $${sceneIdParam} AND user_id = $${userIdParam}`,
+    vals
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function deleteStory(args: {

@@ -27,6 +27,9 @@ export interface StoryRecord {
   format: StoryFormat;
   visual_style: string | null;
   status: StoryStatus;
+  // Plan 8b additions:
+  characters: string[];      // JSONB array of VG_characters.id (UUIDs)
+  story_text: string | null; // user's freetext story description
   created_at: string;
   updated_at: string;
 }
