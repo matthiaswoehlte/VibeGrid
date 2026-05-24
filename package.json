@@ -25,6 +25,7 @@
     "fix-webm-duration": "^1.0.6",
     "mp4-muxer": "^5.2.2",
     "mp4box": "^2.3.0",
+    "msedge-tts": "^2.0.5",
     "next": "^14.2.35",
     "pg": "^8.21.0",
     "react": "18.3.1",
