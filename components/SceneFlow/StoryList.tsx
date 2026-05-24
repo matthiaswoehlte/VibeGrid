@@ -11,7 +11,7 @@ const STATUS_DOT: Record<StoryStatus, string> = {
   error: 'bg-red-400'
 };
 
-export function StoryList() {
+export function StoryList({ onSelect }: { onSelect(storyId: string): void }) {
   const { stories, loading, refresh } = useSceneFlowStories();
 
   async function del(s: StoryRecord) {
@@ -38,7 +38,8 @@ export function StoryList() {
       {stories.map((s) => (
         <li
           key={s.id}
-          className="bg-[var(--surface-2)] rounded-lg p-3 flex flex-col gap-2"
+          onClick={() => onSelect(s.id)}
+          className="bg-[var(--surface-2)] rounded-lg p-3 flex flex-col gap-2 cursor-pointer hover:bg-[var(--surface-3)]"
         >
           <div className="flex items-center gap-2">
             <span className={'w-2 h-2 rounded-full ' + STATUS_DOT[s.status]} />
@@ -56,7 +57,10 @@ export function StoryList() {
             </span>
             <button
               type="button"
-              onClick={() => del(s)}
+              onClick={(e) => {
+                e.stopPropagation();
+                del(s);
+              }}
               title="Löschen"
               className="text-xs text-[var(--text-muted)] hover:text-red-400"
             >
