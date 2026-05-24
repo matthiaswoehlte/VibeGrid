@@ -6,6 +6,7 @@ vi.mock('@/lib/db/pg', () => ({ pool: { query: queryMock } }));
 import {
   createCharacter,
   listCharacters,
+  listCharactersByIds,
   updateCharacter,
   deleteCharacter
 } from '@/lib/sceneflow/characters-db';
@@ -67,5 +68,21 @@ describe('characters-db CRUD', () => {
     const ok = await deleteCharacter({ userId: 'u-1', characterId: 'char-1' });
     expect(queryMock.mock.calls[0]![1]).toEqual(['char-1', 'u-1']);
     expect(ok).toBe(true);
+  });
+});
+
+describe('listCharactersByIds', () => {
+  it('queries with user_id filter AND id = ANY(uuids[])', async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    await listCharactersByIds('u-1', ['c-1', 'c-2']);
+    const [sql, vals] = queryMock.mock.calls[0]!;
+    expect(sql).toMatch(/WHERE user_id = \$1 AND id = ANY\(\$2::uuid\[\]\)/);
+    expect(vals).toEqual(['u-1', ['c-1', 'c-2']]);
+  });
+
+  it('empty ids array → returns [] without SQL', async () => {
+    const rows = await listCharactersByIds('u-1', []);
+    expect(rows).toEqual([]);
+    expect(queryMock).not.toHaveBeenCalled();
   });
 });

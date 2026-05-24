@@ -40,6 +40,21 @@ export async function listCharacters(userId: string): Promise<CharacterRecord[]>
   return rows;
 }
 
+export async function listCharactersByIds(
+  userId: string,
+  ids: string[]
+): Promise<CharacterRecord[]> {
+  if (ids.length === 0) return [];
+  const { rows } = await pool.query<CharacterRecord>(
+    `SELECT id, user_id, name, type, reference_image_url, voice_provider,
+            voice_id, image_prompt, created_at, updated_at
+     FROM "VG_characters"
+     WHERE user_id = $1 AND id = ANY($2::uuid[])`,
+    [userId, ids]
+  );
+  return rows;
+}
+
 export interface UpdateCharacterPatch {
   name?: string;
   type?: CharacterType;
