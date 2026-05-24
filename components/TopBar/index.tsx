@@ -9,7 +9,9 @@ import { LogoutButton } from './LogoutButton';
 import { SaveProjectButton } from './SaveProjectButton';
 import { ProjectNameField } from './ProjectNameField';
 import { ProjectsButton } from './ProjectsButton';
+import { TabSwitcher } from './TabSwitcher';
 import { useVideoExporter } from '@/lib/hooks/useVideoExporter';
+import { useAppStore } from '@/lib/store';
 import type { AudioEngine } from '@/lib/audio/engine';
 import type { VideoEngine } from '@/lib/video/engine';
 import type { VideoDecoderPool } from '@/lib/video/decoder-pool';
@@ -38,45 +40,55 @@ export function TopBar({
     videoEngine,
     videoDecoderPool
   });
+  const appMode = useAppStore((s) => s.appMode);
   return (
     <header className="h-12 px-2 md:px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-1)]">
       <div className="flex items-center gap-2 md:gap-3">
-        <Transport engine={engine} />
-        <BPMBadge />
-        {/* Plan 7 — current project name + Save sit next to BPM,
-            visually grouped with Transport because they're the
-            session-scope identity controls. */}
-        <ProjectNameField />
-        <SaveProjectButton />
-        <ProjectsButton />
+        <TabSwitcher />
+        {appMode === 'vibegrid' && (
+          <>
+            <Transport engine={engine} />
+            <BPMBadge />
+            {/* Plan 7 — current project name + Save sit next to BPM,
+                visually grouped with Transport because they're the
+                session-scope identity controls. */}
+            <ProjectNameField />
+            <SaveProjectButton />
+            <ProjectsButton />
+          </>
+        )}
       </div>
       <div className="flex items-center gap-1 md:gap-2">
-        {/* RecIndicator hides itself when status === 'idle'; on Mobile the
-            timecode + progress bar may overflow the right cluster — left
-            unchanged because export happens once per session, edge-case. */}
-        <RecIndicator onCancel={() => exporter.cancel()} />
-        <FlowModeToggle />
-        {/* NewProjectButton + Dev: Clear are dangerous actions. Keep
-            them visible on Mobile too — the native window.confirm()
-            dialog already protects against misclicks at any size.
-            Plan 7: 'New' replaced 'Clear' — same wipe semantics, plus
-            it detaches the current-project pointer so the next Save
-            creates a fresh VG_projects row. */}
-        <NewProjectButton />
-        {process.env.NODE_ENV === 'development' && (
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.clear();
-              window.location.reload();
-            }}
-            title="Dev only: clear localStorage and reload"
-            className="hidden md:inline-flex h-7 px-2 items-center rounded text-[10px] uppercase tracking-wider bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text)] transition-colors border border-[var(--border)]"
-          >
-            Dev: Clear
-          </button>
+        {appMode === 'vibegrid' && (
+          <>
+            {/* RecIndicator hides itself when status === 'idle'; on Mobile the
+                timecode + progress bar may overflow the right cluster — left
+                unchanged because export happens once per session, edge-case. */}
+            <RecIndicator onCancel={() => exporter.cancel()} />
+            <FlowModeToggle />
+            {/* NewProjectButton + Dev: Clear are dangerous actions. Keep
+                them visible on Mobile too — the native window.confirm()
+                dialog already protects against misclicks at any size.
+                Plan 7: 'New' replaced 'Clear' — same wipe semantics, plus
+                it detaches the current-project pointer so the next Save
+                creates a fresh VG_projects row. */}
+            <NewProjectButton />
+            {process.env.NODE_ENV === 'development' && (
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.clear();
+                  window.location.reload();
+                }}
+                title="Dev only: clear localStorage and reload"
+                className="hidden md:inline-flex h-7 px-2 items-center rounded text-[10px] uppercase tracking-wider bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text)] transition-colors border border-[var(--border)]"
+              >
+                Dev: Clear
+              </button>
+            )}
+            <ExportButton onStart={() => exporter.start()} />
+          </>
         )}
-        <ExportButton onStart={() => exporter.start()} />
         <LogoutButton />
       </div>
     </header>
