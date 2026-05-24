@@ -9,14 +9,15 @@ export interface CreateCharacterInput {
   referenceImageUrl: string | null;
   voiceProvider: VoiceProvider | null;
   voiceId: string | null;
+  voiceTestText: string | null;
   imagePrompt: string | null;
 }
 
 export async function createCharacter(input: CreateCharacterInput): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO "VG_characters"
-     (user_id, name, type, reference_image_url, voice_provider, voice_id, image_prompt)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+     (user_id, name, type, reference_image_url, voice_provider, voice_id, voice_test_text, image_prompt)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
       input.userId,
       input.name,
@@ -24,6 +25,7 @@ export async function createCharacter(input: CreateCharacterInput): Promise<stri
       input.referenceImageUrl,
       input.voiceProvider,
       input.voiceId,
+      input.voiceTestText,
       input.imagePrompt
     ]
   );
@@ -33,7 +35,7 @@ export async function createCharacter(input: CreateCharacterInput): Promise<stri
 export async function listCharacters(userId: string): Promise<CharacterRecord[]> {
   const { rows } = await pool.query<CharacterRecord>(
     `SELECT id, user_id, name, type, reference_image_url, voice_provider,
-            voice_id, image_prompt, created_at, updated_at
+            voice_id, voice_test_text, image_prompt, created_at, updated_at
      FROM "VG_characters" WHERE user_id = $1 ORDER BY created_at DESC`,
     [userId]
   );
@@ -47,7 +49,7 @@ export async function listCharactersByIds(
   if (ids.length === 0) return [];
   const { rows } = await pool.query<CharacterRecord>(
     `SELECT id, user_id, name, type, reference_image_url, voice_provider,
-            voice_id, image_prompt, created_at, updated_at
+            voice_id, voice_test_text, image_prompt, created_at, updated_at
      FROM "VG_characters"
      WHERE user_id = $1 AND id = ANY($2::uuid[])`,
     [userId, ids]
@@ -61,6 +63,7 @@ export interface UpdateCharacterPatch {
   referenceImageUrl?: string | null;
   voiceProvider?: VoiceProvider | null;
   voiceId?: string | null;
+  voiceTestText?: string | null;
   imagePrompt?: string | null;
 }
 
@@ -96,6 +99,10 @@ export async function updateCharacter(args: {
   if (p.imagePrompt !== undefined) {
     sets.push(`image_prompt = $${n++}`);
     vals.push(p.imagePrompt);
+  }
+  if (p.voiceTestText !== undefined) {
+    sets.push(`voice_test_text = $${n++}`);
+    vals.push(p.voiceTestText);
   }
   if (sets.length === 0) return false;
 

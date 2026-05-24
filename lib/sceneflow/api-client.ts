@@ -26,8 +26,9 @@ export async function apiCreateCharacter(input: {
   name: string;
   type: 'person' | 'group';
   referenceImageUrl: string | null;
-  voiceProvider: 'azure' | 'elevenlabs' | null;
+  voiceProvider: 'edge' | 'azure' | 'elevenlabs' | null;
   voiceId: string | null;
+  voiceTestText: string | null;
   imagePrompt: string | null;
 }): Promise<{ id: string }> {
   return json(

@@ -2,7 +2,7 @@
 // TS types matching DB schema in db/migrations/002_VG_sceneflow.sql.
 
 export type CharacterType = 'person' | 'group';
-export type VoiceProvider = 'azure' | 'elevenlabs';
+export type VoiceProvider = 'edge' | 'azure' | 'elevenlabs';
 
 export interface CharacterRecord {
   id: string;
@@ -12,6 +12,7 @@ export interface CharacterRecord {
   reference_image_url: string | null;
   voice_provider: VoiceProvider | null;
   voice_id: string | null;
+  voice_test_text: string | null;
   image_prompt: string | null;
   created_at: string;
   updated_at: string;

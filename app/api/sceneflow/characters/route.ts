@@ -35,6 +35,7 @@ export async function POST(req: Request): Promise<Response> {
     referenceImageUrl: (b.referenceImageUrl as string | null | undefined) ?? null,
     voiceProvider: (b.voiceProvider as VoiceProvider | null | undefined) ?? null,
     voiceId: (b.voiceId as string | null | undefined) ?? null,
+    voiceTestText: (b.voiceTestText as string | null | undefined) ?? null,
     imagePrompt: (b.imagePrompt as string | null | undefined) ?? null
   });
   return NextResponse.json({ id }, { status: 201 });

@@ -73,6 +73,7 @@ export function CharacterForm({
           referenceImageUrl,
           voiceProvider,
           voiceId: voiceId.trim() || null,
+          voiceTestText: null,
           imagePrompt: imagePrompt.trim() || null
         });
         toast.success('Charakter angelegt');

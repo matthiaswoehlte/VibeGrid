@@ -23,6 +23,7 @@ describe('characters-db CRUD', () => {
       referenceImageUrl: 'https://r2/m.png',
       voiceProvider: 'elevenlabs',
       voiceId: 'xyz',
+      voiceTestText: 'Sample sentence',
       imagePrompt: null
     });
     expect(id).toBe('char-1');
@@ -34,6 +35,7 @@ describe('characters-db CRUD', () => {
       'https://r2/m.png',
       'elevenlabs',
       'xyz',
+      'Sample sentence',
       null
     ]);
   });
@@ -50,11 +52,11 @@ describe('characters-db CRUD', () => {
     await updateCharacter({
       userId: 'u-1',
       characterId: 'char-1',
-      patch: { name: 'Magda', voiceId: 'abc' }
+      patch: { name: 'Magda', voiceId: 'abc', voiceTestText: 'Hallo' }
     });
     const [sql, vals] = queryMock.mock.calls[0]!;
-    expect(sql).toMatch(/SET name = \$1, voice_id = \$2 WHERE id = \$3 AND user_id = \$4/);
-    expect(vals).toEqual(['Magda', 'abc', 'char-1', 'u-1']);
+    expect(sql).toMatch(/SET name = \$1, voice_id = \$2, voice_test_text = \$3 WHERE id = \$4 AND user_id = \$5/);
+    expect(vals).toEqual(['Magda', 'abc', 'Hallo', 'char-1', 'u-1']);
   });
 
   it('updateCharacter — empty patch is a no-op, returns false', async () => {
