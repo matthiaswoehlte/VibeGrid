@@ -4,9 +4,11 @@ import { loadSceneById, patchSceneRender } from '@/lib/sceneflow/scenes-db';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import {
   enqueueVideoJobs,
+  enqueueLipSyncForScene,
   planRetryVideo,
   applyRetryPlanPatch
 } from '@/lib/sceneflow/render-pipeline';
+import type { FalLipSyncModel } from '@/lib/fal/client';
 import {
   getBalance,
   reserveCredits,
@@ -98,9 +100,10 @@ export async function POST(
     return NextResponse.json({ error: 'not found after reset' }, { status: 500 });
   }
 
-  // Dialog with neutral_video_url present → step-B-only path. The status
-  // route's claim-and-enqueue logic picks it up on the next poll (no Kling
-  // re-submit here). The reserve covers the lipsync step.
+  // Dialog with neutral_video_url present → step-B-only path. Submit the
+  // lipsync job directly here — advanceSceneRender's auto-enqueue branch
+  // only fires when neutral_video_url is still null (the first-run path),
+  // so a retry where the neutral cached has to enqueue itself.
   if (
     fresh.type === 'dialog' &&
     fresh.neutral_video_url !== null &&
@@ -121,9 +124,39 @@ export async function POST(
       }
       throw e;
     }
+
+    let lipsyncRequestId: string;
+    try {
+      lipsyncRequestId = await enqueueLipSyncForScene({
+        scene: fresh,
+        neutralVideoUrl: fresh.neutral_video_url,
+        lipsyncModel: story.lipsync_model as FalLipSyncModel
+      });
+    } catch (e) {
+      // Submit failed — refund the reserve we just made and surface.
+      const msg = e instanceof Error ? e.message : String(e);
+      await patchSceneRender(scene.id, {
+        status: 'error',
+        error_message: `lipsync submit failed: ${msg}`
+      }).catch(() => {});
+      return NextResponse.json(
+        { error: 'LipSync-Submit fehlgeschlagen: ' + msg },
+        { status: 502 }
+      );
+    }
+
+    await patchSceneRender(scene.id, {
+      status: 'generating',
+      fal_request_ids: {
+        ...(fresh.fal_request_ids ?? {}),
+        lipsync: lipsyncRequestId
+      }
+    });
+
     return NextResponse.json({
       retried: 'lipsync-only',
-      message: 'Poll /status to advance the LipSync step'
+      requestId: lipsyncRequestId,
+      message: 'LipSync läuft — Polling zeigt das fertige Video.'
     });
   }
 
