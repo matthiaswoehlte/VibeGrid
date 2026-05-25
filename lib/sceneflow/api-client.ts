@@ -307,20 +307,25 @@ export async function apiRetryVideo(
   );
 }
 
-export async function apiTransfer(
-  storyId: string
-): Promise<{
+// Plan 8d — Transfer response shape (must mirror
+// app/api/sceneflow/stories/[id]/transfer/route.ts).
+export interface TransferClipPayload {
+  mediaId: string;
+  videoUrl: string | null;
+  imageUrl: string | null;
+  durationSec: number;
+  transition: 'last-frame' | 'crossfade' | 'cut';
+  sceneType: 'action' | 'dialog' | 'endcard';
+  sceneOrder: number;
+}
+export interface TransferResponse {
   storyId: string;
-  clips: Array<{
-    sceneId: string;
-    sceneOrder: number;
-    type: 'action' | 'dialog' | 'endcard';
-    videoUrl: string | null;
-    imageUrl: string | null;
-    duration: number;
-    transition: 'last-frame' | 'crossfade' | 'cut';
-  }>;
-}> {
+  syncAudio: { url: string; bpm: number } | null;
+  clips: TransferClipPayload[];
+  snapMode: 'beat' | 'bar' | 'off';
+}
+
+export async function apiTransfer(storyId: string): Promise<TransferResponse> {
   return json(
     await fetch(
       `/api/sceneflow/stories/${encodeURIComponent(storyId)}/transfer`,
