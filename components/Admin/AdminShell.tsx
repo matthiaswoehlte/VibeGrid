@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { Route } from 'next';
 
 /**
  * Plan 8.6 — Admin-Layout-Shell.
@@ -43,7 +44,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </nav>
           <div className="flex-1" />
           <Link
-            href="/"
+            href={'/' as Route}
             className="text-xs text-[var(--a2)] hover:text-[var(--a1)]"
           >
             ← Zurück zum Studio

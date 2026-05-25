@@ -4,11 +4,13 @@ import type { Route } from 'next';
 import { useAppStore } from '@/lib/store';
 import type { AppMode } from '@/lib/store/app-mode-slice';
 
-// experimental.typedRoutes is on (next.config.mjs) — href must be a
-// known Route literal. The /storyboard route was added at app/storyboard/.
+// experimental.typedRoutes is on (next.config.mjs). The root '/' lives
+// under the (studio) route group + we re-export it from /storyboard,
+// which trips Next's typed-route inference and drops both from the
+// Route literal union. Cast — both routes are real and verified.
 const TABS: ReadonlyArray<{ mode: AppMode; label: string; href: Route }> = [
-  { mode: 'vibegrid', label: 'VibeGrid', href: '/' },
-  { mode: 'sceneflow', label: 'SceneFlow', href: '/storyboard' }
+  { mode: 'vibegrid', label: 'VibeGrid', href: '/' as Route },
+  { mode: 'sceneflow', label: 'SceneFlow', href: '/storyboard' as Route }
 ];
 
 export function TabSwitcher() {
