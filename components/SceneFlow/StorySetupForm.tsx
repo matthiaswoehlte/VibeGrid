@@ -21,8 +21,12 @@ export function StorySetupForm({
   const [visualStyle, setVisualStyle] = useState(story.visual_style ?? '');
   const [selected, setSelected] = useState<string[]>(story.characters);
   const [showCharPicker, setShowCharPicker] = useState(false);
+  const [budgetInput, setBudgetInput] = useState<string>(
+    story.credit_budget !== null ? String(story.credit_budget) : ''
+  );
   const titleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const styleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const budgetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Re-seed local state only on story switch — not on every parent prop
   // update. Including the value in the deps lets server PATCH responses
@@ -34,6 +38,9 @@ export function StorySetupForm({
     setFormat(story.format);
     setVisualStyle(story.visual_style ?? '');
     setSelected(story.characters);
+    setBudgetInput(
+      story.credit_budget !== null ? String(story.credit_budget) : ''
+    );
   }, [story.id]);
 
   function patchTitle(v: string) {
@@ -60,6 +67,21 @@ export function StorySetupForm({
       apiPatchStory(story.id, { visualStyle: val })
         .then(() => onPatched({ visual_style: val }))
         .catch(() => toast.error('Stil-Speichern fehlgeschlagen'));
+    }, DEBOUNCE_MS);
+  }
+  function patchBudget(raw: string) {
+    setBudgetInput(raw);
+    if (budgetTimer.current) clearTimeout(budgetTimer.current);
+    budgetTimer.current = setTimeout(() => {
+      const trimmed = raw.trim();
+      const next = trimmed === '' ? null : Math.max(0, Math.floor(Number(trimmed)));
+      if (next !== null && !Number.isFinite(next)) {
+        toast.error('Budget ungültig');
+        return;
+      }
+      apiPatchStory(story.id, { creditBudget: next })
+        .then(() => onPatched({ credit_budget: next }))
+        .catch(() => toast.error('Budget-Speichern fehlgeschlagen'));
     }, DEBOUNCE_MS);
   }
   function toggleChar(charId: string) {
@@ -155,6 +177,21 @@ export function StorySetupForm({
           </ul>
         )}
       </div>
+      <label className="block">
+        <span className="text-xs text-[var(--text-dim)]">
+          Credit-Budget für diese Story{' '}
+          <span className="text-[var(--text-muted)]">(leer = kein Limit)</span>
+        </span>
+        <input
+          type="number"
+          min={0}
+          step={50}
+          value={budgetInput}
+          onChange={(e) => patchBudget(e.target.value)}
+          placeholder="z.B. 1000"
+          className="mt-1 w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)]"
+        />
+      </label>
       <ModelSelector story={story} onPatched={onPatched} />
       <p className="text-[10px] text-[var(--text-muted)]">
         Änderungen wirken sich erst beim nächsten „Mit KI aufteilen” auf

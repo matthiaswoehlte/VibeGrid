@@ -5,6 +5,7 @@ import { StorySetupForm } from './StorySetupForm';
 import { StoryTextInput } from './StoryTextInput';
 import { Storyboard } from './Storyboard';
 import { GenerationControls } from './GenerationControls';
+import { CreditDisplay } from './CreditDisplay';
 import { useSceneFlowScenes } from '@/lib/hooks/useSceneFlowScenes';
 import { useSceneFlowCharacters } from '@/lib/hooks/useSceneFlowCharacters';
 import { apiListStories, apiStatusAll } from '@/lib/sceneflow/api-client';
@@ -21,6 +22,7 @@ export function StoryDetailView({
 }) {
   const [story, setStory] = useState<StoryRecord | null>(null);
   const [storyLoading, setStoryLoading] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
   const {
     scenes,
     generating,
@@ -45,8 +47,10 @@ export function StoryDetailView({
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       try {
-        const { scenes: updates } = await apiStatusAll(storyId);
-        if (!cancelled && updates.length > 0) applyStatusUpdates(updates);
+        const { scenes: updates, balance: bal } = await apiStatusAll(storyId);
+        if (cancelled) return;
+        if (updates.length > 0) applyStatusUpdates(updates);
+        setBalance(bal);
       } catch {
         // swallow — next tick will retry
       } finally {
@@ -93,7 +97,7 @@ export function StoryDetailView({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={onBack}
@@ -101,9 +105,10 @@ export function StoryDetailView({
         >
           ← Zurück zu Stories
         </button>
-        <h2 className="text-sm font-bold text-[var(--text)] truncate">
+        <h2 className="text-sm font-bold text-[var(--text)] truncate flex-1 text-center">
           {story.title}
         </h2>
+        <CreditDisplay balance={balance} />
       </div>
       <StorySetupForm
         story={story}
