@@ -95,6 +95,7 @@ export async function apiPatchStory(
     imageModel?: string;
     videoModel?: string;
     lipsyncModel?: string;
+    creditBudget?: number | null;
   }
 ): Promise<{ ok: true }> {
   return json(

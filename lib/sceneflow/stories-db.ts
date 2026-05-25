@@ -62,6 +62,7 @@ export interface UpdateStoryPatch {
   imageModel?: string;
   videoModel?: string;
   lipsyncModel?: string;
+  creditBudget?: number | null;
 }
 
 export async function updateStory(args: {
@@ -92,6 +93,9 @@ export async function updateStory(args: {
   }
   if (p.lipsyncModel !== undefined) {
     sets.push(`lipsync_model = $${n++}`); vals.push(p.lipsyncModel);
+  }
+  if (p.creditBudget !== undefined) {
+    sets.push(`credit_budget = $${n++}`); vals.push(p.creditBudget);
   }
   if (sets.length === 0) return false;
   const sceneIdParam = n++;

@@ -50,6 +50,15 @@ export async function PATCH(
   if (typeof b.imageModel === 'string') patch.imageModel = b.imageModel;
   if (typeof b.videoModel === 'string') patch.videoModel = b.videoModel;
   if (typeof b.lipsyncModel === 'string') patch.lipsyncModel = b.lipsyncModel;
+  if ('creditBudget' in b) {
+    if (b.creditBudget === null) {
+      patch.creditBudget = null;
+    } else if (typeof b.creditBudget === 'number' && Number.isFinite(b.creditBudget) && b.creditBudget >= 0) {
+      patch.creditBudget = Math.floor(b.creditBudget);
+    } else {
+      return NextResponse.json({ error: 'invalid creditBudget' }, { status: 400 });
+    }
+  }
 
   const ok = await updateStory({
     userId: session.user.id,
