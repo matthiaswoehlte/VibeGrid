@@ -115,7 +115,7 @@ tests/            unit/, integration/, e2e/
 | 8b | Story-Input + Sonnet + Storyboard | ✅ Done |
 | 8c | fal.ai Render-Pipeline | ✅ Done |
 | 8.5 | Credit-System | ✅ Done |
-| 8.6 | Admin-UI | ⬜ Pending |
+| 8.6 | Admin-UI | ✅ Done |
 | 8d | Timeline-Integration + Beat-Snap | ⬜ Pending |
 
 **Rule:** Never start Plan N+1 before Plan N passes all verification gates.
