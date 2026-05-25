@@ -572,6 +572,90 @@ Edge TTS works without any key.
 
 ---
 
+## Plan 8c — fal.ai Render-Pipeline
+
+### fal.ai cost per render
+
+Pro Szene (Bild + Video) ca. **$1.00–1.50**. Bei 20 Szenen (das Maximum
+für "Mit KI aufteilen") sind das **$20–30 pro Render**. Kein Hard-Cap im
+Code — der User trägt die volle Rechnung. UI-Hinweis: Toast vor Phase 2
+("Create Full Movie") wäre ein offensichtlicher v0.2-Hook.
+
+### Kling-Modell-Verfügbarkeit
+
+Modell-IDs können von fal.ai jederzeit ausgemustert werden. Der
+ModelSelector-Dropdown ist tolerant gegen unbekannte IDs — fällt auf
+den Default zurück und blendet einen Amber-Hinweis mit dem gespeicherten
+(jetzt unbekannten) Wert ein. Kein Crash, aber der User muss die
+Auswahl bewusst aktualisieren.
+
+### Async Video-Generation auf Vercel Hobby
+
+Kling-Video- und LipSync-Calls dauern 30 s – 4 min und übersteigen den
+60-s-Vercel-Hobby-Function-Timeout. Plan 8c löst das mit dem
+queue-submit-Pattern: `POST /generate-videos` enqueued nur (returnt
+schnell), und der Status-Polling-Endpoint (`GET /status-all`) checkt
+fal-seitig den Fortschritt + lädt fertige Assets in R2.
+
+Konsequenz: Browser-Tab kann während der Generierung geschlossen
+werden. Beim nächsten Öffnen zeigt der Initial-Fetch (status-all) den
+aktuellen Stand. Vercel-Function-Timeout ist hier irrelevant — kein
+Call hält länger als ein paar Sekunden.
+
+### R2-Speicher pro Story
+
+fal.ai MP4-Outputs sind 5–20 MB pro Clip. Eine 20-Szenen-Story mit
+Dialog-Clips kann 200–500 MB R2-Speicher belegen (image + audio +
+neutral-video + final video). Bei vielen Stories pro User summiert sich
+der R2-Footprint spürbar — Cloudflare-Kosten steigen mit Datenmenge.
+Cleanup-Job (z. B. delete on story-delete) ist eine v0.2-Aufgabe.
+
+### Migration 005 — DEFAULTs für Bestands-Stories
+
+Bestehende `VG_stories`-Rows erhalten via DEFAULT-Werte die neuen
+Modell-Spalten (`image_model`, `video_model`, `lipsync_model`). Alte
+Stories laden ohne Crash, der ModelSelector zeigt automatisch die
+Defaults. Smoke-Test: alte Story aus Pre-8c-Datenbank laden, Plan-8c-UI
+bedienen — kein Crash, keine NULL-Felder im Frontend.
+
+### Postgres-JSONB-Abhängigkeit für Status-Idempotenz
+
+Der Status-Endpoint nutzt den Postgres-JSONB-`->>`-Operator als
+Race-Guard, damit zwei parallele Polls nicht beide Schritt B
+(LipSync) enqueuen:
+
+```sql
+UPDATE "VG_story_scenes"
+SET neutral_video_url = $1, updated_at = now()
+WHERE id = $2
+  AND neutral_video_url IS NULL
+  AND (fal_request_ids->>'lipsync' IS NULL);
+```
+
+Funktioniert auf Supabase (Postgres). Bei einer hypothetischen v0.2-
+Migration auf D1/SQLite müsste das Schema auf separate Spalten
+umgestellt werden (`fal_image_request_id`, `fal_neutral_video_request_id`,
+…). Der Guard wäre dann mit `IS NULL` auf jeder Spalte abbildbar.
+
+### Azure TTS bleibt Stub
+
+`voice_provider === 'azure'` ist in der DB-CHECK erlaubt (Migration 004
++ 002), aber der Render-Pipeline-Dispatcher (`lib/sceneflow/tts.ts`)
+wirft einen Klartextfehler. UI-Validation markiert solche Charaktere
+mit einer roten Warnung vor Phase 1 — der User muss in den
+Character-Manager wechseln und auf Edge oder ElevenLabs umschalten.
+
+### `cameraControl` ist Sonnet-Hint, kein direkter API-Param
+
+Kling 2.5 Turbo hat keine zoom/pan/tilt-Parameter. Die
+CameraControl-Slider in der SceneCard befüllen `camera_control` in
+der DB; Sonnet leitet daraus den `motion_prompt`-Text ab (siehe
+SYSTEM_PROMPT-Erweiterung). Der direkte fal-Call übergibt nur
+`motion_prompt`. Konsequenz: Slider-Änderungen wirken erst nach
+einem neuen Sonnet-Run, nicht beim direkten Video-Submit.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
