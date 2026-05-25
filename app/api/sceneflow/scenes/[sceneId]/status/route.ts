@@ -8,14 +8,14 @@ export const runtime = 'nodejs';
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { sceneId: string } }
 ): Promise<Response> {
   const session = await auth.api.getSession({ headers: req.headers });
   if (!session) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const scene = await loadSceneById(params.id);
+  const scene = await loadSceneById(params.sceneId);
   if (!scene) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }

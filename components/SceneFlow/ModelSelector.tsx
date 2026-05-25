@@ -144,8 +144,8 @@ function ModelRow({
       </select>
       {unknown && unknownValue !== null && (
         <span className="block text-[10px] text-amber-300 mt-1">
-          Gespeichertes Modell „{unknownValue}" nicht mehr verfügbar — Default
-          wird genutzt.
+          Gespeichertes Modell „{unknownValue}&quot; nicht mehr verfügbar —
+          Default wird genutzt.
         </span>
       )}
     </label>
