@@ -76,7 +76,21 @@ Regeln:
 - Folge-Szenen: start_frame_mode = "from-previous"
 - Dialog/LipSync-Szenen: transition = "last-frame"
 - Crossfade für emotionale Übergänge
-- Immer mit einer endcard-Szene abschließen (type = "endcard")`;
+- Immer mit einer endcard-Szene abschließen (type = "endcard")
+
+cameraControl → motion_prompt-Mapping (Plan 8c):
+Kling 2.5 Turbo hat keine direkten Kamera-Parameter. Wenn cameraControl-
+Werte gesetzt sind, leite daraus den motion_prompt ab:
+  zoom > 0 → "dolly forward / push-in"
+  zoom < 0 → "zoom out / pull-back"
+  panX > 0 → "pan right"
+  panX < 0 → "pan left"
+  panY > 0 → "tilt up"
+  panY < 0 → "tilt down"
+  motionIntensity 1–3 → "slow, subtle movement"
+  motionIntensity 7–10 → "fast, dynamic movement"
+Kombiniere mehrere Werte in EINEN englischen Satz. motion_prompt
+überschreibt cameraControl-Semantik — bei Konflikt gewinnt motion_prompt.`;
 
 export interface SonnetSceneRaw {
   scene_order: number;
