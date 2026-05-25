@@ -6,6 +6,7 @@ import { StoryTextInput } from './StoryTextInput';
 import { Storyboard } from './Storyboard';
 import { GenerationControls } from './GenerationControls';
 import { CreditDisplay } from './CreditDisplay';
+import { ScenesJsonControls } from './ScenesJsonControls';
 import { useSceneFlowScenes } from '@/lib/hooks/useSceneFlowScenes';
 import { useSceneFlowCharacters } from '@/lib/hooks/useSceneFlowCharacters';
 import { apiListStories, apiStatusAll } from '@/lib/sceneflow/api-client';
@@ -31,6 +32,7 @@ export function StoryDetailView({
     patchFieldImmediate,
     remove,
     reorder,
+    refresh: refreshScenes,
     applyStatusUpdates
   } = useSceneFlowScenes(storyId);
   const { characters: allChars } = useSceneFlowCharacters();
@@ -123,6 +125,12 @@ export function StoryDetailView({
         onStoryTextPatched={(text) =>
           setStory((s) => (s ? { ...s, story_text: text } : s))
         }
+      />
+      <ScenesJsonControls
+        storyId={story.id}
+        onImported={() => {
+          refreshScenes().catch(() => {});
+        }}
       />
       <Storyboard
         scenes={scenes}
