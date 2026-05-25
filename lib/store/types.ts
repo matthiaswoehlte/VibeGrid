@@ -65,6 +65,21 @@ export interface TimelineActions {
     key: string,
     updates: Array<{ index: number; beat?: number; value?: number }>
   ): void;
+  /**
+   * Plan 8d — wipe all tracks + clips. Used by the SceneFlow Transfer
+   * flow to start with a clean Gantt chart before adding the new
+   * main-video + sync-audio tracks and clips.
+   */
+  clearAllTracks(): void;
+  /**
+   * Plan 8d — re-snap the main-video clips after a BPM change. Mutates
+   * only startBeat + lengthBeats on the matching clips (by mediaId);
+   * clip.id stays stable so Undo/Redo + FX bindings + JSONB persistence
+   * survive.
+   */
+  replaceMainVideoClips(
+    layoutByMediaId: Map<string, { startBeat: number; lengthBeats: number }>
+  ): void;
 }
 
 export interface AudioState {
@@ -94,6 +109,17 @@ export interface MediaActions {
   /** Plan 5.10+ — VideoEngine calls this from its bytes-cache progress
    *  callback so the MediaLibrary can render live download status. */
   setVideoLoadProgress(mediaId: string, received: number, total: number): void;
+  /**
+   * Plan 8d — remove every mediaRef whose URL is under the SceneFlow
+   * R2 path for the given user+story. Called before clearAllTracks at
+   * the start of a Transfer flow so re-transfer doesn't leak verwaiste
+   * MediaRefs from the previous run.
+   *
+   * URL-prefix shape (from lib/sceneflow/fal-to-r2.ts:sceneflowR2Key):
+   *   sceneflow/{userId}/{storyId}/{sceneId}/{kind}.{ext}
+   * The R2 public URL is `${R2_PUBLIC_URL}/sceneflow/{userId}/{storyId}/...`.
+   */
+  purgeSceneflowMediaRefs(storyId: string, userId: string): void;
 }
 
 export interface AppState {

@@ -63,6 +63,26 @@ export const createMediaSlice: StateCreator<
           }
         }
       });
+    },
+    // Plan 8d — drop SceneFlow-owned mediaRefs of this user+story before
+    // a Transfer rebuild so the library doesn't accumulate orphans.
+    // Match by URL substring — every SceneFlow asset is uploaded under
+    // `/sceneflow/{userId}/{storyId}/...` (see lib/sceneflow/fal-to-r2.ts).
+    purgeSceneflowMediaRefs: (storyId, userId) => {
+      const m = get().media;
+      const needle = `/sceneflow/${userId}/${storyId}/`;
+      const toDrop = m.mediaRefs.filter((r) => r.url.includes(needle));
+      if (toDrop.length === 0) return;
+      const droppedIds = new Set(toDrop.map((r) => r.id));
+      const nextProgress = { ...m.videoLoadProgress };
+      for (const id of droppedIds) delete nextProgress[id];
+      set({
+        media: {
+          ...m,
+          mediaRefs: m.mediaRefs.filter((r) => !droppedIds.has(r.id)),
+          videoLoadProgress: nextProgress
+        }
+      });
     }
   }
 });

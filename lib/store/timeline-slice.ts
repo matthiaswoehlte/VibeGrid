@@ -323,6 +323,44 @@ export const createTimelineSlice: StateCreator<
           });
           return { timeline: { ...s.timeline, clips } };
         });
+      },
+      // Plan 8d — Transfer-flow wipe. All tracks + clips dropped; the
+      // SceneFlow handler immediately re-adds main-video + sync-audio.
+      // selectedClipId + automationEditorClipId in UI also cleared so
+      // the Inspector doesn't keep a dangling reference to a deleted clip.
+      clearAllTracks: () => {
+        set((s) => ({
+          timeline: { ...s.timeline, tracks: [], clips: [] },
+          ui: {
+            ...s.ui,
+            selectedClipId: null,
+            automationEditorClipId: null
+          }
+        }));
+      },
+      // Plan 8d — re-snap after BPM change. Map keyed by mediaId so
+      // matching by content survives clip-array reordering. Clip.id is
+      // PRESERVED (only startBeat + lengthBeats mutate) — Undo/Redo,
+      // automation point references, and JSONB persistence stay valid.
+      replaceMainVideoClips: (layoutByMediaId) => {
+        set((s) => {
+          const mainTrackId = s.timeline.tracks.find(
+            (t) => t.kind === 'main-video'
+          )?.id;
+          if (!mainTrackId) return s;
+          const clips = s.timeline.clips.map((c) => {
+            if (c.trackId !== mainTrackId) return c;
+            if (!c.mediaId) return c;
+            const layout = layoutByMediaId.get(c.mediaId);
+            if (!layout) return c;
+            return {
+              ...c,
+              startBeat: layout.startBeat,
+              lengthBeats: layout.lengthBeats
+            };
+          });
+          return { timeline: { ...s.timeline, clips } };
+        });
       }
     }
   };
