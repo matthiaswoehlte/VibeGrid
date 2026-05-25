@@ -190,10 +190,10 @@ export async function updateScene(args: {
  * second poll doesn't race a first.
  */
 export interface RenderUpdatePatch {
-  image_url?: string;
-  audio_url?: string;
-  neutral_video_url?: string;
-  video_url?: string;
+  image_url?: string | null;
+  audio_url?: string | null;
+  neutral_video_url?: string | null;
+  video_url?: string | null;
   status?: SceneRecord['status'];
   error_message?: string | null;
   fal_request_ids?: Record<string, string> | null;
