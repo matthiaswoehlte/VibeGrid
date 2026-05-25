@@ -1,7 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { CameraControlSliders } from './CameraControlSliders';
 import { EndcardEditor } from './EndcardEditor';
+import { ImageViewer } from './ImageViewer';
+import { apiRetryImage, apiRetryVideo } from '@/lib/sceneflow/api-client';
+import { computeNextGenerationStep } from '@/lib/sceneflow/scene-state';
 import type {
   SceneRecord,
   CameraControl,
@@ -119,9 +123,7 @@ export function SceneCard({
             rows={3}
             className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)] text-xs"
           />
-          <div className="aspect-video bg-[var(--surface-3)] rounded flex items-center justify-center text-[10px] text-[var(--text-muted)]">
-            Bild kommt in Plan 8c
-          </div>
+          <ImageSlot scene={scene} />
         </div>
         <div className="space-y-2">
           <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
@@ -136,9 +138,7 @@ export function SceneCard({
             rows={3}
             className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)] text-xs"
           />
-          <div className="aspect-video bg-[var(--surface-3)] rounded flex items-center justify-center text-[10px] text-[var(--text-muted)]">
-            Video kommt in Plan 8c
-          </div>
+          <VideoSlot scene={scene} />
         </div>
       </div>
 
@@ -267,6 +267,153 @@ export function SceneCard({
         </label>
       </div>
     </SceneCardShell>
+  );
+}
+
+const STEP_LABEL: Record<
+  ReturnType<typeof computeNextGenerationStep>,
+  string
+> = {
+  image: 'generiert Bild …',
+  audio: 'erzeugt Stimme …',
+  neutral_video: 'Video wird verarbeitet …',
+  lipsync: 'lipsync läuft …',
+  done: 'fertig'
+};
+
+function ImageSlot({ scene }: { scene: SceneRecord }) {
+  const [open, setOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const step = computeNextGenerationStep(scene);
+  const errored = scene.status === 'error';
+
+  async function onRetry() {
+    setRetrying(true);
+    try {
+      await apiRetryImage(scene.id);
+      toast.success('Bild wird neu generiert …');
+    } catch (e) {
+      toast.error('Retry fehlgeschlagen: ' + (e as Error).message);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  if (scene.image_url !== null) {
+    return (
+      <>
+        <button
+          type="button"
+          onPointerDown={() => setOpen(true)}
+          className="aspect-video w-full bg-[var(--surface-3)] rounded overflow-hidden"
+          aria-label="Bild vergrößern"
+        >
+          <img
+            src={scene.image_url}
+            alt={`Szene ${scene.scene_order}`}
+            className="w-full h-full object-cover"
+          />
+        </button>
+        <div className="flex items-center justify-end mt-1">
+          <button
+            type="button"
+            disabled={retrying}
+            onPointerDown={onRetry}
+            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-50"
+          >
+            {retrying ? '…' : '↻ Bild neu'}
+          </button>
+        </div>
+        {open && (
+          <ImageViewer
+            url={scene.image_url}
+            alt={`Szene ${scene.scene_order}`}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </>
+    );
+  }
+  return (
+    <div className="aspect-video bg-[var(--surface-3)] rounded flex items-center justify-center text-[10px] text-[var(--text-muted)] text-center p-2">
+      {errored ? (
+        <div className="space-y-1">
+          <div className="text-red-300">✗ {scene.error_message ?? 'Fehler'}</div>
+          <button
+            type="button"
+            onPointerDown={onRetry}
+            className="text-[var(--a2)] hover:text-[var(--a1)]"
+          >
+            ↻ Erneut versuchen
+          </button>
+        </div>
+      ) : scene.status === 'generating' && (step === 'image' || step === 'audio') ? (
+        <span className="animate-pulse">{STEP_LABEL[step]}</span>
+      ) : (
+        <span>○ ausstehend</span>
+      )}
+    </div>
+  );
+}
+
+function VideoSlot({ scene }: { scene: SceneRecord }) {
+  const [retrying, setRetrying] = useState(false);
+  const step = computeNextGenerationStep(scene);
+  const errored = scene.status === 'error';
+
+  async function onRetry() {
+    setRetrying(true);
+    try {
+      await apiRetryVideo(scene.id);
+      toast.success('Video wird neu generiert …');
+    } catch (e) {
+      toast.error('Retry fehlgeschlagen: ' + (e as Error).message);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  if (scene.video_url !== null) {
+    return (
+      <>
+        <video
+          src={scene.video_url}
+          controls
+          playsInline
+          className="aspect-video w-full bg-black rounded"
+        />
+        <div className="flex items-center justify-end mt-1">
+          <button
+            type="button"
+            disabled={retrying}
+            onPointerDown={onRetry}
+            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-50"
+          >
+            {retrying ? '…' : '↻ Video neu'}
+          </button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <div className="aspect-video bg-[var(--surface-3)] rounded flex items-center justify-center text-[10px] text-[var(--text-muted)] text-center p-2">
+      {errored ? (
+        <div className="space-y-1">
+          <div className="text-red-300">✗ {scene.error_message ?? 'Fehler'}</div>
+          <button
+            type="button"
+            onPointerDown={onRetry}
+            className="text-[var(--a2)] hover:text-[var(--a1)]"
+          >
+            ↻ Erneut versuchen
+          </button>
+        </div>
+      ) : scene.status === 'generating' ? (
+        <span className="animate-pulse">{STEP_LABEL[step]}</span>
+      ) : (
+        <span>○ ausstehend</span>
+      )}
+    </div>
   );
 }
 

@@ -1,13 +1,16 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { StorySetupForm } from './StorySetupForm';
 import { StoryTextInput } from './StoryTextInput';
 import { Storyboard } from './Storyboard';
+import { GenerationControls } from './GenerationControls';
 import { useSceneFlowScenes } from '@/lib/hooks/useSceneFlowScenes';
 import { useSceneFlowCharacters } from '@/lib/hooks/useSceneFlowCharacters';
-import { apiListStories } from '@/lib/sceneflow/api-client';
+import { apiListStories, apiStatusAll } from '@/lib/sceneflow/api-client';
 import type { StoryRecord } from '@/lib/sceneflow/types';
+
+const POLL_INTERVAL_MS = 4000;
 
 export function StoryDetailView({
   storyId,
@@ -25,9 +28,39 @@ export function StoryDetailView({
     patchField,
     patchFieldImmediate,
     remove,
-    reorder
+    reorder,
+    applyStatusUpdates
   } = useSceneFlowScenes(storyId);
   const { characters: allChars } = useSceneFlowCharacters();
+  const inFlightRef = useRef(false);
+
+  // [Fix N2] Initial fetch on mount, then setInterval. The initial fetch
+  // is important so a tab re-open shows the current state immediately
+  // (no 4-s blindness while the first interval tick is pending).
+  useEffect(() => {
+    if (!storyId) return;
+    let cancelled = false;
+
+    async function tick() {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        const { scenes: updates } = await apiStatusAll(storyId);
+        if (!cancelled && updates.length > 0) applyStatusUpdates(updates);
+      } catch {
+        // swallow — next tick will retry
+      } finally {
+        inFlightRef.current = false;
+      }
+    }
+
+    void tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [storyId, applyStatusUpdates]);
 
   useEffect(() => {
     setStoryLoading(true);
@@ -94,6 +127,13 @@ export function StoryDetailView({
         onDelete={remove}
         onReorder={reorder}
       />
+      {scenes.length > 0 && (
+        <GenerationControls
+          story={story}
+          scenes={scenes}
+          characters={allChars.filter((c) => story.characters.includes(c.id))}
+        />
+      )}
     </div>
   );
 }
