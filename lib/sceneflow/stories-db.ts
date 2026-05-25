@@ -18,10 +18,13 @@ export async function createStory(input: CreateStoryInput): Promise<string> {
   return rows[0]!.id;
 }
 
+const STORY_SELECT_COLS = `id, user_id, title, format, visual_style, status,
+            characters, story_text, image_model, video_model, lipsync_model,
+            created_at, updated_at`;
+
 export async function listStories(userId: string): Promise<StoryRecord[]> {
   const { rows } = await pool.query<StoryRecord>(
-    `SELECT id, user_id, title, format, visual_style, status,
-            characters, story_text, created_at, updated_at
+    `SELECT ${STORY_SELECT_COLS}
      FROM "VG_stories" WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,
     [userId]
   );
@@ -33,10 +36,19 @@ export async function loadStory(args: {
   storyId: string;
 }): Promise<StoryRecord | null> {
   const { rows } = await pool.query<StoryRecord>(
-    `SELECT id, user_id, title, format, visual_style, status,
-            characters, story_text, created_at, updated_at
+    `SELECT ${STORY_SELECT_COLS}
      FROM "VG_stories" WHERE id = $1 AND user_id = $2`,
     [args.storyId, args.userId]
+  );
+  return rows[0] ?? null;
+}
+
+/** Server-internal story loader without ownership scope — for render-pipeline
+ *  routes that already enforce auth+ownership upstream by scene id. */
+export async function loadStoryUnchecked(storyId: string): Promise<StoryRecord | null> {
+  const { rows } = await pool.query<StoryRecord>(
+    `SELECT ${STORY_SELECT_COLS} FROM "VG_stories" WHERE id = $1`,
+    [storyId]
   );
   return rows[0] ?? null;
 }
@@ -47,6 +59,9 @@ export interface UpdateStoryPatch {
   visualStyle?: string | null;
   characters?: string[];
   storyText?: string | null;
+  imageModel?: string;
+  videoModel?: string;
+  lipsyncModel?: string;
 }
 
 export async function updateStory(args: {
@@ -68,6 +83,15 @@ export async function updateStory(args: {
   }
   if (p.storyText !== undefined) {
     sets.push(`story_text = $${n++}`); vals.push(p.storyText);
+  }
+  if (p.imageModel !== undefined) {
+    sets.push(`image_model = $${n++}`); vals.push(p.imageModel);
+  }
+  if (p.videoModel !== undefined) {
+    sets.push(`video_model = $${n++}`); vals.push(p.videoModel);
+  }
+  if (p.lipsyncModel !== undefined) {
+    sets.push(`lipsync_model = $${n++}`); vals.push(p.lipsyncModel);
   }
   if (sets.length === 0) return false;
   const sceneIdParam = n++;

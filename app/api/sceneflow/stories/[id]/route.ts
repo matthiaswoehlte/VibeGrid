@@ -47,6 +47,9 @@ export async function PATCH(
     patch.storyText =
       typeof b.storyText === 'string' ? b.storyText : null;
   }
+  if (typeof b.imageModel === 'string') patch.imageModel = b.imageModel;
+  if (typeof b.videoModel === 'string') patch.videoModel = b.videoModel;
+  if (typeof b.lipsyncModel === 'string') patch.lipsyncModel = b.lipsyncModel;
 
   const ok = await updateStory({
     userId: session.user.id,

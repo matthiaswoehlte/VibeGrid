@@ -72,22 +72,49 @@ export async function createScenes(
   return rows;
 }
 
+const SCENE_SELECT_COLS = `s.id, s.story_id, s.scene_order, s.type, s.image_prompt,
+            s.motion_prompt, s.camera_control, s.duration, s.audio_type,
+            s.tts_text, s.speaking_character_id, s.transition,
+            s.start_frame_mode, s.start_frame_url, s.image_url,
+            s.video_url, s.audio_url, s.neutral_video_url, s.end_frame_url, s.status,
+            s.error_message, s.fal_request_ids, s.created_at, s.updated_at`;
+
 export async function listScenes(
   userId: string,
   storyId: string
 ): Promise<SceneRecord[]> {
   const { rows } = await pool.query<SceneRecord>(
-    `SELECT s.id, s.story_id, s.scene_order, s.type, s.image_prompt,
-            s.motion_prompt, s.camera_control, s.duration, s.audio_type,
-            s.tts_text, s.speaking_character_id, s.transition,
-            s.start_frame_mode, s.start_frame_url, s.image_url,
-            s.video_url, s.audio_url, s.end_frame_url, s.status,
-            s.error_message, s.fal_request_ids, s.created_at, s.updated_at
+    `SELECT ${SCENE_SELECT_COLS}
      FROM "VG_story_scenes" s
      JOIN "VG_stories" st ON s.story_id = st.id
      WHERE st.id = $1 AND st.user_id = $2
      ORDER BY s.scene_order ASC`,
     [storyId, userId]
+  );
+  return rows;
+}
+
+/**
+ * Server-internal scene loader for the render pipeline. Skips the
+ * user_id scope check — callers MUST validate ownership upstream
+ * (via loadStory). Used by API routes that operate by scene id and
+ * already enforced session+ownership at the route boundary.
+ */
+export async function loadSceneById(sceneId: string): Promise<SceneRecord | null> {
+  const { rows } = await pool.query<SceneRecord>(
+    `SELECT ${SCENE_SELECT_COLS} FROM "VG_story_scenes" s WHERE s.id = $1`,
+    [sceneId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function loadScenesByStoryUnchecked(
+  storyId: string
+): Promise<SceneRecord[]> {
+  const { rows } = await pool.query<SceneRecord>(
+    `SELECT ${SCENE_SELECT_COLS} FROM "VG_story_scenes" s
+     WHERE s.story_id = $1 ORDER BY s.scene_order ASC`,
+    [storyId]
   );
   return rows;
 }
@@ -148,6 +175,82 @@ export async function updateScene(args: {
      WHERE s.id = $${sceneIdParam}
        AND s.story_id = st.id
        AND st.user_id = $${userIdParam}`,
+    vals
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Plan 8c — server-internal render-pipeline patch.
+ *
+ * Lets the API status route / render orchestrator set generated URLs +
+ * status + the JSONB fal_request_ids map without going through the user-
+ * scoped updateScene path (which intentionally doesn't expose these fields
+ * to the client). Optional idempotency guards apply NULL-only updates so a
+ * second poll doesn't race a first.
+ */
+export interface RenderUpdatePatch {
+  image_url?: string;
+  audio_url?: string;
+  neutral_video_url?: string;
+  video_url?: string;
+  status?: SceneRecord['status'];
+  error_message?: string | null;
+  fal_request_ids?: Record<string, string> | null;
+}
+
+export interface RenderUpdateOptions {
+  /** If true, only apply image_url/audio_url/neutral_video_url/video_url
+   *  when the current value is NULL — prevents two parallel pollers from
+   *  triggering double-uploads. */
+  onlyIfNull?: boolean;
+}
+
+export async function patchSceneRender(
+  sceneId: string,
+  patch: RenderUpdatePatch,
+  options: RenderUpdateOptions = {}
+): Promise<boolean> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  let n = 1;
+  const nullGuards: string[] = [];
+  const urlFields: Array<keyof RenderUpdatePatch> = [
+    'image_url',
+    'audio_url',
+    'neutral_video_url',
+    'video_url'
+  ];
+
+  for (const field of urlFields) {
+    const v = patch[field];
+    if (v === undefined) continue;
+    sets.push(`${field} = $${n++}`);
+    vals.push(v);
+    if (options.onlyIfNull) nullGuards.push(`${field} IS NULL`);
+  }
+  if (patch.status !== undefined) {
+    sets.push(`status = $${n++}`);
+    vals.push(patch.status);
+  }
+  if (patch.error_message !== undefined) {
+    sets.push(`error_message = $${n++}`);
+    vals.push(patch.error_message);
+  }
+  if (patch.fal_request_ids !== undefined) {
+    sets.push(`fal_request_ids = $${n++}::jsonb`);
+    vals.push(
+      patch.fal_request_ids === null ? null : JSON.stringify(patch.fal_request_ids)
+    );
+  }
+  if (sets.length === 0) return false;
+  const sceneIdParam = n++;
+  vals.push(sceneId);
+  const where = nullGuards.length > 0
+    ? `id = $${sceneIdParam} AND (${nullGuards.join(' OR ')})`
+    : `id = $${sceneIdParam}`;
+  const { rowCount } = await pool.query(
+    `UPDATE "VG_story_scenes" SET ${sets.join(', ')}, updated_at = now() WHERE ${where}`,
     vals
   );
   return (rowCount ?? 0) > 0;
