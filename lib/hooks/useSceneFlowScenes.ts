@@ -126,6 +126,41 @@ export function useSceneFlowScenes(storyId: string | null) {
     [storyId]
   );
 
+  /**
+   * Plan 8c — merge status-poll results into the local scene list.
+   * Used by the Storyboard's polling effect (status-all batch endpoint).
+   */
+  const applyStatusUpdates = useCallback(
+    (
+      updates: Array<{
+        sceneId: string;
+        status: SceneRecord['status'];
+        imageUrl: string | null;
+        audioUrl: string | null;
+        neutralVideoUrl: string | null;
+        videoUrl: string | null;
+      }>
+    ) => {
+      if (updates.length === 0) return;
+      const byId = new Map(updates.map((u) => [u.sceneId, u]));
+      setScenes((cur) =>
+        cur.map((s) => {
+          const u = byId.get(s.id);
+          if (!u) return s;
+          return {
+            ...s,
+            status: u.status,
+            image_url: u.imageUrl,
+            audio_url: u.audioUrl,
+            neutral_video_url: u.neutralVideoUrl,
+            video_url: u.videoUrl
+          };
+        })
+      );
+    },
+    []
+  );
+
   useEffect(() => {
     const abortMap = aborts.current;
     const timerMap = debounceTimers.current;
@@ -146,6 +181,7 @@ export function useSceneFlowScenes(storyId: string | null) {
     patchFieldImmediate,
     remove,
     reorder,
-    generate
+    generate,
+    applyStatusUpdates
   };
 }
