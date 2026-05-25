@@ -51,6 +51,9 @@ describe('sonnet.generateScenesViaSonnet', () => {
         status: 'draft',
         characters: [],
         story_text: 'A short story',
+        image_model: 'fal-ai/flux/dev',
+        video_model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+        lipsync_model: 'fal-ai/sync-lipsync/v3',
         created_at: '',
         updated_at: ''
       },
@@ -81,6 +84,9 @@ describe('sonnet.generateScenesViaSonnet', () => {
           status: 'draft',
           characters: [],
           story_text: 'x',
+          image_model: 'fal-ai/flux/dev',
+          video_model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+          lipsync_model: 'fal-ai/sync-lipsync/v3',
           created_at: '',
           updated_at: ''
         },

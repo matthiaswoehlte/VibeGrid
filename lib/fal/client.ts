@@ -71,7 +71,14 @@ export async function generateImage(
   input: FalImageGenInput
 ): Promise<FalImageGenResult> {
   const model = input.model ?? DEFAULT_IMAGE_MODEL;
-  const result = (await fal.subscribe(model, {
+  // The fal SDK's per-endpoint input typings (844-member union) don't survive
+  // a parameterized model name — we already accept the runtime string. Pass
+  // the call through an untyped shim instead of fighting the generics.
+  const subscribe = fal.subscribe as unknown as (
+    endpointId: string,
+    options: { input: Record<string, unknown> }
+  ) => Promise<{ data: FluxResultData }>;
+  const result = await subscribe(model, {
     input: {
       prompt: input.prompt,
       image_size: input.imageSize,
@@ -79,7 +86,7 @@ export async function generateImage(
       guidance_scale: input.guidanceScale ?? 3.5,
       ...(input.seed !== undefined ? { seed: input.seed } : {})
     }
-  } as Parameters<typeof fal.subscribe>[1])) as { data: FluxResultData };
+  });
 
   const url = result.data.images?.[0]?.url;
   if (!url) {
@@ -100,11 +107,16 @@ export interface SubmitVideoJobInput {
   model?: FalVideoModel;
 }
 
+const queueSubmit = fal.queue.submit as unknown as (
+  endpointId: string,
+  options: { input: Record<string, unknown> }
+) => Promise<{ request_id: string }>;
+
 export async function submitVideoJob(
   input: SubmitVideoJobInput
 ): Promise<string> {
   const model = input.model ?? DEFAULT_VIDEO_MODEL;
-  const enqueued = await fal.queue.submit(model, {
+  const enqueued = await queueSubmit(model, {
     input: {
       prompt: input.prompt,
       image_url: input.imageUrl,
@@ -113,7 +125,7 @@ export async function submitVideoJob(
       ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
       ...(input.cfgScale !== undefined ? { cfg_scale: input.cfgScale } : {})
     }
-  } as Parameters<typeof fal.queue.submit>[1]);
+  });
   return enqueued.request_id;
 }
 
@@ -126,13 +138,13 @@ export interface SubmitLipSyncJobInput {
 export async function submitLipSyncJob(
   input: SubmitLipSyncJobInput
 ): Promise<string> {
-  const enqueued = await fal.queue.submit('fal-ai/sync-lipsync/v3', {
+  const enqueued = await queueSubmit('fal-ai/sync-lipsync/v3', {
     input: {
       video_url: input.videoUrl,
       audio_url: input.audioUrl,
       sync_mode: input.syncMode ?? 'remap'
     }
-  } as Parameters<typeof fal.queue.submit>[1]);
+  });
   return enqueued.request_id;
 }
 
@@ -144,12 +156,12 @@ export interface SubmitMuseTalkJobInput {
 export async function submitMuseTalkJob(
   input: SubmitMuseTalkJobInput
 ): Promise<string> {
-  const enqueued = await fal.queue.submit('fal-ai/musetalk', {
+  const enqueued = await queueSubmit('fal-ai/musetalk', {
     input: {
       source_video_url: input.sourceVideoUrl,
       audio_url: input.audioUrl
     }
-  } as Parameters<typeof fal.queue.submit>[1]);
+  });
   return enqueued.request_id;
 }
 

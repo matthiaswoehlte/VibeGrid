@@ -31,6 +31,11 @@ export interface StoryRecord {
   // Plan 8b additions:
   characters: string[];      // JSONB array of VG_characters.id (UUIDs)
   story_text: string | null; // user's freetext story description
+  // Plan 8c — per-story fal.ai model selection. DEFAULTs in migration 005;
+  // UI is tolerant of unknown model IDs (falls back to default, no crash).
+  image_model: string;
+  video_model: string;
+  lipsync_model: string;
   created_at: string;
   updated_at: string;
 }
@@ -66,6 +71,10 @@ export interface SceneRecord {
   image_url: string | null;
   video_url: string | null;
   audio_url: string | null;
+  // Plan 8c — Dialog 3-step pipeline intermediate. Set after Kling neutral
+  // portrait video completes; remains set on LipSync retry so step 2 is
+  // not re-billed. null for action scenes (no neutral step) and endcards.
+  neutral_video_url: string | null;
   end_frame_url: string | null;
   status: SceneStatus;
   error_message: string | null;
