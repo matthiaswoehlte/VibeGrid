@@ -4,7 +4,11 @@ import { toast } from 'sonner';
 import { CameraControlSliders } from './CameraControlSliders';
 import { EndcardEditor } from './EndcardEditor';
 import { ImageViewer } from './ImageViewer';
-import { apiRetryImage, apiRetryVideo } from '@/lib/sceneflow/api-client';
+import {
+  apiRetryImage,
+  apiRetryVideo,
+  apiRetryAudio
+} from '@/lib/sceneflow/api-client';
 import { computeNextGenerationStep } from '@/lib/sceneflow/scene-state';
 import type {
   SceneRecord,
@@ -225,6 +229,7 @@ export function SceneCard({
               placeholder="TTS-Text ..."
               className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)] text-xs"
             />
+            <AudioRetryRow scene={scene} />
           </>
         )}
       </div>
@@ -269,6 +274,13 @@ export function SceneCard({
     </SceneCardShell>
   );
 }
+
+const RETRY_BTN_CLASS =
+  'text-xs px-2 py-1 rounded border border-[var(--border)] ' +
+  'bg-[var(--surface-2)] hover:bg-[var(--surface-3)] ' +
+  'text-[var(--text)] hover:border-[var(--a1)] ' +
+  'disabled:opacity-40 disabled:cursor-not-allowed ' +
+  'transition-colors';
 
 const STEP_LABEL: Record<
   ReturnType<typeof computeNextGenerationStep>,
@@ -319,9 +331,9 @@ function ImageSlot({ scene }: { scene: SceneRecord }) {
             type="button"
             disabled={retrying}
             onPointerDown={onRetry}
-            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-50"
+            className={RETRY_BTN_CLASS}
           >
-            {retrying ? '…' : '↻ Bild neu'}
+            {retrying ? '… arbeitet' : '↻ Bild neu generieren'}
           </button>
         </div>
         {open && (
@@ -337,12 +349,12 @@ function ImageSlot({ scene }: { scene: SceneRecord }) {
   return (
     <div className="aspect-video bg-[var(--surface-3)] rounded flex items-center justify-center text-[10px] text-[var(--text-muted)] text-center p-2">
       {errored ? (
-        <div className="space-y-1">
+        <div className="space-y-2">
           <div className="text-red-300">✗ {scene.error_message ?? 'Fehler'}</div>
           <button
             type="button"
             onPointerDown={onRetry}
-            className="text-[var(--a2)] hover:text-[var(--a1)]"
+            className={RETRY_BTN_CLASS}
           >
             ↻ Erneut versuchen
           </button>
@@ -387,9 +399,9 @@ function VideoSlot({ scene }: { scene: SceneRecord }) {
             type="button"
             disabled={retrying}
             onPointerDown={onRetry}
-            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-50"
+            className={RETRY_BTN_CLASS}
           >
-            {retrying ? '…' : '↻ Video neu'}
+            {retrying ? '… arbeitet' : '↻ Video neu generieren'}
           </button>
         </div>
       </>
@@ -398,12 +410,12 @@ function VideoSlot({ scene }: { scene: SceneRecord }) {
   return (
     <div className="aspect-video bg-[var(--surface-3)] rounded flex items-center justify-center text-[10px] text-[var(--text-muted)] text-center p-2">
       {errored ? (
-        <div className="space-y-1">
+        <div className="space-y-2">
           <div className="text-red-300">✗ {scene.error_message ?? 'Fehler'}</div>
           <button
             type="button"
             onPointerDown={onRetry}
-            className="text-[var(--a2)] hover:text-[var(--a1)]"
+            className={RETRY_BTN_CLASS}
           >
             ↻ Erneut versuchen
           </button>
@@ -413,6 +425,50 @@ function VideoSlot({ scene }: { scene: SceneRecord }) {
       ) : (
         <span>○ ausstehend</span>
       )}
+    </div>
+  );
+}
+
+function AudioRetryRow({ scene }: { scene: SceneRecord }) {
+  const [busy, setBusy] = useState(false);
+
+  async function onRetry() {
+    setBusy(true);
+    try {
+      const res = await apiRetryAudio(scene.id);
+      toast.success(res.message);
+    } catch (e) {
+      toast.error('Stimme neu generieren fehlgeschlagen: ' + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 mt-1">
+      {scene.audio_url ? (
+        <audio
+          src={scene.audio_url}
+          controls
+          preload="none"
+          className="h-7 flex-1 min-w-0"
+        />
+      ) : (
+        <span className="text-[10px] text-[var(--text-muted)] flex-1">
+          {scene.status === 'generating'
+            ? 'Stimme wird erzeugt …'
+            : 'Noch keine Stimme'}
+        </span>
+      )}
+      <button
+        type="button"
+        disabled={busy || scene.tts_text === null || scene.tts_text === ''}
+        onPointerDown={onRetry}
+        className={RETRY_BTN_CLASS + ' shrink-0'}
+        title="Stimme aus aktuellem TTS-Text neu erzeugen. LipSync-Video muss danach separat aktualisiert werden."
+      >
+        {busy ? '… arbeitet' : '↻ Stimme neu generieren'}
+      </button>
     </div>
   );
 }

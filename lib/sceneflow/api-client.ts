@@ -272,6 +272,23 @@ export async function apiRetryImage(
   );
 }
 
+export async function apiRetryAudio(
+  sceneId: string
+): Promise<{
+  sceneId: string;
+  audioUrl: string;
+  provider: string | null;
+  voiceId: string | null;
+  message: string;
+}> {
+  return json(
+    await fetch(
+      `/api/sceneflow/scenes/${encodeURIComponent(sceneId)}/retry-audio`,
+      { method: 'POST' }
+    )
+  );
+}
+
 export async function apiRetryVideo(
   sceneId: string
 ): Promise<{
