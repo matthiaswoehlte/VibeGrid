@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/better-auth-server';
+import { requireUserSession } from '@/lib/auth/admin-guard';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import { listScenes } from '@/lib/sceneflow/scenes-db';
 import { enqueueVideoJobs } from '@/lib/sceneflow/render-pipeline';
@@ -38,20 +38,19 @@ export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ): Promise<Response> {
-  const session = await auth.api.getSession({ headers: req.headers });
-  if (!session) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  const guard = await requireUserSession(req);
+  if ('response' in guard) return guard.response;
+  const { userId } = guard.session;
 
   const story = await loadStory({
-    userId: session.user.id,
+    userId,
     storyId: params.id
   });
   if (!story) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 
-  const scenes = await listScenes(session.user.id, params.id);
+  const scenes = await listScenes(userId, params.id);
   const missingImage = scenes.find(
     (s) => s.type !== 'endcard' && s.image_url === null
   );
@@ -67,7 +66,7 @@ export async function POST(
 
   // Pre-flight credit + budget check (comfort — reserves below are authoritative).
   const estimate = estimatePhase2Cost(scenes, story);
-  const balance = await getBalance(session.user.id);
+  const balance = await getBalance(userId);
   if (balance < estimate + SAFETY_BUFFER) {
     return NextResponse.json(
       {
@@ -102,7 +101,7 @@ export async function POST(
     beforeSubmit: async (scene) => {
       const amount = scenePhase2Cost(scene, story.lipsync_model);
       if (amount === 0) return;
-      await reserveCredits(session.user.id, amount, {
+      await reserveCredits(userId, amount, {
         story_id: story.id,
         scene_id: scene.id,
         model_id: story.video_model

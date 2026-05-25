@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SceneRecord, StoryRecord } from '@/lib/sceneflow/types';
 
-const getSessionMock = vi.fn();
+const requireUserSessionMock = vi.fn();
 const loadStoryMock = vi.fn();
 const listScenesMock = vi.fn();
 const listCharactersByIdsMock = vi.fn();
@@ -16,8 +16,8 @@ const enqueueVideoJobsMock = vi.fn();
 const readBalanceMock = vi.fn();
 const validateScenesForGenerationMock = vi.fn();
 
-vi.mock('@/lib/auth/better-auth-server', () => ({
-  auth: { api: { getSession: (...a: unknown[]) => getSessionMock(...a) } }
+vi.mock('@/lib/auth/admin-guard', () => ({
+  requireUserSession: (...a: unknown[]) => requireUserSessionMock(...a)
 }));
 vi.mock('@/lib/sceneflow/stories-db', () => ({
   loadStory: (...a: unknown[]) => loadStoryMock(...a)
@@ -62,7 +62,10 @@ vi.mock('@/lib/credits/credits', async () => {
 });
 
 beforeEach(() => {
-  getSessionMock.mockReset();
+  requireUserSessionMock.mockReset();
+  requireUserSessionMock.mockResolvedValue({
+    session: { userId: 'u-1', role: 'user' }
+  });
   loadStoryMock.mockReset();
   listScenesMock.mockReset();
   listCharactersByIdsMock.mockReset();
@@ -75,7 +78,6 @@ beforeEach(() => {
   enqueueVideoJobsMock.mockReset();
   readBalanceMock.mockReset();
   validateScenesForGenerationMock.mockReset();
-  getSessionMock.mockResolvedValue({ user: { id: 'u-1' } });
   validateScenesForGenerationMock.mockReturnValue([]);
   getStorySpendMock.mockResolvedValue(0);
 });

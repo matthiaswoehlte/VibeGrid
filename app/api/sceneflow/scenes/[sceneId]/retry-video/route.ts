@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/better-auth-server';
+import { requireUserSession } from '@/lib/auth/admin-guard';
 import { loadSceneById, patchSceneRender } from '@/lib/sceneflow/scenes-db';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import {
@@ -47,16 +47,15 @@ export async function POST(
   req: Request,
   { params }: { params: { sceneId: string } }
 ): Promise<Response> {
-  const session = await auth.api.getSession({ headers: req.headers });
-  if (!session) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  const guard = await requireUserSession(req);
+  if ('response' in guard) return guard.response;
+  const { userId } = guard.session;
   const scene = await loadSceneById(params.sceneId);
   if (!scene) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
   const story = await loadStory({
-    userId: session.user.id,
+    userId,
     storyId: scene.story_id
   });
   if (!story) {
@@ -66,7 +65,7 @@ export async function POST(
   // Step 0 [Fix W5]: refund any open reserve from the previous fal job.
   const openReserve = await getOpenReserve(scene.id);
   if (openReserve > 0) {
-    await refundReserve(session.user.id, scene.id, {
+    await refundReserve(userId, scene.id, {
       story_id: story.id,
       scene_id: scene.id,
       reason: 'implicit_cancel_on_retry'
@@ -75,7 +74,7 @@ export async function POST(
 
   // Pre-flight credit check for the retry estimate.
   const estimate = retryCost(scene, story);
-  const balance = await getBalance(session.user.id);
+  const balance = await getBalance(userId);
   if (balance < estimate + SAFETY_BUFFER) {
     return NextResponse.json(
       {
@@ -108,7 +107,7 @@ export async function POST(
     fresh.video_url === null
   ) {
     try {
-      await reserveCredits(session.user.id, estimate, {
+      await reserveCredits(userId, estimate, {
         story_id: story.id,
         scene_id: scene.id,
         model_id: story.lipsync_model
@@ -136,7 +135,7 @@ export async function POST(
     beforeSubmit: async (s) => {
       const amount = retryCost(s, story);
       if (amount === 0) return;
-      await reserveCredits(session.user.id, amount, {
+      await reserveCredits(userId, amount, {
         story_id: story.id,
         scene_id: s.id,
         model_id: story.video_model

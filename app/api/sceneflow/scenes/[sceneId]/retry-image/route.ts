@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/better-auth-server';
+import { requireUserSession } from '@/lib/auth/admin-guard';
 import { loadSceneById, patchSceneRender } from '@/lib/sceneflow/scenes-db';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import {
@@ -20,16 +20,15 @@ export async function POST(
   req: Request,
   { params }: { params: { sceneId: string } }
 ): Promise<Response> {
-  const session = await auth.api.getSession({ headers: req.headers });
-  if (!session) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  const guard = await requireUserSession(req);
+  if ('response' in guard) return guard.response;
+  const { userId } = guard.session;
   const scene = await loadSceneById(params.sceneId);
   if (!scene) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
   const story = await loadStory({
-    userId: session.user.id,
+    userId,
     storyId: scene.story_id
   });
   if (!story) {
@@ -37,7 +36,7 @@ export async function POST(
   }
 
   // Pre-flight credit check (image is a one-shot direct deduct).
-  const balance = await getBalance(session.user.id);
+  const balance = await getBalance(userId);
   if (balance < COST_TABLE.flux_image + SAFETY_BUFFER) {
     return NextResponse.json(
       {
@@ -66,7 +65,7 @@ export async function POST(
   if (result?.ok) {
     try {
       await deductCredits(
-        session.user.id,
+        userId,
         COST_TABLE.flux_image,
         'flux_image',
         { story_id: story.id, scene_id: scene.id }

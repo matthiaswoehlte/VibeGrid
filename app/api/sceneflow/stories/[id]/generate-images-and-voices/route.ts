@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/better-auth-server';
+import { requireUserSession } from '@/lib/auth/admin-guard';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import { listScenes } from '@/lib/sceneflow/scenes-db';
 import { listCharactersByIds } from '@/lib/sceneflow/characters-db';
@@ -28,20 +28,19 @@ export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ): Promise<Response> {
-  const session = await auth.api.getSession({ headers: req.headers });
-  if (!session) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  const guard = await requireUserSession(req);
+  if ('response' in guard) return guard.response;
+  const { userId } = guard.session;
 
   const story = await loadStory({
-    userId: session.user.id,
+    userId,
     storyId: params.id
   });
   if (!story) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 
-  const scenes = await listScenes(session.user.id, params.id);
+  const scenes = await listScenes(userId, params.id);
   if (scenes.length === 0) {
     return NextResponse.json(
       { error: 'no scenes — run scene generation first' },
@@ -50,7 +49,7 @@ export async function POST(
   }
 
   const characters = await listCharactersByIds(
-    session.user.id,
+    userId,
     story.characters
   );
 
@@ -68,7 +67,7 @@ export async function POST(
 
   // Credit pre-flight (comfort check — atomic deducts below are authoritative).
   const estimate = estimatePhase1Cost(scenes, story, characters);
-  const balance = await getBalance(session.user.id); // lazy-init on first run
+  const balance = await getBalance(userId); // lazy-init on first run
   if (balance < estimate + SAFETY_BUFFER) {
     return NextResponse.json(
       {
@@ -98,7 +97,7 @@ export async function POST(
 
   const [ttsResults, imageResults] = await Promise.all([
     runTtsForScenes({
-      userId: session.user.id,
+      userId: userId,
       storyId: story.id,
       scenes,
       characters
@@ -114,7 +113,7 @@ export async function POST(
   for (const r of imageResults) {
     if (!r.ok) continue;
     try {
-      await deductCredits(session.user.id, COST_TABLE.flux_image, 'flux_image', {
+      await deductCredits(userId, COST_TABLE.flux_image, 'flux_image', {
         story_id: story.id,
         scene_id: r.sceneId
       });
@@ -139,7 +138,7 @@ export async function POST(
     if (provider !== 'elevenlabs') continue;
     try {
       await deductCredits(
-        session.user.id,
+        userId,
         COST_TABLE.elevenlabs_tts,
         'elevenlabs_tts',
         {
@@ -158,7 +157,7 @@ export async function POST(
 
   const ttsOk = ttsResults.filter((r) => r.ok).length;
   const imagesOk = imageResults.filter((r) => r.ok).length;
-  const finalBalance = await readBalance(session.user.id);
+  const finalBalance = await readBalance(userId);
 
   return NextResponse.json({
     tts: { ok: ttsOk, total: ttsResults.length, results: ttsResults },
