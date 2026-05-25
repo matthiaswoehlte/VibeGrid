@@ -656,6 +656,79 @@ einem neuen Sonnet-Run, nicht beim direkten Video-Submit.
 
 ---
 
+## Plan 8.6 — Admin-Seite + Banning
+
+### Banned sessions: keine sofortige Server-side-Invalidation
+
+Wenn ein Admin einen User via `/admin/users/[id]` → "User sperren" sperrt,
+fährt der Code zwei Dinge: `UPDATE "user" SET banned = true` und
+`DELETE FROM "session" WHERE "userId" = $1`. Letzteres invalidiert
+alle aktiven Better-Auth-Sessions des Users sofort serverseitig.
+
+Aber: der Browser des banned Users hält das Session-Cookie noch im Speicher
+bis zur natürlichen Cookie-Expiry (~7 Tage). Auf jeden neuen Request
+schlägt jedoch Better-Auth's Lookup fehl (Session-Row in DB weg) → 401,
+und `requireUserSession` in den fal-Routes prüft zusätzlich
+`user.banned = true` (DB-Lookup pro Request) → 403 "Your account has been
+suspended". Der User kann den Studio-Shell weiter sehen, aber **keine
+neuen fal.ai-Calls auslösen** und keine Credits mehr verbrauchen.
+
+Konsequenz: kein Echtzeit-Logout, aber alle Geld-fließenden Endpoints
+sind dicht. v0.2 könnte ein WebSocket-Push-Logout ergänzen.
+
+### Better-Auth `user`-Tabelle nutzt camelCase, VG_-Tabellen snake_case
+
+Die `user`-Tabelle (Better-Auth) und die `session`-Tabelle haben
+camelCase-Spalten in Quotes:
+- `"createdAt"`, `"updatedAt"`, `"emailVerified"`, `"banReason"`,
+  `"banExpires"`, `"userId"`, `"expiresAt"`
+
+Unsere eigenen `VG_`-Tabellen nutzen snake_case ohne Quotes:
+- `user_id`, `story_id`, `scene_id`, `created_at`, `updated_at`
+
+Beim JOIN zwischen beiden auf die Quoting-Regel achten:
+```sql
+SELECT u.id, u."banReason", c.balance, c.user_id
+FROM public."user" u
+LEFT JOIN public."VG_user_credits" c ON c.user_id = u.id
+```
+
+### Self-Ban-Guard nur im Admin-API, nicht im UI
+
+`POST /api/admin/users/[id]/ban` lehnt einen Self-Ban mit 400 ab. Der
+`BanButton`-Component zeigt zusätzlich einen disabled-Button + Hinweis,
+aber das ist nur UX — die echte Sicherung ist die Server-Antwort. Wenn
+ein Admin sich trotzdem aus der DB-Konsole heraus sperrt (`UPDATE "user"
+SET banned = true WHERE email = '…'`), bleibt der Recovery-Weg via SQL:
+```sql
+UPDATE public."user" SET banned = false WHERE email = '…';
+DELETE FROM public."session" WHERE "userId" = '…';  -- bestehende
+                                                     -- gesperrte
+                                                     -- Sessions raus
+```
+
+### Admin-Plugin nicht installiert — eigener Ban-SQL-Pfad
+
+`@better-auth/admin` ist nicht in `package.json`. Die `user`-Spalten
+(`role`, `banned`, `banReason`, `banExpires`) wurden separat von einer
+früheren Schema-Run-Phase angelegt. Der Ban-Code in
+`/api/admin/users/[id]/ban` macht entsprechend SQL-direkt (UPDATE +
+DELETE FROM session). Bei späterer Plugin-Installation müsste der Code
+auf `auth.api.banUser` umgestellt werden — der vorhandene `if (typeof
+auth.api.banUser === 'function')`-Pattern fehlt aktuell, ist als
+Plan-8.7-Aufgabe vermerkt.
+
+### `/admin` nicht durch Edge-Middleware geschützt
+
+`middleware.ts` prüft nur Cookie-Presence, kein Role. Die echte
+Admin-Authorisierung läuft im `app/admin/layout.tsx` Server-Component
+via `requireAdminPage()` (Better-Auth + DB-Role-Lookup). Bei jeder
+`/admin/**`-Page passiert ein DB-Roundtrip auf `public."user"` —
+akzeptabel für eine Admin-Page mit ein paar Besuchen/Tag, nicht für
+hot-paths.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
