@@ -6,6 +6,7 @@ import { RecIndicator } from './RecIndicator';
 import { NewProjectButton } from './NewProjectButton';
 import { FlowModeToggle } from './FlowModeToggle';
 import { LogoutButton } from './LogoutButton';
+import { AdminLink } from './AdminLink';
 import { SaveProjectButton } from './SaveProjectButton';
 import { ProjectNameField } from './ProjectNameField';
 import { ProjectsButton } from './ProjectsButton';
@@ -89,6 +90,7 @@ export function TopBar({
             <ExportButton onStart={() => exporter.start()} />
           </>
         )}
+        <AdminLink />
         <LogoutButton />
       </div>
     </header>
