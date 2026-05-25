@@ -6,6 +6,7 @@ const getSessionMock = vi.fn();
 const loadStoryMock = vi.fn();
 const listScenesMock = vi.fn();
 const advanceSceneRenderMock = vi.fn();
+const readBalanceMock = vi.fn();
 
 vi.mock('@/lib/auth/better-auth-server', () => ({
   auth: { api: { getSession: (...a: unknown[]) => getSessionMock(...a) } }
@@ -19,12 +20,17 @@ vi.mock('@/lib/sceneflow/scenes-db', () => ({
 vi.mock('@/lib/sceneflow/render-pipeline', () => ({
   advanceSceneRender: (...a: unknown[]) => advanceSceneRenderMock(...a)
 }));
+vi.mock('@/lib/credits/credits', () => ({
+  readBalance: (...a: unknown[]) => readBalanceMock(...a)
+}));
 
 beforeEach(() => {
   getSessionMock.mockReset();
   loadStoryMock.mockReset();
   listScenesMock.mockReset();
   advanceSceneRenderMock.mockReset();
+  readBalanceMock.mockReset();
+  readBalanceMock.mockResolvedValue(0);
 });
 
 function scene(overrides: Partial<SceneRecord> = {}): SceneRecord {
@@ -124,6 +130,21 @@ describe('GET /api/sceneflow/stories/[id]/status-all — Fix N2 batch endpoint',
     );
     const res = await GET(new Request('http://x'), { params: { id: 'st-1' } });
     expect(res.status).toBe(401);
+  });
+
+  it('payload includes balance from readBalance (Plan 8.5 piggyback)', async () => {
+    getSessionMock.mockResolvedValue({ user: { id: 'u-1' } });
+    loadStoryMock.mockResolvedValue(story);
+    listScenesMock.mockResolvedValue([]);
+    readBalanceMock.mockResolvedValueOnce(487);
+
+    const { GET } = await import(
+      '@/app/api/sceneflow/stories/[id]/status-all/route'
+    );
+    const res = await GET(new Request('http://x'), { params: { id: 'st-1' } });
+    const body = (await res.json()) as { scenes: unknown[]; balance: number };
+    expect(body.balance).toBe(487);
+    expect(readBalanceMock).toHaveBeenCalledWith('u-1');
   });
 
   it('continues past per-scene errors (Promise.allSettled)', async () => {

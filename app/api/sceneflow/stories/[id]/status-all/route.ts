@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth/better-auth-server';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import { listScenes } from '@/lib/sceneflow/scenes-db';
 import { advanceSceneRender } from '@/lib/sceneflow/render-pipeline';
+import { readBalance } from '@/lib/credits/credits';
 
 export const runtime = 'nodejs';
 
@@ -59,5 +60,10 @@ export async function GET(
     };
   });
 
-  return NextResponse.json({ scenes: payload });
+  // Plan 8.5 [Fix D4] — piggyback the balance so the SceneFlow header
+  // CreditDisplay refreshes on the same 4-s polling tick. readBalance is
+  // SELECT-only (no UPSERT) so hot-path polling stays cheap.
+  const balance = await readBalance(session.user.id);
+
+  return NextResponse.json({ scenes: payload, balance });
 }

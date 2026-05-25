@@ -252,7 +252,7 @@ export interface SceneStatusPayload {
 }
 export async function apiStatusAll(
   storyId: string
-): Promise<{ scenes: SceneStatusPayload[] }> {
+): Promise<{ scenes: SceneStatusPayload[]; balance: number }> {
   return json(
     await fetch(
       `/api/sceneflow/stories/${encodeURIComponent(storyId)}/status-all`
