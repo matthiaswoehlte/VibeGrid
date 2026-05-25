@@ -36,6 +36,9 @@ export interface StoryRecord {
   image_model: string;
   video_model: string;
   lipsync_model: string;
+  // Plan 8.5 — user-self-imposed cap in credits. NULL = unlimited.
+  // Enforced as: if (estimate > credit_budget - getStorySpend(storyId)) → 402.
+  credit_budget: number | null;
   created_at: string;
   updated_at: string;
 }

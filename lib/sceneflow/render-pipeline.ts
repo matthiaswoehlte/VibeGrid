@@ -17,7 +17,8 @@ import {
   storyFormatToImageSize,
   type FalImageModel,
   type FalVideoModel,
-  type FalLipSyncModel
+  type FalLipSyncModel,
+  type FalJobStatus
 } from '@/lib/fal/client';
 
 /**
@@ -179,6 +180,14 @@ export async function generateAndStoreImages(
 export interface EnqueueVideosInput {
   story: StoryRecord;
   scenes: SceneRecord[];
+  /**
+   * Plan 8.5 — credit-reserve hook.
+   * Called per scene before submitVideoJob. If it throws, the scene is
+   * skipped and its error captured in the VideoEnqueueOutcome. Lets the
+   * route layer reserve credits atomically without coupling the pipeline
+   * module to the credit helpers.
+   */
+  beforeSubmit?: (scene: SceneRecord) => Promise<void>;
 }
 
 export interface VideoEnqueueOutcome {
@@ -207,6 +216,7 @@ export async function enqueueVideoJobs(
     if (scene.video_url !== null) continue; // already done
 
     try {
+      if (input.beforeSubmit) await input.beforeSubmit(scene);
       if (scene.type === 'action') {
         if (scene.fal_request_ids?.video) {
           // already enqueued — skip
@@ -290,9 +300,17 @@ export async function enqueueLipSyncForScene(
 
 // ---------- Status advance (polling) ----------
 
+export type FalStatusOrFailed = FalJobStatus | 'FAILED';
+
 export interface AdvanceSceneInput {
   scene: SceneRecord;
   story: StoryRecord;
+  /**
+   * Plan 8.5 test seam — when set, this status overrides every getJobStatus
+   * call in this advance pass. The route layer only sets this when
+   * NODE_ENV !== 'production' AND the request carries ?simulateStatus.
+   */
+  simulatedFalStatus?: FalStatusOrFailed;
 }
 
 export interface AdvanceSceneResult {
@@ -304,6 +322,14 @@ export interface AdvanceSceneResult {
   videoUrl: string | null;
   step: 'image' | 'audio' | 'neutral_video' | 'lipsync' | 'video' | 'done';
   error?: string;
+  /**
+   * Plan 8.5 — signal to the route's credit layer:
+   *   'settle'  — final video_url was claimed by this advance call; route
+   *               calls settleReserve.
+   *   'refund'  — fal job FAILED (or simulated); route calls refundReserve.
+   *   undefined — nothing credit-relevant happened this pass.
+   */
+  creditEvent?: 'settle' | 'refund';
 }
 
 /**
@@ -319,8 +345,29 @@ export async function advanceSceneRender(
 ): Promise<AdvanceSceneResult> {
   let scene = input.scene;
   let error: string | undefined;
+  let creditEvent: 'settle' | 'refund' | undefined;
   const videoEndpoint = input.story.video_model;
   const lipsyncEndpoint = input.story.lipsync_model;
+
+  // Test-seam wrapper: when simulatedFalStatus is set (NODE_ENV-gated by
+  // the route caller), bypass the real fal queue check.
+  const checkStatus = async (req: {
+    endpointId: string;
+    requestId: string;
+  }): Promise<FalStatusOrFailed> => {
+    if (input.simulatedFalStatus !== undefined) return input.simulatedFalStatus;
+    return getJobStatus(req);
+  };
+
+  // FAILED helper — fires once per advance pass.
+  const handleFailed = async (msg: string): Promise<void> => {
+    await patchSceneRender(scene.id, {
+      status: 'error',
+      error_message: msg
+    }).catch(() => {});
+    scene = { ...scene, status: 'error', error_message: msg };
+    creditEvent = 'refund';
+  };
 
   try {
     // 1) Action-scene final video
@@ -329,11 +376,13 @@ export async function advanceSceneRender(
       scene.video_url === null &&
       scene.fal_request_ids?.video
     ) {
-      const s = await getJobStatus({
+      const s = await checkStatus({
         endpointId: videoEndpoint,
         requestId: scene.fal_request_ids.video
       });
-      if (s === 'COMPLETED') {
+      if (s === 'FAILED') {
+        await handleFailed('fal kling job failed');
+      } else if (s === 'COMPLETED') {
         const falUrl = await getVideoJobResult({
           endpointId: videoEndpoint,
           requestId: scene.fal_request_ids.video
@@ -351,6 +400,7 @@ export async function advanceSceneRender(
         );
         if (claimed) {
           scene = { ...scene, video_url: r2Url, status: 'done' };
+          creditEvent = 'settle';
         }
       }
     }
@@ -361,11 +411,13 @@ export async function advanceSceneRender(
       scene.neutral_video_url === null &&
       scene.fal_request_ids?.neutral_video
     ) {
-      const s = await getJobStatus({
+      const s = await checkStatus({
         endpointId: videoEndpoint,
         requestId: scene.fal_request_ids.neutral_video
       });
-      if (s === 'COMPLETED') {
+      if (s === 'FAILED') {
+        await handleFailed('fal kling neutral-portrait job failed');
+      } else if (s === 'COMPLETED') {
         const falUrl = await getVideoJobResult({
           endpointId: videoEndpoint,
           requestId: scene.fal_request_ids.neutral_video
@@ -413,11 +465,13 @@ export async function advanceSceneRender(
       scene.video_url === null &&
       scene.fal_request_ids?.lipsync
     ) {
-      const s = await getJobStatus({
+      const s = await checkStatus({
         endpointId: lipsyncEndpoint,
         requestId: scene.fal_request_ids.lipsync
       });
-      if (s === 'COMPLETED') {
+      if (s === 'FAILED') {
+        await handleFailed('fal lipsync job failed');
+      } else if (s === 'COMPLETED') {
         const falUrl = await getVideoJobResult({
           endpointId: lipsyncEndpoint,
           requestId: scene.fal_request_ids.lipsync
@@ -435,6 +489,7 @@ export async function advanceSceneRender(
         );
         if (claimed) {
           scene = { ...scene, video_url: r2Url, status: 'done' };
+          creditEvent = 'settle';
         }
       }
     }
@@ -444,6 +499,9 @@ export async function advanceSceneRender(
       status: 'error',
       error_message: error
     }).catch(() => {});
+    // Code-side errors (R2 transient, our own bugs) leave the reserve open
+    // intentionally. The user clicks retry → retry-video refunds the reserve
+    // and re-reserves. Only explicit fal FAILED (via handleFailed) refunds.
   }
 
   let step: AdvanceSceneResult['step'];
@@ -465,7 +523,8 @@ export async function advanceSceneRender(
     neutralVideoUrl: scene.neutral_video_url,
     videoUrl: scene.video_url,
     step,
-    ...(error ? { error } : {})
+    ...(error ? { error } : {}),
+    ...(creditEvent ? { creditEvent } : {})
   };
 }
 

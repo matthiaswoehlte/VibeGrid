@@ -54,6 +54,7 @@ describe('sonnet.generateScenesViaSonnet', () => {
         image_model: 'fal-ai/flux/dev',
         video_model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
         lipsync_model: 'fal-ai/sync-lipsync/v3',
+        credit_budget: null,
         created_at: '',
         updated_at: ''
       },
@@ -87,6 +88,7 @@ describe('sonnet.generateScenesViaSonnet', () => {
           image_model: 'fal-ai/flux/dev',
           video_model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
           lipsync_model: 'fal-ai/sync-lipsync/v3',
+          credit_budget: null,
           created_at: '',
           updated_at: ''
         },

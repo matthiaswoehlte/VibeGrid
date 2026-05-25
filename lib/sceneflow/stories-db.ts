@@ -20,7 +20,7 @@ export async function createStory(input: CreateStoryInput): Promise<string> {
 
 const STORY_SELECT_COLS = `id, user_id, title, format, visual_style, status,
             characters, story_text, image_model, video_model, lipsync_model,
-            created_at, updated_at`;
+            credit_budget, created_at, updated_at`;
 
 export async function listStories(userId: string): Promise<StoryRecord[]> {
   const { rows } = await pool.query<StoryRecord>(
