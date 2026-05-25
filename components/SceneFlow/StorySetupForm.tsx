@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { apiPatchStory } from '@/lib/sceneflow/api-client';
 import { useSceneFlowCharacters } from '@/lib/hooks/useSceneFlowCharacters';
 import type { StoryRecord, StoryFormat } from '@/lib/sceneflow/types';
+import { ModelSelector } from './ModelSelector';
 
 const DEBOUNCE_MS = 500;
 
@@ -23,18 +24,17 @@ export function StorySetupForm({
   const titleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const styleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // Re-seed local state only on story switch — not on every parent prop
+  // update. Including the value in the deps lets server PATCH responses
+  // overwrite in-flight keystrokes (same race that ate user text in
+  // StoryTextInput). One effect per story.id, batched.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setTitle(story.title);
-  }, [story.title]);
-  useEffect(() => {
     setFormat(story.format);
-  }, [story.format]);
-  useEffect(() => {
     setVisualStyle(story.visual_style ?? '');
-  }, [story.visual_style]);
-  useEffect(() => {
     setSelected(story.characters);
-  }, [story.characters]);
+  }, [story.id]);
 
   function patchTitle(v: string) {
     setTitle(v);
@@ -155,8 +155,9 @@ export function StorySetupForm({
           </ul>
         )}
       </div>
+      <ModelSelector story={story} onPatched={onPatched} />
       <p className="text-[10px] text-[var(--text-muted)]">
-        Änderungen wirken sich erst beim nächsten „Mit KI aufteilen“ auf
+        Änderungen wirken sich erst beim nächsten „Mit KI aufteilen” auf
         bestehende Szenen aus.
       </p>
     </section>

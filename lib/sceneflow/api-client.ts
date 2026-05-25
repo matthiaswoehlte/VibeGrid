@@ -92,6 +92,9 @@ export async function apiPatchStory(
     visualStyle?: string | null;
     characters?: string[];
     storyText?: string | null;
+    imageModel?: string;
+    videoModel?: string;
+    lipsyncModel?: string;
   }
 ): Promise<{ ok: true }> {
   return json(
@@ -201,6 +204,105 @@ export async function apiReorderScenes(
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ aId, bId })
       }
+    )
+  );
+}
+
+// Plan 8c — render pipeline endpoints
+export interface GenerationOutcome {
+  sceneId: string;
+  ok: boolean;
+  error?: string;
+}
+export interface GenerateImagesVoicesResponse {
+  tts: { ok: number; total: number; results: GenerationOutcome[] };
+  images: { ok: number; total: number; results: GenerationOutcome[] };
+}
+export async function apiGenerateImagesAndVoices(
+  storyId: string
+): Promise<GenerateImagesVoicesResponse> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/generate-images-and-voices`,
+      { method: 'POST' }
+    )
+  );
+}
+
+export async function apiGenerateVideos(
+  storyId: string
+): Promise<{ enqueued: number; results: GenerationOutcome[] }> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/generate-videos`,
+      { method: 'POST' }
+    )
+  );
+}
+
+export interface SceneStatusPayload {
+  sceneId: string;
+  status: 'pending' | 'generating' | 'done' | 'error';
+  imageUrl: string | null;
+  audioUrl: string | null;
+  neutralVideoUrl: string | null;
+  videoUrl: string | null;
+  step: 'image' | 'audio' | 'neutral_video' | 'lipsync' | 'video' | 'done';
+  error?: string;
+}
+export async function apiStatusAll(
+  storyId: string
+): Promise<{ scenes: SceneStatusPayload[] }> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/status-all`
+    )
+  );
+}
+
+export async function apiRetryImage(
+  sceneId: string
+): Promise<{ result?: GenerationOutcome }> {
+  return json(
+    await fetch(
+      `/api/sceneflow/scenes/${encodeURIComponent(sceneId)}/retry-image`,
+      { method: 'POST' }
+    )
+  );
+}
+
+export async function apiRetryVideo(
+  sceneId: string
+): Promise<{
+  result?: { sceneId: string; ok: boolean; requestId?: string; error?: string };
+  retried?: 'lipsync-only';
+}> {
+  return json(
+    await fetch(
+      `/api/sceneflow/scenes/${encodeURIComponent(sceneId)}/retry-video`,
+      { method: 'POST' }
+    )
+  );
+}
+
+export async function apiTransfer(
+  storyId: string
+): Promise<{
+  storyId: string;
+  clips: Array<{
+    sceneId: string;
+    sceneOrder: number;
+    type: 'action' | 'dialog' | 'endcard';
+    videoUrl: string | null;
+    imageUrl: string | null;
+    duration: number;
+    transition: 'last-frame' | 'crossfade' | 'cut';
+  }>;
+}> {
+  return json(
+    await fetch(
+      `/api/sceneflow/stories/${encodeURIComponent(storyId)}/transfer`,
+      { method: 'POST' }
     )
   );
 }
