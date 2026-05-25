@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   DndContext,
   PointerSensor,
@@ -73,10 +74,21 @@ export default function StudioPage() {
   // SceneFlow shell lazy-mounts: a user who never opens that tab never
   // pays for its initial render.
   const appMode = useAppStore((s) => s.appMode);
+  const setAppMode = useAppStore((s) => s.setAppMode);
   const [sceneFlowMounted, setSceneFlowMounted] = useState(false);
   useEffect(() => {
     if (appMode === 'sceneflow' && !sceneFlowMounted) setSceneFlowMounted(true);
   }, [appMode, sceneFlowMounted]);
+
+  // /storyboard renders this same page — sync appMode from the URL so
+  // bookmarks / back-forward stay consistent. Reverse direction (clicks
+  // on the TabSwitcher) goes URL-first via router.push; this effect
+  // catches the resulting pathname change.
+  const pathname = usePathname();
+  useEffect(() => {
+    const desired = pathname?.startsWith('/storyboard') ? 'sceneflow' : 'vibegrid';
+    if (desired !== appMode) setAppMode(desired);
+  }, [pathname, appMode, setAppMode]);
 
   return (
     <DndContext sensors={sensors} autoScroll={false}>
