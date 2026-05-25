@@ -20,7 +20,8 @@ export async function createStory(input: CreateStoryInput): Promise<string> {
 
 const STORY_SELECT_COLS = `id, user_id, title, format, visual_style, status,
             characters, story_text, image_model, video_model, lipsync_model,
-            credit_budget, created_at, updated_at`;
+            credit_budget, sync_audio_url, sync_audio_bpm, snap_mode,
+            created_at, updated_at`;
 
 export async function listStories(userId: string): Promise<StoryRecord[]> {
   const { rows } = await pool.query<StoryRecord>(
@@ -63,6 +64,10 @@ export interface UpdateStoryPatch {
   videoModel?: string;
   lipsyncModel?: string;
   creditBudget?: number | null;
+  // Plan 8d
+  syncAudioUrl?: string | null;
+  syncAudioBpm?: number | null;
+  snapMode?: 'beat' | 'bar' | 'off';
 }
 
 export async function updateStory(args: {
@@ -96,6 +101,15 @@ export async function updateStory(args: {
   }
   if (p.creditBudget !== undefined) {
     sets.push(`credit_budget = $${n++}`); vals.push(p.creditBudget);
+  }
+  if (p.syncAudioUrl !== undefined) {
+    sets.push(`sync_audio_url = $${n++}`); vals.push(p.syncAudioUrl);
+  }
+  if (p.syncAudioBpm !== undefined) {
+    sets.push(`sync_audio_bpm = $${n++}`); vals.push(p.syncAudioBpm);
+  }
+  if (p.snapMode !== undefined) {
+    sets.push(`snap_mode = $${n++}`); vals.push(p.snapMode);
   }
   if (sets.length === 0) return false;
   const sceneIdParam = n++;

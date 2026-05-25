@@ -39,6 +39,14 @@ export interface StoryRecord {
   // Plan 8.5 — user-self-imposed cap in credits. NULL = unlimited.
   // Enforced as: if (estimate > credit_budget - getStorySpend(storyId)) → 402.
   credit_budget: number | null;
+  // Plan 8d — optional sync-audio (music) track. NULL = no song attached;
+  // user can drop one in VibeGrid post-transfer onto the sync-audio lane.
+  sync_audio_url: string | null;
+  // Plan 8d — BPM detected client-side at upload time, persisted so
+  // the transfer route can return it without re-decoding the audio.
+  sync_audio_bpm: number | null;
+  // Plan 8d — per-story snap mode for the layout algorithm.
+  snap_mode: 'beat' | 'bar' | 'off';
   created_at: string;
   updated_at: string;
 }

@@ -96,6 +96,10 @@ export async function apiPatchStory(
     videoModel?: string;
     lipsyncModel?: string;
     creditBudget?: number | null;
+    // Plan 8d
+    syncAudioUrl?: string | null;
+    syncAudioBpm?: number | null;
+    snapMode?: 'beat' | 'bar' | 'off';
   }
 ): Promise<{ ok: true }> {
   return json(

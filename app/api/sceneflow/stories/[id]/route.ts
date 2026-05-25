@@ -50,6 +50,35 @@ export async function PATCH(
   if (typeof b.imageModel === 'string') patch.imageModel = b.imageModel;
   if (typeof b.videoModel === 'string') patch.videoModel = b.videoModel;
   if (typeof b.lipsyncModel === 'string') patch.lipsyncModel = b.lipsyncModel;
+  // Plan 8d
+  if ('syncAudioUrl' in b) {
+    if (b.syncAudioUrl === null || typeof b.syncAudioUrl === 'string') {
+      patch.syncAudioUrl = b.syncAudioUrl as string | null;
+    } else {
+      return NextResponse.json({ error: 'invalid syncAudioUrl' }, { status: 400 });
+    }
+  }
+  if ('syncAudioBpm' in b) {
+    if (b.syncAudioBpm === null) {
+      patch.syncAudioBpm = null;
+    } else if (
+      typeof b.syncAudioBpm === 'number' &&
+      Number.isFinite(b.syncAudioBpm) &&
+      b.syncAudioBpm >= 40 &&
+      b.syncAudioBpm <= 300
+    ) {
+      patch.syncAudioBpm = Math.round(b.syncAudioBpm);
+    } else {
+      return NextResponse.json({ error: 'syncAudioBpm out of range (40-300)' }, { status: 400 });
+    }
+  }
+  if (typeof b.snapMode === 'string') {
+    if (b.snapMode === 'beat' || b.snapMode === 'bar' || b.snapMode === 'off') {
+      patch.snapMode = b.snapMode;
+    } else {
+      return NextResponse.json({ error: 'invalid snapMode' }, { status: 400 });
+    }
+  }
   if ('creditBudget' in b) {
     if (b.creditBudget === null) {
       patch.creditBudget = null;

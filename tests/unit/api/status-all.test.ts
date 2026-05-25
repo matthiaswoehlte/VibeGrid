@@ -76,6 +76,9 @@ const story: StoryRecord = {
   video_model: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
   lipsync_model: 'fal-ai/sync-lipsync/v3',
   credit_budget: null,
+  sync_audio_url: null,
+  sync_audio_bpm: null,
+  snap_mode: 'beat',
   created_at: '',
   updated_at: ''
 };
