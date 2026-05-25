@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth/better-auth-server';
 import { loadStory } from '@/lib/sceneflow/stories-db';
 import { listScenes } from '@/lib/sceneflow/scenes-db';
 import { advanceSceneRender } from '@/lib/sceneflow/render-pipeline';
+import { handleCreditEvent } from '@/lib/sceneflow/scene-credit-event-handler';
 import { readBalance } from '@/lib/credits/credits';
 
 export const runtime = 'nodejs';
@@ -42,6 +43,28 @@ export async function GET(
 
   const results = await Promise.allSettled(
     targets.map((scene) => advanceSceneRender({ scene, story }))
+  );
+
+  // [Settle-bug fix] React to creditEvent for each fulfilled advance.
+  // The single-scene /status route does this too; both polling paths
+  // must agree so the audit log stays consistent regardless of which
+  // endpoint the client hits.
+  await Promise.all(
+    results.map((r, i) => {
+      if (r.status !== 'fulfilled') return Promise.resolve();
+      return handleCreditEvent({
+        userId: session.user.id,
+        scene: targets[i]!,
+        story,
+        result: r.value
+      }).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error(
+          `[status-all] handleCreditEvent failed for ${targets[i]!.id}`,
+          e
+        );
+      });
+    })
   );
 
   const payload = results.map((r, i) => {

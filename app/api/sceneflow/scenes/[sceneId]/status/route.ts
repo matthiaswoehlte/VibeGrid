@@ -6,9 +6,7 @@ import {
   advanceSceneRender,
   type FalStatusOrFailed
 } from '@/lib/sceneflow/render-pipeline';
-import { settleReserve, refundReserve } from '@/lib/credits/credits';
-import { COST_TABLE } from '@/lib/credits/cost-table';
-import type { SceneRecord, StoryRecord } from '@/lib/sceneflow/types';
+import { handleCreditEvent } from '@/lib/sceneflow/scene-credit-event-handler';
 
 export const runtime = 'nodejs';
 
@@ -18,22 +16,6 @@ const ALLOWED_SIM_STATUS: ReadonlySet<FalStatusOrFailed> = new Set([
   'COMPLETED',
   'FAILED'
 ]);
-
-function actualCostForScene(scene: SceneRecord, story: StoryRecord): number {
-  if (scene.type === 'endcard') return 0;
-  const klingPart =
-    scene.duration <= 5
-      ? COST_TABLE.kling_video_5s
-      : COST_TABLE.kling_video_10s;
-  if (scene.type === 'action') return klingPart;
-  const lipPart =
-    story.lipsync_model === 'fal-ai/musetalk'
-      ? COST_TABLE.musetalk
-      : scene.duration <= 5
-        ? COST_TABLE.sync_lipsync_5s
-        : COST_TABLE.sync_lipsync_10s;
-  return klingPart + lipPart;
-}
 
 export async function GET(
   req: Request,
@@ -73,23 +55,15 @@ export async function GET(
     ...(simulatedFalStatus ? { simulatedFalStatus } : {})
   });
 
-  // React to credit events. settle and refund are idempotent — settle's
-  // marker transaction prevents double-counting, refund's getOpenReserveRows
-  // returns [] after the first call.
-  if (result.creditEvent === 'settle') {
-    const actual = actualCostForScene(scene, story);
-    await settleReserve(session.user.id, scene.id, actual, {
-      story_id: story.id,
-      scene_id: scene.id,
-      model_id: story.video_model
-    });
-  } else if (result.creditEvent === 'refund') {
-    await refundReserve(session.user.id, scene.id, {
-      story_id: story.id,
-      scene_id: scene.id,
-      reason: 'fal_failed'
-    });
-  }
+  // [Settle-bug fix] Same helper as status-all so both polling paths
+  // agree on settle/refund. settle/refund are idempotent (settle's
+  // marker transaction + refund's empty-set early-return).
+  await handleCreditEvent({
+    userId: session.user.id,
+    scene,
+    story,
+    result
+  });
 
   return NextResponse.json(result);
 }
