@@ -109,7 +109,12 @@ tests/            unit/, integration/, e2e/
 | 3 | Renderer + FX Plugins | ✅ Done |
 | 4 | Storage & API Layer | ✅ Done |
 | 5 | UI Components | ✅ Done |
-| 6 | Export Pipeline | ⬜ Pending |
+| 6 | Export Pipeline (realtime + offline) | ✅ Done |
+| 7 | Auth (Better-Auth) | ✅ Done |
+| 8a | SceneFlow Fundament | ✅ Done |
+| 8b | Story-Input + Sonnet + Storyboard | ✅ Done |
+| 8c | fal.ai Render-Pipeline | ✅ Done |
+| 8d | Timeline-Integration + Beat-Snap | ⬜ Pending |
 
 **Rule:** Never start Plan N+1 before Plan N passes all verification gates.
 
