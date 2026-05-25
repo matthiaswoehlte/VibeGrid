@@ -256,6 +256,33 @@ export async function patchSceneRender(
   return (rowCount ?? 0) > 0;
 }
 
+/**
+ * Atomically claim the lipsync queue slot for a dialog scene. Uses
+ * Postgres' JSONB ->> operator to test that fal_request_ids->>'lipsync'
+ * IS NULL before writing, so two parallel pollers can't both submit a
+ * second-step lipsync job.
+ *
+ * Returns true if THIS caller claimed the slot (and must now submit the
+ * job and write back the request_id). Returns false if another poller
+ * already claimed it.
+ *
+ * Limitation: this relies on Postgres JSONB syntax — see KNOWN_LIMITATIONS.md.
+ */
+export async function setNeutralVideoUrlAndClaimLipsync(args: {
+  sceneId: string;
+  neutralVideoUrl: string;
+}): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE "VG_story_scenes"
+     SET neutral_video_url = $1, updated_at = now()
+     WHERE id = $2
+       AND neutral_video_url IS NULL
+       AND (fal_request_ids->>'lipsync' IS NULL)`,
+    [args.neutralVideoUrl, args.sceneId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 export async function deleteScene(args: {
   userId: string;
   sceneId: string;

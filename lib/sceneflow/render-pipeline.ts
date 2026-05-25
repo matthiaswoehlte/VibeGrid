@@ -1,6 +1,10 @@
 import 'server-only';
 import type { CharacterRecord, SceneRecord, StoryRecord } from './types';
-import { patchSceneRender } from './scenes-db';
+import {
+  patchSceneRender,
+  setNeutralVideoUrlAndClaimLipsync,
+  loadSceneById
+} from './scenes-db';
 import { uploadAssetToR2, falUrlToR2 } from './fal-to-r2';
 import { synthesizeForCharacter } from './tts';
 import {
@@ -8,6 +12,8 @@ import {
   submitVideoJob,
   submitLipSyncJob,
   submitMuseTalkJob,
+  getJobStatus,
+  getVideoJobResult,
   storyFormatToImageSize,
   type FalImageModel,
   type FalVideoModel,
@@ -280,6 +286,187 @@ export async function enqueueLipSyncForScene(
     videoUrl: input.neutralVideoUrl,
     audioUrl: input.scene.audio_url
   });
+}
+
+// ---------- Status advance (polling) ----------
+
+export interface AdvanceSceneInput {
+  scene: SceneRecord;
+  story: StoryRecord;
+}
+
+export interface AdvanceSceneResult {
+  sceneId: string;
+  status: SceneRecord['status'];
+  imageUrl: string | null;
+  audioUrl: string | null;
+  neutralVideoUrl: string | null;
+  videoUrl: string | null;
+  step: 'image' | 'audio' | 'neutral_video' | 'lipsync' | 'video' | 'done';
+  error?: string;
+}
+
+/**
+ * Check fal.ai queue status for any in-flight request_ids on this scene,
+ * mirror completed results into R2, and (for dialog scenes) auto-enqueue
+ * step B once the neutral video finishes.
+ *
+ * Idempotent: a second call against an already-completed step is a no-op.
+ * [Fix N1] [Fix N2]
+ */
+export async function advanceSceneRender(
+  input: AdvanceSceneInput
+): Promise<AdvanceSceneResult> {
+  let scene = input.scene;
+  let error: string | undefined;
+  const videoEndpoint = input.story.video_model;
+  const lipsyncEndpoint = input.story.lipsync_model;
+
+  try {
+    // 1) Action-scene final video
+    if (
+      scene.type === 'action' &&
+      scene.video_url === null &&
+      scene.fal_request_ids?.video
+    ) {
+      const s = await getJobStatus({
+        endpointId: videoEndpoint,
+        requestId: scene.fal_request_ids.video
+      });
+      if (s === 'COMPLETED') {
+        const falUrl = await getVideoJobResult({
+          endpointId: videoEndpoint,
+          requestId: scene.fal_request_ids.video
+        });
+        const r2Url = await falUrlToR2(falUrl, {
+          userId: input.story.user_id,
+          storyId: input.story.id,
+          sceneId: scene.id,
+          kind: 'video'
+        });
+        const claimed = await patchSceneRender(
+          scene.id,
+          { video_url: r2Url, status: 'done' },
+          { onlyIfNull: true }
+        );
+        if (claimed) {
+          scene = { ...scene, video_url: r2Url, status: 'done' };
+        }
+      }
+    }
+
+    // 2) Dialog-scene neutral video → auto-enqueue lipsync
+    if (
+      scene.type === 'dialog' &&
+      scene.neutral_video_url === null &&
+      scene.fal_request_ids?.neutral_video
+    ) {
+      const s = await getJobStatus({
+        endpointId: videoEndpoint,
+        requestId: scene.fal_request_ids.neutral_video
+      });
+      if (s === 'COMPLETED') {
+        const falUrl = await getVideoJobResult({
+          endpointId: videoEndpoint,
+          requestId: scene.fal_request_ids.neutral_video
+        });
+        const r2Url = await falUrlToR2(falUrl, {
+          userId: input.story.user_id,
+          storyId: input.story.id,
+          sceneId: scene.id,
+          kind: 'neutral-video'
+        });
+        // Postgres JSONB ->> idempotent claim — only THIS poller gets to enqueue.
+        const claimed = await setNeutralVideoUrlAndClaimLipsync({
+          sceneId: scene.id,
+          neutralVideoUrl: r2Url
+        });
+        if (claimed) {
+          // Re-load to get latest fal_request_ids before merging.
+          const fresh = await loadSceneById(scene.id);
+          scene = fresh ?? { ...scene, neutral_video_url: r2Url };
+          const lipsyncReqId = await enqueueLipSyncForScene({
+            scene,
+            neutralVideoUrl: r2Url,
+            lipsyncModel: lipsyncEndpoint as FalLipSyncModel
+          });
+          await patchSceneRender(scene.id, {
+            fal_request_ids: {
+              ...(scene.fal_request_ids ?? {}),
+              lipsync: lipsyncReqId
+            }
+          });
+          scene = {
+            ...scene,
+            fal_request_ids: {
+              ...(scene.fal_request_ids ?? {}),
+              lipsync: lipsyncReqId
+            }
+          };
+        }
+      }
+    }
+
+    // 3) Dialog-scene lipsync result
+    if (
+      scene.type === 'dialog' &&
+      scene.video_url === null &&
+      scene.fal_request_ids?.lipsync
+    ) {
+      const s = await getJobStatus({
+        endpointId: lipsyncEndpoint,
+        requestId: scene.fal_request_ids.lipsync
+      });
+      if (s === 'COMPLETED') {
+        const falUrl = await getVideoJobResult({
+          endpointId: lipsyncEndpoint,
+          requestId: scene.fal_request_ids.lipsync
+        });
+        const r2Url = await falUrlToR2(falUrl, {
+          userId: input.story.user_id,
+          storyId: input.story.id,
+          sceneId: scene.id,
+          kind: 'video'
+        });
+        const claimed = await patchSceneRender(
+          scene.id,
+          { video_url: r2Url, status: 'done' },
+          { onlyIfNull: true }
+        );
+        if (claimed) {
+          scene = { ...scene, video_url: r2Url, status: 'done' };
+        }
+      }
+    }
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+    await patchSceneRender(scene.id, {
+      status: 'error',
+      error_message: error
+    }).catch(() => {});
+  }
+
+  let step: AdvanceSceneResult['step'];
+  if (scene.type === 'endcard') step = 'done';
+  else if (scene.image_url === null) step = 'image';
+  else if (scene.audio_url === null && scene.audio_type !== 'none')
+    step = 'audio';
+  else if (scene.type === 'dialog' && scene.neutral_video_url === null)
+    step = 'neutral_video';
+  else if (scene.video_url === null)
+    step = scene.type === 'dialog' ? 'lipsync' : 'video';
+  else step = 'done';
+
+  return {
+    sceneId: scene.id,
+    status: scene.status,
+    imageUrl: scene.image_url,
+    audioUrl: scene.audio_url,
+    neutralVideoUrl: scene.neutral_video_url,
+    videoUrl: scene.video_url,
+    step,
+    ...(error ? { error } : {})
+  };
 }
 
 // ---------- Retry helpers ----------
