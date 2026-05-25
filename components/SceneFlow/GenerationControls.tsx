@@ -1,10 +1,14 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
+import type { Route } from 'next';
+import { useSession } from '@/lib/auth/better-auth-client';
 import {
   apiGenerateImagesAndVoices,
   apiGenerateVideos,
-  apiTransfer
+  apiTransfer,
+  type TransferResponse
 } from '@/lib/sceneflow/api-client';
 import {
   validateScenesForGeneration,
@@ -12,30 +16,57 @@ import {
   warningsByScene
 } from '@/lib/sceneflow/validation';
 import { SceneWarningList } from './SceneWarning';
-import type { SceneRecord, CharacterRecord, StoryRecord } from '@/lib/sceneflow/types';
+import { TransferConfirmModal } from './TransferConfirmModal';
+import { useAppStore } from '@/lib/store';
+import { layoutClips } from '@/lib/sceneflow/clip-layout';
+import type {
+  SceneRecord,
+  CharacterRecord,
+  StoryRecord
+} from '@/lib/sceneflow/types';
 
 /**
- * Plan 8c — bottom-bar controls for Phase 1, Phase 2, and Transfer.
+ * Plan 8c/8d — bottom-bar controls for Phase 1, Phase 2, and Transfer.
  *
- * Phase 1 button is disabled while any 🔴 blocker is present. 🟡 warnings
- * are surfaced and the button switches to a confirm prompt. Phase 2 is
- * disabled until every non-endcard scene has an image_url. Transfer is
- * active when at least one scene has a video_url.
+ * Phase 1: gated on validation blockers + warns on 🟡.
+ * Phase 2: enabled once every non-endcard scene has image_url.
+ * Transfer (Plan 8d): warning modal → wipe project → rebuild tracks
+ * + clips from the story → router.push('/').
  */
 export function GenerationControls({
   story,
   scenes,
-  characters,
-  onTransfer
+  characters
 }: {
   story: StoryRecord;
   scenes: SceneRecord[];
   characters: CharacterRecord[];
-  onTransfer?(clips: unknown[]): void;
 }) {
+  const router = useRouter();
+  const session = useSession();
+  const userId = session.data?.user?.id ?? null;
+
   const [busyPhase1, setBusyPhase1] = useState(false);
   const [busyPhase2, setBusyPhase2] = useState(false);
   const [busyTransfer, setBusyTransfer] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [pendingPayload, setPendingPayload] =
+    useState<TransferResponse | null>(null);
+
+  // Live store counts for the modal — read inside the component so
+  // mode/clip count are fresh at modal-open time.
+  const trackCount = useAppStore((s) => s.timeline.tracks.length);
+  const clipCount = useAppStore((s) => s.timeline.clips.length);
+  const setBPM = useAppStore((s) => s.audioActions.setBPM);
+  const addTrack = useAppStore((s) => s.timelineActions.addTrack);
+  const addClip = useAppStore((s) => s.timelineActions.addClip);
+  const clearAllTracks = useAppStore(
+    (s) => s.timelineActions.clearAllTracks
+  );
+  const addMediaRef = useAppStore((s) => s.mediaActions.addMediaRef);
+  const purgeSceneflowMediaRefs = useAppStore(
+    (s) => s.mediaActions.purgeSceneflowMediaRefs
+  );
 
   const warnings = validateScenesForGeneration({
     story,
@@ -49,9 +80,21 @@ export function GenerationControls({
     .filter((s) => s.type !== 'endcard')
     .every((s) => s.image_url !== null);
 
-  const phase2HasAnyVideo = scenes.some((s) => s.video_url !== null);
+  const phase2HasAnyVideo = scenes.some(
+    (s) => s.video_url !== null || s.type === 'endcard'
+  );
   const phase2Done = scenes.every(
     (s) => s.type === 'endcard' || s.video_url !== null
+  );
+
+  const renderableSceneCount = useMemo(
+    () =>
+      scenes.filter(
+        (s) =>
+          (s.type !== 'endcard' && s.video_url !== null) ||
+          (s.type === 'endcard' && s.image_url !== null)
+      ).length,
+    [scenes]
   );
 
   async function runPhase1() {
@@ -93,77 +136,239 @@ export function GenerationControls({
     }
   }
 
-  async function runTransfer() {
+  /**
+   * Transfer — Step 1: fetch the payload, open the confirm modal with
+   * the wipe-preview. The actual destructive write happens in
+   * `commitTransfer` once the user clicks "Transferieren".
+   */
+  async function openTransferModal() {
+    if (!userId) {
+      toast.error('Nicht eingeloggt');
+      return;
+    }
     setBusyTransfer(true);
     try {
-      const res = await apiTransfer(story.id);
-      onTransfer?.(res.clips);
-      toast.success(
-        `Transfer bereit — ${res.clips.length} Clip(s). Timeline-Integration: Plan 8d.`
-      );
+      const payload = await apiTransfer(story.id);
+      setPendingPayload(payload);
+      setModalOpen(true);
     } catch (e) {
-      toast.error('Transfer fehlgeschlagen: ' + (e as Error).message);
+      toast.error('Transfer-Vorbereitung fehlgeschlagen: ' + (e as Error).message);
     } finally {
       setBusyTransfer(false);
     }
   }
 
+  /**
+   * Transfer — Step 2: apply the payload to the Zustand store
+   * (purge → wipe → build tracks → layout clips → setBPM) and
+   * navigate to the VibeGrid tab.
+   */
+  function commitTransfer() {
+    if (!pendingPayload || !userId) return;
+    const payload = pendingPayload;
+    setModalOpen(false);
+
+    // 1. Purge orphan SceneFlow MediaRefs from previous transfers of
+    //    THIS story (different stories' assets stay).
+    purgeSceneflowMediaRefs(payload.storyId, userId);
+    // 2. Wipe the rest (other tracks, FX, manual clips). Tabula rasa.
+    clearAllTracks();
+
+    // 3. BPM — use the song's BPM if present, default 120.
+    const bpm = payload.syncAudio?.bpm ?? 120;
+    setBPM(bpm);
+
+    // 4. Sync-audio track always exists post-transfer (even empty —
+    //    user can drop a song later in VibeGrid). addTrack assigns its
+    //    own UUID; we read it back via getState() right below.
+    addTrack('sync-audio', 'Sync Audio');
+    // addTrack assigns a fresh UUID; find it post-add to know the id.
+    const syncTrack = useAppStore
+      .getState()
+      .timeline.tracks.find((t) => t.kind === 'sync-audio');
+    if (!syncTrack) {
+      toast.error('Sync-Audio-Spur konnte nicht angelegt werden');
+      return;
+    }
+
+    // 5. Main-video track.
+    addTrack('main-video', 'Main Video');
+    const mainTrack = useAppStore
+      .getState()
+      .timeline.tracks.find((t) => t.kind === 'main-video');
+    if (!mainTrack) {
+      toast.error('Main-Video-Spur konnte nicht angelegt werden');
+      return;
+    }
+
+    // 6. MediaRefs for every clip + the sync audio.
+    for (const c of payload.clips) {
+      const url = c.videoUrl ?? c.imageUrl;
+      if (!url) continue;
+      addMediaRef({
+        id: c.mediaId,
+        kind: c.videoUrl ? 'video' : 'image',
+        url,
+        filename: `scene-${c.sceneOrder}.${c.videoUrl ? 'mp4' : 'jpg'}`,
+        duration: c.durationSec,
+        uploadedAt: new Date().toISOString()
+      });
+    }
+    if (payload.syncAudio) {
+      addMediaRef({
+        id: `sync-${payload.storyId}`,
+        kind: 'audio',
+        url: payload.syncAudio.url,
+        filename: 'sync-audio',
+        uploadedAt: new Date().toISOString()
+      });
+    }
+
+    // 7. Run the layout algorithm + add main-video clips.
+    const layout = layoutClips({
+      clips: payload.clips.map((c) => ({
+        mediaId: c.mediaId,
+        durationSec: c.durationSec,
+        transition: c.transition,
+        sceneOrder: c.sceneOrder,
+        sceneType: c.sceneType
+      })),
+      bpm,
+      snapMode: payload.snapMode
+    });
+    for (const r of layout.clips) {
+      const sourceClip = payload.clips.find((x) => x.mediaId === r.mediaId);
+      if (!sourceClip) continue;
+      addClip({
+        id:
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `clip-${r.mediaId}-${Date.now()}`,
+        trackId: mainTrack.id,
+        kind: sourceClip.videoUrl ? 'video' : 'image',
+        mediaId: r.mediaId,
+        startBeat: r.startBeat,
+        lengthBeats: r.lengthBeats,
+        label: `Szene ${sourceClip.sceneOrder}`
+      });
+    }
+    if (payload.syncAudio) {
+      // Sync-audio clip spans the full timeline length (cursor end of
+      // last clip). Audio playback honors clip bounds, so a short audio
+      // file simply ends silent — user can move/trim manually.
+      const lastEnd =
+        layout.clips.reduce(
+          (m, c) => Math.max(m, c.startBeat + c.lengthBeats),
+          0
+        ) || 16;
+      addClip({
+        id:
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `clip-sync-${Date.now()}`,
+        trackId: syncTrack.id,
+        kind: 'audio',
+        mediaId: `sync-${payload.storyId}`,
+        startBeat: 0,
+        lengthBeats: lastEnd,
+        label: 'Sync Audio'
+      });
+    }
+
+    setPendingPayload(null);
+
+    const trimmedCount = layout.clips.filter((c) => c.trimmed).length;
+    toast.success(
+      `${layout.clips.length} Clip(s) auf die Timeline übertragen` +
+        (trimmedCount > 0 ? ` (${trimmedCount} getrimmt auf Snap-Grid)` : '')
+    );
+    for (const w of layout.warnings) {
+      toast.warning(w.message);
+    }
+
+    // 8. Switch to the VibeGrid tab. '/' is a real route under
+    // app/(studio)/page.tsx; typedRoutes inference drops it due to the
+    // route group + storyboard re-export, hence the cast.
+    router.push('/' as Route);
+  }
+
+  function cancelTransfer() {
+    setModalOpen(false);
+    setPendingPayload(null);
+  }
+
   const byScene = warningsByScene(warnings);
 
   return (
-    <div className="sticky bottom-0 mt-4 bg-[var(--surface-1)] border border-[var(--border)] rounded-lg p-3 space-y-2">
-      {warnings.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-[var(--text-dim)] select-none">
-            {blockerOn ? '🔴' : '🟡'} {warnings.length} Warnung(en) — Details
-          </summary>
-          <div className="mt-2 space-y-2">
-            {Array.from(byScene.entries()).map(([sceneId, sceneWarnings]) => {
-              const s = scenes.find((x) => x.id === sceneId);
-              return (
-                <div key={sceneId}>
-                  <div className="text-[10px] text-[var(--text-muted)] uppercase">
-                    Szene {s?.scene_order}
+    <>
+      <div className="sticky bottom-0 mt-4 bg-[var(--surface-1)] border border-[var(--border)] rounded-lg p-3 space-y-2">
+        {warnings.length > 0 && (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-[var(--text-dim)] select-none">
+              {blockerOn ? '🔴' : '🟡'} {warnings.length} Warnung(en) — Details
+            </summary>
+            <div className="mt-2 space-y-2">
+              {Array.from(byScene.entries()).map(([sceneId, sceneWarnings]) => {
+                const s = scenes.find((x) => x.id === sceneId);
+                return (
+                  <div key={sceneId}>
+                    <div className="text-[10px] text-[var(--text-muted)] uppercase">
+                      Szene {s?.scene_order}
+                    </div>
+                    <SceneWarningList warnings={sceneWarnings} />
                   </div>
-                  <SceneWarningList warnings={sceneWarnings} />
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      )}
-      <div className="flex gap-2 items-center">
-        <button
-          type="button"
-          disabled={busyPhase1 || blockerOn || scenes.length === 0}
-          onClick={runPhase1}
-          className="px-3 py-1.5 text-xs rounded bg-[var(--a1)] text-white disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {busyPhase1 ? 'läuft …' : 'Image + Voice Generation'}
-        </button>
-        <button
-          type="button"
-          disabled={busyPhase2 || !phase1Done}
-          onClick={runPhase2}
-          className="px-3 py-1.5 text-xs rounded bg-[var(--a2)] text-white disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {busyPhase2 ? 'enqueued …' : 'Create Full Movie'}
-        </button>
-        <div className="flex-1" />
-        <button
-          type="button"
-          disabled={busyTransfer || !phase2HasAnyVideo}
-          onClick={runTransfer}
-          className="px-3 py-1.5 text-xs rounded bg-[var(--a3)] text-black disabled:opacity-30 disabled:cursor-not-allowed"
-          title={
-            phase2Done
-              ? 'Alle Szenen fertig — Timeline öffnen'
-              : 'Mindestens ein Video erstellt — Timeline-Integration in Plan 8d'
-          }
-        >
-          {busyTransfer ? '...' : 'Transfer to Timeline'}
-        </button>
+                );
+              })}
+            </div>
+          </details>
+        )}
+        <div className="flex gap-2 items-center">
+          <button
+            type="button"
+            disabled={busyPhase1 || blockerOn || scenes.length === 0}
+            onClick={runPhase1}
+            className="px-3 py-1.5 text-xs rounded bg-[var(--a1)] text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {busyPhase1 ? 'läuft …' : 'Image + Voice Generation'}
+          </button>
+          <button
+            type="button"
+            disabled={busyPhase2 || !phase1Done}
+            onClick={runPhase2}
+            className="px-3 py-1.5 text-xs rounded bg-[var(--a2)] text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {busyPhase2 ? 'enqueued …' : 'Create Full Movie'}
+          </button>
+          <div className="flex-1" />
+          <button
+            type="button"
+            disabled={busyTransfer || !phase2HasAnyVideo}
+            onClick={openTransferModal}
+            className="px-3 py-1.5 text-xs rounded bg-[var(--a3)] text-black disabled:opacity-30 disabled:cursor-not-allowed"
+            title={
+              phase2Done
+                ? 'Alle Szenen fertig — Timeline öffnen'
+                : 'Mindestens ein Video erstellt'
+            }
+          >
+            {busyTransfer ? '...' : 'Transfer to Timeline'}
+          </button>
+        </div>
       </div>
-    </div>
+      <TransferConfirmModal
+        open={modalOpen}
+        trackCount={trackCount}
+        clipCount={clipCount}
+        sceneCount={renderableSceneCount}
+        syncAudio={
+          pendingPayload?.syncAudio
+            ? { bpm: pendingPayload.syncAudio.bpm }
+            : null
+        }
+        snapMode={pendingPayload?.snapMode ?? story.snap_mode}
+        onConfirm={commitTransfer}
+        onCancel={cancelTransfer}
+      />
+    </>
   );
 }
