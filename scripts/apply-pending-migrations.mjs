@@ -21,7 +21,8 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const FILES = [
   'db/migrations/005_VG_sceneflow_render.sql',
-  'db/migrations/006_VG_credits.sql'
+  'db/migrations/006_VG_credits.sql',
+  'db/migrations/008_VG_sceneflow_timeline_integration.sql'
 ];
 
 async function tableExists(name) {
