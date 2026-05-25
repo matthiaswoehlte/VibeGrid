@@ -5,6 +5,7 @@ import { apiPatchStory } from '@/lib/sceneflow/api-client';
 import { useSceneFlowCharacters } from '@/lib/hooks/useSceneFlowCharacters';
 import type { StoryRecord, StoryFormat } from '@/lib/sceneflow/types';
 import { ModelSelector } from './ModelSelector';
+import { SyncAudioPicker } from './SyncAudioPicker';
 
 const DEBOUNCE_MS = 500;
 
@@ -192,6 +193,7 @@ export function StorySetupForm({
           className="mt-1 w-full bg-[var(--surface-2)] border border-[var(--border)] rounded px-2 py-1 text-[var(--text)]"
         />
       </label>
+      <SyncAudioPicker story={story} onPatched={onPatched} />
       <ModelSelector story={story} onPatched={onPatched} />
       <p className="text-[10px] text-[var(--text-muted)]">
         Änderungen wirken sich erst beim nächsten „Mit KI aufteilen” auf
