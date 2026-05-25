@@ -44,6 +44,8 @@ export interface TransactionMeta {
   reason?: string;
   story_id?: string;
   scene_id?: string;
+  // Plan 8.6 — admin who issued the grant (admin_grant action only).
+  admin_id?: string;
 }
 
 // ---------- Read paths ----------
