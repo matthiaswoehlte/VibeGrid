@@ -20,7 +20,12 @@ const KIND_COLOR: Record<TrackKind, string> = {
   // Generic FX track fallback — used when a clip carries an unknown
   // clip-kind (e.g. legacy / future). Specific FX clip-kinds resolve
   // via FX_CLIP_COLORS first.
-  fx: 'var(--surface-3)'
+  fx: 'var(--surface-3)',
+  // Plan 8d — SceneFlow singleton tracks. Main-Video reuses the video
+  // color (semantically same content); Sync-Audio gets a teal accent
+  // to differentiate from regular audio tracks at a glance.
+  'main-video': '#7a4dff',
+  'sync-audio': '#2ee0d0'   // teal (matches --a3)
 };
 
 export function Clip({ clip }: { clip: ClipT }) {

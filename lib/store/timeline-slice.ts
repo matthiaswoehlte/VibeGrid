@@ -21,7 +21,12 @@ const KIND_LABEL: Record<TrackKind, string> = {
   image: 'Image',
   audio: 'Audio',
   video: 'Video',
-  fx: 'FX'
+  fx: 'FX',
+  // Plan 8d — singleton tracks, default labels only used when the
+  // store creates them; UI labels are usually 'Main' / 'Sync' set
+  // directly in clearAllTracks-then-create flow.
+  'main-video': 'Main Video',
+  'sync-audio': 'Sync Audio'
 };
 
 function defaultLabelFor(kind: TrackKind, existing: Track[]): string {

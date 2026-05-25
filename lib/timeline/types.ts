@@ -1,10 +1,28 @@
 /** Plan 5.9c — TrackKind collapsed to the four lane-types. FX-specific
  *  kinds (contour / sweep / …) live on `clip.kind` only; the track
- *  carrying them is `kind: 'fx'`. */
-export type TrackKind = 'image' | 'video' | 'audio' | 'fx';
+ *  carrying them is `kind: 'fx'`.
+ *
+ *  Plan 8d adds two singleton track kinds for SceneFlow-transfer output:
+ *    'main-video' — dedicated video track, top-pinned, replaced on every
+ *                   SceneFlow transfer. At most one per project.
+ *    'sync-audio' — dedicated audio track, top-pinned, primary BPM source.
+ *                   At most one per project. New file dropped → BPM re-detect
+ *                   + auto-resnap of all main-video clips. */
+export type TrackKind =
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'fx'
+  | 'main-video'
+  | 'sync-audio';
 
 /** Media-bearing kinds (carry their own media reference; not FX plugins). */
-export type MediaTrackKind = 'image' | 'audio' | 'video';
+export type MediaTrackKind =
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'main-video'
+  | 'sync-audio';
 
 // Plan 5.9c — `FxKind` is gone. Callers import `TrackFxKind` from
 // `@/lib/timeline/plugin-mapping` (re-exported below for transitional

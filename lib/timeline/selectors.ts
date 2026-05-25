@@ -13,6 +13,25 @@ export function snapBeats(beats: number, mode: SnapMode): number {
   return Math.round(beats / step) * step;
 }
 
+/**
+ * Plan 8d — top-pin the singleton SceneFlow tracks above everything else.
+ *
+ *  1. sync-audio (0 or 1)
+ *  2. main-video (0 or 1)
+ *  3. all other tracks in their existing array order
+ *
+ *  Used by Tracks.tsx to render the lane stack. Drag-to-reorder skips
+ *  the top two (TrackHeader checks track.kind before enabling drag).
+ */
+export function sortedTracks(tracks: Track[]): Track[] {
+  const sync = tracks.filter((t) => t.kind === 'sync-audio');
+  const main = tracks.filter((t) => t.kind === 'main-video');
+  const rest = tracks.filter(
+    (t) => t.kind !== 'sync-audio' && t.kind !== 'main-video'
+  );
+  return [...sync, ...main, ...rest];
+}
+
 export function hasOverlap(
   state: TimelineState,
   trackId: string,
