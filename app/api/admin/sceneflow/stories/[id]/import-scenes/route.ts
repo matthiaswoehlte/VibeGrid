@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireAdminApi } from '@/lib/auth/admin-guard';
-import { loadStoryUnchecked } from '@/lib/sceneflow/stories-db';
+import { loadStoryUnchecked, updateStory } from '@/lib/sceneflow/stories-db';
 import {
   deleteScenesByStory,
   createScenes
 } from '@/lib/sceneflow/scenes-db';
-import { listCharactersByIds } from '@/lib/sceneflow/characters-db';
+import { listCharacters } from '@/lib/sceneflow/characters-db';
 import {
   parseScenesEnvelope,
   portableToNewSceneInputs,
@@ -33,13 +33,18 @@ export async function POST(
   if (!story) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
-  const characters = await listCharactersByIds(story.user_id, story.characters);
+
+  // Look at ALL of the story owner's global characters — not just those
+  // already in story.characters[]. If the JSON references a name that
+  // exists globally (e.g. "Rider"), we auto-add it to the story below.
+  // Saves the user a separate trip through StorySetupForm's picker.
+  const allUserCharacters = await listCharacters(story.user_id);
 
   let parsed;
   try {
     parsed = parseScenesEnvelope({
       envelope: body,
-      storyCharacterNames: characters.map((c) => c.name)
+      storyCharacterNames: allUserCharacters.map((c) => c.name)
     });
   } catch (e) {
     if (e instanceof ScenesImportError) {
@@ -48,7 +53,39 @@ export async function POST(
     throw e;
   }
 
-  const newScenes = portableToNewSceneInputs(parsed.scenes, characters);
+  // Auto-add globally-known characters that the JSON references but
+  // aren't yet in story.characters[]. Names that don't exist anywhere
+  // surface in parsed.unknownCharacterNames so the UI can warn.
+  const storyCharSet = new Set(story.characters);
+  const idByName = new Map(allUserCharacters.map((c) => [c.name, c.id]));
+  const referenced = new Set(
+    parsed.scenes
+      .map((s) => s.speaking_character)
+      .filter((n): n is string => n !== null)
+  );
+  const autoAdded: string[] = [];
+  for (const name of referenced) {
+    const id = idByName.get(name);
+    if (id && !storyCharSet.has(id)) {
+      storyCharSet.add(id);
+      autoAdded.push(name);
+    }
+  }
+  if (autoAdded.length > 0) {
+    await updateStory({
+      userId: story.user_id,
+      storyId: story.id,
+      patch: { characters: Array.from(storyCharSet) }
+    });
+  }
+
+  // Build the full mapping using every character now in story.characters[]
+  // (including the just-auto-added ones). Unknown names (not in any
+  // global character) stay unmapped → speaking_character_id = null.
+  const inStoryCharacters = allUserCharacters.filter((c) =>
+    storyCharSet.has(c.id)
+  );
+  const newScenes = portableToNewSceneInputs(parsed.scenes, inStoryCharacters);
 
   // Replace scenes in a single transaction — same pattern as
   // generate-scenes so a partial failure doesn't leave half a story.
@@ -60,6 +97,7 @@ export async function POST(
     await client.query('COMMIT');
     return NextResponse.json({
       scenes: created,
+      autoAddedCharacterNames: autoAdded,
       unknownCharacterNames: parsed.unknownCharacterNames
     });
   } catch (e) {

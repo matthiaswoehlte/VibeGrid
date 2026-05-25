@@ -61,14 +61,21 @@ export function ScenesJsonControls({
       }
       const body = (await res.json()) as {
         scenes: unknown[];
+        autoAddedCharacterNames: string[];
         unknownCharacterNames: string[];
       };
-      toast.success(
-        `${body.scenes.length} Szene(n) importiert.` +
-          (body.unknownCharacterNames.length > 0
-            ? ` Unbekannte Charaktere: ${body.unknownCharacterNames.join(', ')}`
-            : '')
-      );
+      const parts = [`${body.scenes.length} Szene(n) importiert.`];
+      if (body.autoAddedCharacterNames.length > 0) {
+        parts.push(
+          `Zur Story hinzugefügt: ${body.autoAddedCharacterNames.join(', ')}`
+        );
+      }
+      if (body.unknownCharacterNames.length > 0) {
+        parts.push(
+          `Unbekannte Charaktere: ${body.unknownCharacterNames.join(', ')}`
+        );
+      }
+      toast.success(parts.join(' · '));
       setShowImport(false);
       setImportText('');
       onImported?.();

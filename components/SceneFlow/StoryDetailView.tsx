@@ -119,11 +119,15 @@ export function StoryDetailView({
       <StoryTextInput
         story={story}
         characters={allChars.filter((c) => story.characters.includes(c.id))}
+        allCharacters={allChars}
         scenesExist={scenes.length > 0}
         generating={generating}
         onGenerate={(text) => generate(text)}
         onStoryTextPatched={(text) =>
           setStory((s) => (s ? { ...s, story_text: text } : s))
+        }
+        onCharactersPatched={(next) =>
+          setStory((s) => (s ? { ...s, characters: next } : s))
         }
       />
       <ScenesJsonControls
