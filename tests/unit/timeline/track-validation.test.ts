@@ -48,4 +48,28 @@ describe('canDropOnTrack (Plan 5.9c)', () => {
       }
     }
   });
+
+  // Plan 8d — singleton TrackKinds accept their corresponding media-kind.
+  describe('Plan 8d singleton TrackKinds', () => {
+    it('audio clip → sync-audio track: true', () => {
+      expect(canDropOnTrack('audio', 'sync-audio')).toBe(true);
+    });
+
+    it('video clip → main-video track: true', () => {
+      expect(canDropOnTrack('video', 'main-video')).toBe(true);
+    });
+
+    it('audio clip → main-video track: false (kind mismatch)', () => {
+      expect(canDropOnTrack('audio', 'main-video')).toBe(false);
+    });
+
+    it('video clip → sync-audio track: false (kind mismatch)', () => {
+      expect(canDropOnTrack('video', 'sync-audio')).toBe(false);
+    });
+
+    it('FX clip → singleton tracks: false', () => {
+      expect(canDropOnTrack('contour', 'sync-audio')).toBe(false);
+      expect(canDropOnTrack('contour', 'main-video')).toBe(false);
+    });
+  });
 });

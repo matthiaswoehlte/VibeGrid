@@ -71,4 +71,86 @@ describe('AddTrackButton — Plan 5.9c/5.9d picker', () => {
     expect(addTrackSpy).toHaveBeenCalledWith('image');
     addTrackSpy.mockRestore();
   });
+
+  // Plan 8d — singleton enforcement for the two SceneFlow track kinds.
+  describe('Plan 8d — main-video + sync-audio singletons', () => {
+    it('exposes Main Video + Sync Audio options when neither track exists', () => {
+      render(<AddTrackButton />);
+      fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
+      expect(
+        screen.getByRole('button', { name: 'Main Video' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Sync Audio' })
+      ).toBeInTheDocument();
+    });
+
+    it('hides Main Video option once a main-video track exists', () => {
+      useAppStore.setState((s) => ({
+        timeline: {
+          ...s.timeline,
+          tracks: [
+            ...s.timeline.tracks,
+            { id: 't-main', kind: 'main-video', name: 'Main Video', muted: false }
+          ],
+          clips: []
+        }
+      }));
+      render(<AddTrackButton />);
+      fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
+      expect(
+        screen.queryByRole('button', { name: 'Main Video' })
+      ).not.toBeInTheDocument();
+      // Sync Audio is still available
+      expect(
+        screen.getByRole('button', { name: 'Sync Audio' })
+      ).toBeInTheDocument();
+    });
+
+    it('hides Sync Audio option once a sync-audio track exists', () => {
+      useAppStore.setState((s) => ({
+        timeline: {
+          ...s.timeline,
+          tracks: [
+            ...s.timeline.tracks,
+            { id: 't-sync', kind: 'sync-audio', name: 'Sync Audio', muted: false }
+          ],
+          clips: []
+        }
+      }));
+      render(<AddTrackButton />);
+      fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
+      expect(
+        screen.queryByRole('button', { name: 'Sync Audio' })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Main Video' })
+      ).toBeInTheDocument();
+    });
+
+    it('hides the SceneFlow section entirely when both singletons exist', () => {
+      useAppStore.setState((s) => ({
+        timeline: {
+          ...s.timeline,
+          tracks: [
+            ...s.timeline.tracks,
+            { id: 't-main', kind: 'main-video', name: 'Main Video', muted: false },
+            { id: 't-sync', kind: 'sync-audio', name: 'Sync Audio', muted: false }
+          ],
+          clips: []
+        }
+      }));
+      render(<AddTrackButton />);
+      fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
+      expect(
+        screen.queryByRole('button', { name: 'Main Video' })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Sync Audio' })
+      ).not.toBeInTheDocument();
+      // Other kinds still present
+      expect(screen.getByRole('button', { name: 'Image' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'FX' })).toBeInTheDocument();
+    });
+  });
 });

@@ -11,9 +11,12 @@ import {
   type PluginFxKind
 } from '@/lib/timeline/plugin-mapping';
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
+import { sortedTracks } from '@/lib/timeline/selectors';
+import { applySyncAudioFromArrayBuffer } from '@/lib/sceneflow/apply-sync-audio';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
 import { TrackHeader } from './TrackHeader';
+import { SyncAudioDropZone } from './SyncAudioDropZone';
 import { MobileAutomationButton } from '@/components/Mobile/MobileAutomationButton';
 
 const BEAT_PX_BASE = 40;
@@ -278,9 +281,10 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
       }
 
       if (mediaIdAudio) {
-        // Plan 5.9d — audio drop. Mirrors the video block: pick the
-        // dropped audio track (or fall back to the first one), length
-        // matches the source audio duration in beats.
+        // Plan 5.9d/8d — audio drop. Routes to either a regular
+        // `audio` lane (normal clip add) or the singleton `sync-audio`
+        // lane (BPM-detect + main-video re-snap via the shared
+        // apply-sync-audio pipeline).
         const ref = getMediaRef(mediaIdAudio);
         if (!ref) {
           toast.error(`Media reference ${mediaIdAudio} not found`);
@@ -292,6 +296,60 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           );
           return;
         }
+
+        // Plan 8d — sync-audio target: fetch the file from R2, decode,
+        // detect BPM, and re-snap all main-video clips. Same pipeline
+        // as SyncAudioDropZone's upload path, just starting from a URL.
+        if (droppedTrackKind === 'sync-audio') {
+          const syncTrack = droppedTrackId
+            ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'sync-audio')
+            : tracks.find((t) => t.kind === 'sync-audio');
+          if (!syncTrack) {
+            toast.error('Sync-Audio-Track nicht gefunden');
+            return;
+          }
+          const state = useAppStore.getState();
+          const existingClip =
+            state.timeline.clips.find((c) => c.trackId === syncTrack.id) ?? null;
+          const mainVideoClips = state.timeline.clips.filter((c) => {
+            const t = state.timeline.tracks.find((tr) => tr.id === c.trackId);
+            return t?.kind === 'main-video';
+          });
+          void (async () => {
+            let arrayBuffer: ArrayBuffer;
+            try {
+              const res = await fetch(ref.url);
+              if (!res.ok) {
+                toast.error(`Audio konnte nicht geladen werden (HTTP ${res.status})`);
+                return;
+              }
+              arrayBuffer = await res.arrayBuffer();
+            } catch (e) {
+              toast.error('Audio-Fetch fehlgeschlagen: ' + (e as Error).message);
+              return;
+            }
+            await applySyncAudioFromArrayBuffer({
+              arrayBuffer,
+              mediaId: mediaIdAudio,
+              filename: ref.filename,
+              trackId: syncTrack.id,
+              existingClip,
+              mainVideoClips,
+              getMediaRef: useAppStore.getState().mediaActions.getMediaRef,
+              currentBpm: useAppStore.getState().audio.grid.bpm || 120,
+              setBPM: useAppStore.getState().audioActions.setBPM,
+              addClip: useAppStore.getState().timelineActions.addClip,
+              removeClip: useAppStore.getState().timelineActions.removeClip,
+              removeMediaRef: useAppStore.getState().mediaActions.removeMediaRef,
+              replaceMainVideoClips:
+                useAppStore.getState().timelineActions.replaceMainVideoClips,
+              setClipParam: useAppStore.getState().timelineActions.setClipParam,
+              getAllClips: () => useAppStore.getState().timeline.clips
+            });
+          })();
+          return;
+        }
+
         const audioTrack = droppedTrackId
           ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'audio')
           : tracks.find((t) => t.kind === 'audio');
@@ -348,7 +406,7 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
       onDrop={onNativeDrop}
       className="touch-pan-x md:touch-auto"
     >
-        {tracks.map((t) => {
+        {sortedTracks(tracks).map((t) => {
           // Show the read-only inline lane under the selected clip's track
           // row whenever that clip has at least one automation curve. The
           // AutomationLane itself filters params and returns null when no
@@ -386,6 +444,19 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
                     .map((c) => (
                       <Clip key={c.id} clip={c} />
                     ))}
+                  {/* Plan 8d — sync-audio lane gets a drop/upload overlay.
+                      Renders full-width when empty, small top-right button
+                      when a clip exists. Click triggers file picker with
+                      BPM-detect + main-video re-snap. */}
+                  {t.kind === 'sync-audio' && (
+                    <SyncAudioDropZone
+                      track={{ id: t.id, kind: 'sync-audio' }}
+                      existingClip={
+                        clips.find((c) => c.trackId === t.id) ?? null
+                      }
+                      pxPerBeat={px}
+                    />
+                  )}
                 </div>
               </div>
               {firstAutomationClip && (
