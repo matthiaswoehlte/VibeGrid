@@ -1,0 +1,169 @@
+{
+  "id": "msg_ignition_demo",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-20250514",
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 842,
+    "cache_creation_input_tokens": 612,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1184
+  },
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_ignition_01",
+      "name": "create_storyboard",
+      "input": {
+        "scenes": [
+          {
+            "scene_order": 1,
+            "type": "action",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — extreme close-up: neon-accented black racing gloves gripping motorcycle handlebars, chrome throttle reflecting cyan and magenta neon strips, volumetric fog rising from arena floor, dark industrial hall out of focus in background, tension and stillness before ignition",
+            "motion_prompt": "Camera pushes in slowly from mid-shot to extreme close-up on gloves gripping bars, rack focus pulls from background fog to hands, subtle vibration as engine idles",
+            "camera_control": {
+              "zoom": 2.5,
+              "panX": 0,
+              "panY": 0,
+              "motionIntensity": 3
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "last-frame",
+            "start_frame_mode": "auto"
+          },
+          {
+            "scene_order": 2,
+            "type": "action",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — wide establishing shot: massive dark arena hall, low-lying fog across floor, cyan and magenta neon strips running along walls and ceiling, steep motorcycle ramp center-frame flanked by two roaring columns of fire, crowd silhouettes behind barriers, dramatic scale, athletic female rider in black neon-accented racing suit seated on motorcycle at ramp base",
+            "motion_prompt": "Slow cinematic dolly backward from rider level revealing full arena scale, camera tilts slightly upward as ramp height becomes apparent, fire columns ignite mid-move",
+            "camera_control": {
+              "zoom": -1.5,
+              "panX": 0,
+              "panY": 0.5,
+              "motionIntensity": 4
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "last-frame",
+            "start_frame_mode": "from-previous"
+          },
+          {
+            "scene_order": 3,
+            "type": "action",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — slow motion: motorcycle at apex of jump, fully airborne, both wheels free-spinning, chrome frame and exhaust pipes catching cyan and magenta neon reflections, motion blur on rotating tires, arena floor far below, fire trails still visible from ramp launch, dark industrial ceiling above, dramatic under-lighting from neon grid below",
+            "motion_prompt": "Low-angle tracking shot rises with motorcycle at apex, camera rotates 15 degrees counter-clockwise in slow motion, holds on peak before descent begins, extreme slow motion feel — 10% playback speed",
+            "camera_control": {
+              "zoom": 1.0,
+              "panX": 0,
+              "panY": 1.5,
+              "motionIntensity": 7
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "last-frame",
+            "start_frame_mode": "from-previous"
+          },
+          {
+            "scene_order": 4,
+            "type": "action",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — first-person POV directly behind motorcycle rider mid-flight, full arena visible far below, helmet and shoulders of rider in sharp foreground, strobe lights firing in rapid sequence across arena, neon light trails from strobes streaking across frame, crowd tiny in distance, industrial ceiling rafters rushing past overhead, vertigo-inducing scale",
+            "motion_prompt": "Steady POV hold with slight handheld shake, subtle roll left-right mimicking rider balance adjustment, slow push toward arena floor as descent begins, strobe timing creates staccato light bursts",
+            "camera_control": {
+              "zoom": 0.5,
+              "panX": 0.3,
+              "panY": -0.5,
+              "motionIntensity": 8
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "last-frame",
+            "start_frame_mode": "from-previous"
+          },
+          {
+            "scene_order": 5,
+            "type": "dialog",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — medium portrait: athletic woman in black neon-accented racing suit removing mirrored-visor helmet with one hand, short confident motion, looking directly into camera lens with calm determination, blue-cyan rim light from behind, warm amber practical light from arena floor below face, shallow depth of field with soft bokeh arena behind her, slight hint of a controlled smile",
+            "motion_prompt": "Camera holds steady in medium close-up, very slow push in as helmet comes off, subject turns head fractionally toward camera, rack focus tightens to eyes as visor clears face",
+            "camera_control": {
+              "zoom": 1.5,
+              "panX": 0,
+              "panY": 0,
+              "motionIntensity": 2
+            },
+            "duration": 6,
+            "audio_type": "lipsync",
+            "tts_text": "Das war erst der Anfang.",
+            "speaking_character": "Rider",
+            "transition": "last-frame",
+            "start_frame_mode": "from-previous"
+          },
+          {
+            "scene_order": 6,
+            "type": "action",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — wide shot: motorcycle landing hard on ramp surface, massive spray of orange and white sparks erupting outward in all directions, rear wheel compressing on impact, rider hunched forward absorbing landing, crowd behind barriers erupting with raised arms and movement, neon light strobing from impact energy, smoke mixing with arena fog, kinetic chaos",
+            "motion_prompt": "Camera snaps from close-up to wide in a fast explosive pull-back zoom as landing impact hits, slight camera shake on impact frame, then stabilizes as crowd reaction builds",
+            "camera_control": {
+              "zoom": -3.5,
+              "panX": 0,
+              "panY": 0,
+              "motionIntensity": 9
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "crossfade",
+            "start_frame_mode": "from-previous"
+          },
+          {
+            "scene_order": 7,
+            "type": "action",
+            "image_prompt": "cinematic dark industrial, neon lights, high contrast, photorealistic, Blade Runner aesthetic — high crane wide shot from above arena: athletic female rider standing on stationary motorcycle, right fist raised triumphantly toward ceiling, multiple simultaneous firework bursts exploding inside the arena hall in gold, cyan and magenta, crowd going wild in all directions below, confetti and debris in air, fire columns still burning at ramp, god-ray light beams through smoke from above, epic cinematic scale",
+            "motion_prompt": "Crane shot pulls upward and backward in wide arc revealing full arena scope, fireworks burst in foreground and midground, camera tilts down slightly to keep rider in lower-center frame as scale reveals",
+            "camera_control": {
+              "zoom": -2.0,
+              "panX": 0,
+              "panY": -1.5,
+              "motionIntensity": 7
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "crossfade",
+            "start_frame_mode": "from-previous"
+          },
+          {
+            "scene_order": 8,
+            "type": "endcard",
+            "image_prompt": "pure black background — glowing neon text: IGNITION — letters rendered in electric cyan neon tube style with magenta edge glow and light bloom, slight flicker animation on neon tubes, thin horizontal scan-line texture over black, minimalist dark industrial aesthetic",
+            "motion_prompt": "Text fades in from black with neon flicker effect, holds static with subtle ambient neon pulse glow",
+            "camera_control": {
+              "zoom": 0,
+              "panX": 0,
+              "panY": 0,
+              "motionIntensity": 1
+            },
+            "duration": 4,
+            "audio_type": "none",
+            "tts_text": null,
+            "speaking_character": null,
+            "transition": "cut",
+            "start_frame_mode": "from-previous"
+          }
+        ]
+      }
+    }
+  ]
+}
