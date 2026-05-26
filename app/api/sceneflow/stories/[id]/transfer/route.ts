@@ -30,11 +30,22 @@ export interface TransferClipPayload {
   imageUrl: string | null;
   /** Effective seconds the layout helper uses. For endcards we pre-
    *  resolve to ENDCARD_DEFAULT_DURATION_SEC here so the client
-   *  doesn't need to know about that constant separately [Fix W2-R]. */
+   *  doesn't need to know about that constant separately [Fix W2-R].
+   *
+   *  NOTE: this is the user-intent `scene.duration` — for lipsync
+   *  scenes the actual rendered file may be shorter (audio length
+   *  cut). The client probes the real video duration via
+   *  `getMediaDuration` and overrides this for layout. */
   durationSec: number;
   transition: 'last-frame' | 'crossfade' | 'cut';
   sceneType: 'action' | 'dialog' | 'endcard';
   sceneOrder: number;
+  /** Plan 8d — audio routing per scene. `lipsync` means the video file
+   *  has embedded mouth-synced audio that MUST play (otherwise the
+   *  user can't hear what the character is saying), and the sync-audio
+   *  track should duck to half volume during this clip. `voiceover`
+   *  and `none` keep the video muted (sync-audio handles soundtrack). */
+  audioType: 'none' | 'voiceover' | 'lipsync';
 }
 
 export interface TransferResponse {
@@ -92,7 +103,8 @@ export async function POST(
       s.type === 'endcard' ? ENDCARD_DEFAULT_DURATION_SEC : s.duration,
     transition: s.transition,
     sceneType: s.type,
-    sceneOrder: s.scene_order
+    sceneOrder: s.scene_order,
+    audioType: s.audio_type
   }));
 
   // [Fix B1] BPM is persisted at upload time in StorySetupForm —

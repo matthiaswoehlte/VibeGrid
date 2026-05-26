@@ -317,6 +317,7 @@ export interface TransferClipPayload {
   transition: 'last-frame' | 'crossfade' | 'cut';
   sceneType: 'action' | 'dialog' | 'endcard';
   sceneOrder: number;
+  audioType: 'none' | 'voiceover' | 'lipsync';
 }
 export interface TransferResponse {
   storyId: string;

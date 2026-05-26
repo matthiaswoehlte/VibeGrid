@@ -19,6 +19,14 @@ import { SceneWarningList } from './SceneWarning';
 import { TransferConfirmModal } from './TransferConfirmModal';
 import { useAppStore } from '@/lib/store';
 import { layoutClips } from '@/lib/sceneflow/clip-layout';
+import {
+  getMediaDuration,
+  getEffectiveAudioDuration
+} from '@/lib/sceneflow/media-duration';
+import {
+  buildAutoDuckCurve,
+  type DuckWindow
+} from '@/lib/sceneflow/auto-duck';
 import type {
   SceneRecord,
   CharacterRecord,
@@ -67,6 +75,7 @@ export function GenerationControls({
   const purgeSceneflowMediaRefs = useAppStore(
     (s) => s.mediaActions.purgeSceneflowMediaRefs
   );
+  const setClipParam = useAppStore((s) => s.timelineActions.setClipParam);
 
   const warnings = validateScenesForGeneration({
     story,
@@ -162,134 +171,225 @@ export function GenerationControls({
    * Transfer — Step 2: apply the payload to the Zustand store
    * (purge → wipe → build tracks → layout clips → setBPM) and
    * navigate to the VibeGrid tab.
+   *
+   * Plan 8d — async because we probe the actual rendered video/audio
+   * durations (HTMLMediaElement preload="metadata") before laying
+   * clips out. The user-intent `scene.duration` from the DB often
+   * doesn't match the real file (lipsync trims to audio length, Kling
+   * pads to its discrete options), and that mismatch makes the
+   * timeline window not match the playable content. Probing takes
+   * ~50-200 ms per file in parallel — added to the existing modal-
+   * close → store-write pipeline, indistinguishable from UI latency.
    */
-  function commitTransfer() {
+  async function commitTransfer() {
     if (!pendingPayload || !userId) return;
     const payload = pendingPayload;
     setModalOpen(false);
+    setBusyTransfer(true);
 
-    // 1. Purge orphan SceneFlow MediaRefs from previous transfers of
-    //    THIS story (different stories' assets stay).
-    purgeSceneflowMediaRefs(payload.storyId, userId);
-    // 2. Wipe the rest (other tracks, FX, manual clips). Tabula rasa.
-    clearAllTracks();
+    try {
+      // 0. Probe REAL durations for every video URL + the sync audio
+      //    in parallel. Falls back to the DB-supplied durationSec on
+      //    timeout / CORS / network error.
+      const accurateDurations = new Map<string, number>();
+      const probes: Promise<void>[] = [];
+      for (const c of payload.clips) {
+        if (!c.videoUrl) continue;
+        probes.push(
+          getMediaDuration(c.videoUrl, 'video').then((d) => {
+            if (d !== null) accurateDurations.set(c.mediaId, d);
+          })
+        );
+      }
+      let syncAudioDurationSec: number | null = null;
+      if (payload.syncAudio) {
+        // Sync-audio uses the silence-aware probe (full decode +
+        // trailing-silence trim) instead of metadata-only — MP3 files
+        // routinely report a 139 s duration when only 33 s is audible
+        // music. Heavier (~1-2 s for a 3 MB file) but the only way to
+        // make the clip-bar reflect the audible end.
+        probes.push(
+          getEffectiveAudioDuration(payload.syncAudio.url).then((d) => {
+            syncAudioDurationSec = d;
+          })
+        );
+      }
+      await Promise.all(probes);
 
-    // 3. BPM — use the song's BPM if present, default 120.
-    const bpm = payload.syncAudio?.bpm ?? 120;
-    setBPM(bpm);
+      // 1. Purge orphan SceneFlow MediaRefs from previous transfers of
+      //    THIS story (different stories' assets stay).
+      purgeSceneflowMediaRefs(payload.storyId, userId);
+      // 2. Wipe the rest (other tracks, FX, manual clips). Tabula rasa.
+      clearAllTracks();
 
-    // 4. Sync-audio track always exists post-transfer (even empty —
-    //    user can drop a song later in VibeGrid). addTrack assigns its
-    //    own UUID; we read it back via getState() right below.
-    addTrack('sync-audio', 'Sync Audio');
-    // addTrack assigns a fresh UUID; find it post-add to know the id.
-    const syncTrack = useAppStore
-      .getState()
-      .timeline.tracks.find((t) => t.kind === 'sync-audio');
-    if (!syncTrack) {
-      toast.error('Sync-Audio-Spur konnte nicht angelegt werden');
-      return;
-    }
+      // 3. BPM — use the song's BPM if present, default 120.
+      const bpm = payload.syncAudio?.bpm ?? 120;
+      setBPM(bpm);
 
-    // 5. Main-video track.
-    addTrack('main-video', 'Main Video');
-    const mainTrack = useAppStore
-      .getState()
-      .timeline.tracks.find((t) => t.kind === 'main-video');
-    if (!mainTrack) {
-      toast.error('Main-Video-Spur konnte nicht angelegt werden');
-      return;
-    }
+      // 4. Sync-audio track always exists post-transfer (even empty —
+      //    user can drop a song later in VibeGrid). addTrack assigns its
+      //    own UUID; we read it back via getState() right below.
+      addTrack('sync-audio', 'Sync Audio');
+      // addTrack assigns a fresh UUID; find it post-add to know the id.
+      const syncTrack = useAppStore
+        .getState()
+        .timeline.tracks.find((t) => t.kind === 'sync-audio');
+      if (!syncTrack) {
+        toast.error('Sync-Audio-Spur konnte nicht angelegt werden');
+        return;
+      }
 
-    // 6. MediaRefs for every clip + the sync audio.
-    for (const c of payload.clips) {
-      const url = c.videoUrl ?? c.imageUrl;
-      if (!url) continue;
-      addMediaRef({
-        id: c.mediaId,
-        kind: c.videoUrl ? 'video' : 'image',
-        url,
-        filename: `scene-${c.sceneOrder}.${c.videoUrl ? 'mp4' : 'jpg'}`,
-        duration: c.durationSec,
-        uploadedAt: new Date().toISOString()
+      // 5. Main-video track.
+      addTrack('main-video', 'Main Video');
+      const mainTrack = useAppStore
+        .getState()
+        .timeline.tracks.find((t) => t.kind === 'main-video');
+      if (!mainTrack) {
+        toast.error('Main-Video-Spur konnte nicht angelegt werden');
+        return;
+      }
+
+      // 6. MediaRefs for every clip + the sync audio. Use probed
+      //    duration when available so re-snap (apply-sync-audio) sees
+      //    the real length too.
+      for (const c of payload.clips) {
+        const url = c.videoUrl ?? c.imageUrl;
+        if (!url) continue;
+        const effectiveDuration =
+          accurateDurations.get(c.mediaId) ?? c.durationSec;
+        addMediaRef({
+          id: c.mediaId,
+          kind: c.videoUrl ? 'video' : 'image',
+          url,
+          filename: `scene-${c.sceneOrder}.${c.videoUrl ? 'mp4' : 'jpg'}`,
+          duration: effectiveDuration,
+          uploadedAt: new Date().toISOString()
+        });
+      }
+      if (payload.syncAudio) {
+        addMediaRef({
+          id: `sync-${payload.storyId}`,
+          kind: 'audio',
+          url: payload.syncAudio.url,
+          filename: 'sync-audio',
+          duration: syncAudioDurationSec ?? undefined,
+          uploadedAt: new Date().toISOString()
+        });
+      }
+
+      // 7. Run the layout algorithm + add main-video clips. Use real
+      //    durations from the probe; fall back to scene.duration on
+      //    probe failure. lipsync clips with probed durations < scene
+      //    intent get an accurate-length window so the video doesn't
+      //    freeze on its last frame past its real end.
+      const layout = layoutClips({
+        clips: payload.clips.map((c) => ({
+          mediaId: c.mediaId,
+          durationSec: accurateDurations.get(c.mediaId) ?? c.durationSec,
+          transition: c.transition,
+          sceneOrder: c.sceneOrder,
+          sceneType: c.sceneType
+        })),
+        bpm,
+        snapMode: payload.snapMode
       });
-    }
-    if (payload.syncAudio) {
-      addMediaRef({
-        id: `sync-${payload.storyId}`,
-        kind: 'audio',
-        url: payload.syncAudio.url,
-        filename: 'sync-audio',
-        uploadedAt: new Date().toISOString()
-      });
-    }
 
-    // 7. Run the layout algorithm + add main-video clips.
-    const layout = layoutClips({
-      clips: payload.clips.map((c) => ({
-        mediaId: c.mediaId,
-        durationSec: c.durationSec,
-        transition: c.transition,
-        sceneOrder: c.sceneOrder,
-        sceneType: c.sceneType
-      })),
-      bpm,
-      snapMode: payload.snapMode
-    });
-    for (const r of layout.clips) {
-      const sourceClip = payload.clips.find((x) => x.mediaId === r.mediaId);
-      if (!sourceClip) continue;
-      addClip({
-        id:
+      // Track lipsync windows in the laid-out timeline so we can build
+      // the auto-duck curve for the sync-audio clip below.
+      const duckWindows: DuckWindow[] = [];
+      const lipsyncClipIds: string[] = [];
+
+      for (const r of layout.clips) {
+        const sourceClip = payload.clips.find((x) => x.mediaId === r.mediaId);
+        if (!sourceClip) continue;
+        const isLipsync = sourceClip.audioType === 'lipsync';
+        const clipId =
           typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
-            : `clip-${r.mediaId}-${Date.now()}`,
-        trackId: mainTrack.id,
-        kind: sourceClip.videoUrl ? 'video' : 'image',
-        mediaId: r.mediaId,
-        startBeat: r.startBeat,
-        lengthBeats: r.lengthBeats,
-        label: `Szene ${sourceClip.sceneOrder}`
-      });
-    }
-    if (payload.syncAudio) {
-      // Sync-audio clip spans the full timeline length (cursor end of
-      // last clip). Audio playback honors clip bounds, so a short audio
-      // file simply ends silent — user can move/trim manually.
-      const lastEnd =
-        layout.clips.reduce(
-          (m, c) => Math.max(m, c.startBeat + c.lengthBeats),
-          0
-        ) || 16;
-      addClip({
-        id:
+            : `clip-${r.mediaId}-${Date.now()}`;
+        addClip({
+          id: clipId,
+          trackId: mainTrack.id,
+          kind: sourceClip.videoUrl ? 'video' : 'image',
+          mediaId: r.mediaId,
+          startBeat: r.startBeat,
+          lengthBeats: r.lengthBeats,
+          label: `Szene ${sourceClip.sceneOrder}`
+        });
+        if (isLipsync) {
+          // Set BOTH params separately so the existing setClipParam
+          // (single-key writer) can do its work without a custom batch.
+          setClipParam(clipId, 'audioEnabled', true);
+          duckWindows.push({
+            startBeat: r.startBeat,
+            endBeat: r.startBeat + r.lengthBeats
+          });
+          lipsyncClipIds.push(clipId);
+        }
+      }
+
+      // 8. Sync-audio clip: length = ACTUAL song duration (not the
+      //    main-video stack length). If the song is shorter than the
+      //    timeline, the user gets silence at the end. If longer, the
+      //    clip overhangs and the user can trim manually. Auto-duck
+      //    curve attached if there are lipsync clips.
+      if (payload.syncAudio) {
+        const songLengthBeats =
+          syncAudioDurationSec !== null && syncAudioDurationSec > 0
+            ? (syncAudioDurationSec * bpm) / 60
+            : // Fallback if metadata probe failed: span the timeline.
+              layout.clips.reduce(
+                (m, c) => Math.max(m, c.startBeat + c.lengthBeats),
+                0
+              ) || 16;
+        const syncClipId =
           typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
-            : `clip-sync-${Date.now()}`,
-        trackId: syncTrack.id,
-        kind: 'audio',
-        mediaId: `sync-${payload.storyId}`,
-        startBeat: 0,
-        lengthBeats: lastEnd,
-        label: 'Sync Audio'
-      });
+            : `clip-sync-${Date.now()}`;
+        addClip({
+          id: syncClipId,
+          trackId: syncTrack.id,
+          kind: 'audio',
+          mediaId: `sync-${payload.storyId}`,
+          startBeat: 0,
+          lengthBeats: songLengthBeats,
+          label: 'Sync Audio'
+        });
+        const duckCurve = buildAutoDuckCurve(duckWindows);
+        if (duckCurve) {
+          setClipParam(syncClipId, 'volume', duckCurve);
+        }
+      }
+
+      setPendingPayload(null);
+
+      const trimmedCount = layout.clips.filter((c) => c.trimmed).length;
+      const lipsyncCount = lipsyncClipIds.length;
+      const probedCount = accurateDurations.size;
+      const totalVideoClips = payload.clips.filter((c) => c.videoUrl).length;
+      toast.success(
+        `${layout.clips.length} Clip(s) auf die Timeline übertragen` +
+          (trimmedCount > 0
+            ? ` · ${trimmedCount} getrimmt auf Snap-Grid`
+            : '') +
+          (lipsyncCount > 0
+            ? ` · ${lipsyncCount} LipSync (Audio on + Duck)`
+            : '') +
+          (probedCount < totalVideoClips
+            ? ` · ${totalVideoClips - probedCount} Dauer-Probe(s) fehlgeschlagen`
+            : '')
+      );
+      for (const w of layout.warnings) {
+        toast.warning(w.message);
+      }
+
+      // 9. Switch to the VibeGrid tab. '/' is a real route under
+      // app/(studio)/page.tsx; typedRoutes inference drops it due to the
+      // route group + storyboard re-export, hence the cast.
+      router.push('/' as Route);
+    } finally {
+      setBusyTransfer(false);
     }
-
-    setPendingPayload(null);
-
-    const trimmedCount = layout.clips.filter((c) => c.trimmed).length;
-    toast.success(
-      `${layout.clips.length} Clip(s) auf die Timeline übertragen` +
-        (trimmedCount > 0 ? ` (${trimmedCount} getrimmt auf Snap-Grid)` : '')
-    );
-    for (const w of layout.warnings) {
-      toast.warning(w.message);
-    }
-
-    // 8. Switch to the VibeGrid tab. '/' is a real route under
-    // app/(studio)/page.tsx; typedRoutes inference drops it due to the
-    // route group + storyboard re-export, hence the cast.
-    router.push('/' as Route);
   }
 
   function cancelTransfer() {

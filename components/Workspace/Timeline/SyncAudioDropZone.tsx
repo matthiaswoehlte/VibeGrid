@@ -2,8 +2,7 @@
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
-import { detectBeats } from '@/lib/audio/beat-detector';
-import { layoutClips } from '@/lib/sceneflow/clip-layout';
+import { applySyncAudioFromArrayBuffer } from '@/lib/sceneflow/apply-sync-audio';
 import { ConfirmReplaceAudioModal } from '@/components/SceneFlow/ConfirmReplaceAudioModal';
 import type { Clip } from '@/lib/timeline/types';
 
@@ -25,10 +24,18 @@ const UUID_V4_RE =
  */
 export function SyncAudioDropZone({
   track,
-  existingClip
+  existingClip,
+  pxPerBeat
 }: {
   track: { id: string; kind: 'sync-audio' };
   existingClip: Clip | null;
+  /** Plan 8d — used to anchor the "↻ Replace" button to the clip's
+   *  right edge instead of the lane's far-right edge (which extends
+   *  past the content via the DROP_HEADROOM_BEATS in
+   *  `computeTotalBeats`). The lane-edge position made it look like
+   *  the timeline ended 16 s after the music — confusing both visually
+   *  and as a user mental model of "where does my project end". */
+  pxPerBeat: number;
 }) {
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -40,17 +47,11 @@ export function SyncAudioDropZone({
   const removeMediaRef = useAppStore((s) => s.mediaActions.removeMediaRef);
   const addClip = useAppStore((s) => s.timelineActions.addClip);
   const removeClip = useAppStore((s) => s.timelineActions.removeClip);
+  const setClipParam = useAppStore((s) => s.timelineActions.setClipParam);
   const replaceMainVideoClips = useAppStore(
     (s) => s.timelineActions.replaceMainVideoClips
   );
   const currentBpm = useAppStore((s) => s.audio.grid.bpm);
-  const currentMediaRefs = useAppStore((s) => s.media.mediaRefs);
-  const mainVideoClips = useAppStore((s) =>
-    s.timeline.clips.filter((c) => {
-      const t = s.timeline.tracks.find((tr) => tr.id === c.trackId);
-      return t?.kind === 'main-video';
-    })
-  );
 
   function pickFile() {
     if (busy) return;
@@ -116,117 +117,51 @@ export function SyncAudioDropZone({
       }
       const upload = (await upRes.json()) as { url: string };
 
-      // Decode + BPM
-      let bpm: number;
-      let durationSec: number;
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const Ctor =
-          (window as unknown as { webkitAudioContext?: typeof AudioContext })
-            .webkitAudioContext ?? AudioContext;
-        const ctx = new Ctor();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        const result = detectBeats({
-          data: audioBuffer.getChannelData(0),
-          sampleRate: audioBuffer.sampleRate
-        });
-        bpm = Math.round(result.bpm);
-        durationSec = audioBuffer.duration;
-        await ctx.close().catch(() => {});
-      } catch (e) {
-        toast.error('BPM-Analyse fehlgeschlagen: ' + (e as Error).message);
-        return;
-      }
-
-      // Remove old clip + mediaRef (if any)
-      if (existingClip) {
-        if (existingClip.mediaId) {
-          const stillReferenced = useAppStore
-            .getState()
-            .timeline.clips.some(
-              (c) => c.id !== existingClip.id && c.mediaId === existingClip.mediaId
-            );
-          if (!stillReferenced) removeMediaRef(existingClip.mediaId);
-        }
-        removeClip(existingClip.id);
-      }
-
-      // Add fresh MediaRef + clip
+      // Read bytes once — shared between addMediaRef (sets duration
+      // after decode) and the apply pipeline. Plan 8d hotfix: the
+      // pipeline also handles BPM-detect + clip layout + auto-duck so
+      // SyncAudioDropZone doesn't duplicate it.
+      const arrayBuffer = await file.arrayBuffer();
       const mediaId = `sync-${id}`;
+
+      // MediaRef is registered up-front so the helper can read it via
+      // getMediaRef during main-video re-layout. Duration is unknown
+      // until decode finishes — the helper updates it implicitly via
+      // its own state read (mediaRef.duration is only used as a hint).
       addMediaRef({
         id: mediaId,
         kind: 'audio',
         url: upload.url,
         filename: file.name,
-        duration: durationSec,
         uploadedAt: new Date().toISOString()
       });
-      setBPM(bpm);
 
-      // Sync-audio clip spans the maximum of (song duration in beats,
-      // current main-video timeline length). Music shorter than the
-      // video sequence still has its clip end at the song end — user
-      // can extend manually later.
-      const songLengthBeats = (durationSec * bpm) / 60;
-      const mainLengthBeats =
-        mainVideoClips.reduce(
-          (m, c) => Math.max(m, c.startBeat + c.lengthBeats),
-          0
-        ) || 0;
-      const clipLengthBeats = Math.max(songLengthBeats, mainLengthBeats) || 16;
-      addClip({
-        id:
-          typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `clip-sync-${Date.now()}`,
-        trackId: track.id,
-        kind: 'audio',
-        mediaId,
-        startBeat: 0,
-        lengthBeats: clipLengthBeats,
-        label: file.name
+      // Snapshot main-video clips and refs at this moment so the helper
+      // sees a consistent state (existingClip is still present; pipeline
+      // removes it).
+      const snapshot = useAppStore.getState();
+      const mainVideoClips = snapshot.timeline.clips.filter((c) => {
+        const t = snapshot.timeline.tracks.find((tr) => tr.id === c.trackId);
+        return t?.kind === 'main-video';
       });
 
-      // Re-layout main-video clips at the new BPM. Snap mode default
-      // 'beat' — VibeGrid doesn't currently know per-story snap (it'd
-      // need a context). For now use 'beat' which matches the default
-      // post-Transfer state.
-      if (mainVideoClips.length > 0) {
-        const sceneRefs = mainVideoClips
-          .map((c) => {
-            if (!c.mediaId) return null;
-            const ref = currentMediaRefs.find((m) => m.id === c.mediaId);
-            return {
-              mediaId: c.mediaId,
-              durationSec: ref?.duration ?? c.lengthBeats * (60 / currentBpm),
-              // We don't have transition metadata on the Clip — use
-              // 'cut' so re-snap stays sequential. Crossfades the user
-              // set up at transfer time get flattened to sequential
-              // here; future fix could persist transition on the clip.
-              transition: 'cut' as const,
-              sceneOrder: 0,
-              sceneType: 'action' as const
-            };
-          })
-          .filter((x): x is NonNullable<typeof x> => x !== null);
-        const layout = layoutClips({
-          clips: sceneRefs,
-          bpm,
-          snapMode: 'beat'
-        });
-        const layoutMap = new Map(
-          layout.clips.map((c) => [
-            c.mediaId,
-            { startBeat: c.startBeat, lengthBeats: c.lengthBeats }
-          ])
-        );
-        replaceMainVideoClips(layoutMap);
-        toast.success(
-          `Song hinzugefügt — BPM ${bpm}, ${mainVideoClips.length} Clip(s) re-snapped`
-        );
-      } else {
-        toast.success(`Song hinzugefügt — BPM ${bpm}`);
-      }
+      await applySyncAudioFromArrayBuffer({
+        arrayBuffer,
+        mediaId,
+        filename: file.name,
+        trackId: track.id,
+        existingClip,
+        mainVideoClips,
+        getMediaRef: useAppStore.getState().mediaActions.getMediaRef,
+        currentBpm,
+        setBPM,
+        addClip,
+        removeClip,
+        removeMediaRef,
+        replaceMainVideoClips,
+        setClipParam,
+        getAllClips: () => useAppStore.getState().timeline.clips
+      });
     } finally {
       setBusy(false);
     }
@@ -257,12 +192,22 @@ export function SyncAudioDropZone({
             : '♪  Drop song here or click to upload'}
         </button>
       ) : (
-        // Existing clip: replace button overlay on the right edge of the lane
+        // Existing clip: Replace button anchored to the clip's right
+        // edge. `left` = clip end in px, minus a few px so the button
+        // overlaps the clip-edge slightly (clear visual anchor) but
+        // never escapes the lane on a heavily zoomed-out view.
         <button
           type="button"
           onClick={pickFile}
           disabled={busy}
-          className="absolute top-1 right-1 text-[9px] uppercase tracking-wider bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] rounded px-1.5 py-0.5 disabled:opacity-50"
+          style={{
+            left:
+              Math.max(
+                0,
+                (existingClip.startBeat + existingClip.lengthBeats) * pxPerBeat - 64
+              )
+          }}
+          className="absolute top-1 text-[9px] uppercase tracking-wider bg-[var(--surface-2)] hover:bg-[var(--surface-3)] border border-[var(--border)] text-[var(--text)] rounded px-1.5 py-0.5 disabled:opacity-50"
           title="Anderen Song wählen"
         >
           {busy ? '…' : '↻ Replace'}
