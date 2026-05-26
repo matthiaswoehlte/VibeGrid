@@ -363,6 +363,41 @@ class VideoDecoderSource {
     this.samples = [];
   }
 
+  /**
+   * Plan 8d — reset the per-source decoder state without re-downloading
+   * the file. Called at the start of every offline export so each render
+   * begins with a deterministic, freshly-configured decoder. Without
+   * this, the cross-export "first-call triggers backward seek + flush"
+   * recovery path runs every export start; in some cases the recovery
+   * mid-run becomes inconsistent (visible as a "video stuck on still
+   * frame" mid-export after 5+ successful runs in the same page
+   * session — observed once FX clips made per-frame time longer).
+   *
+   * Cost: ~50-200 ms per source (close decoder + reconfigure). Cheap
+   * compared to re-fetching + re-demuxing the file (multi-second).
+   */
+  async reset(): Promise<void> {
+    if (!this.decoder) return;
+    // Flush so we don't leak in-flight decoded frames; race a tight
+    // timeout in case flush() hangs (documented Chromium issue).
+    try {
+      await Promise.race([
+        this.decoder.flush(),
+        new Promise<void>((resolve) => setTimeout(resolve, 500))
+      ]);
+    } catch {
+      /* flush errors are non-fatal — proceed with reset */
+    }
+    for (const f of this.outputQueue) f.close();
+    this.outputQueue = [];
+    if (this.decoder.state !== 'closed') this.decoder.close();
+    this.decoder = null;
+    this.nextSampleIdx = 0;
+    // Re-configure a fresh decoder with the same codec+description
+    // (preserved on `this`). Drops every frame that was buffered.
+    this.configureDecoder();
+  }
+
   /** flush() is known to occasionally hang in some Chromium builds when
    *  the decoder is in an inconsistent state. Race against a timeout so
    *  the export doesn't freeze; if the timeout fires we proceed with
@@ -445,6 +480,14 @@ export interface VideoDecoderPool {
   getFrameAt(mediaId: string, timeSec: number): Promise<VideoFrame | null>;
   /** mediaIds for which load() has succeeded. */
   loadedIds(): string[];
+  /**
+   * Plan 8d — reset every loaded source's decoder so the next render
+   * starts deterministic. Closes queued frames, re-creates each
+   * VideoDecoder with the same codec config, rewinds `nextSampleIdx`
+   * to 0. The demuxed sample list is preserved (no re-fetch). Safe to
+   * call before each export.
+   */
+  resetAllSources(): Promise<void>;
   /** Close every cached frame, close every decoder. Idempotent. */
   destroy(): void;
 }
@@ -489,6 +532,11 @@ export function createVideoDecoderPool(): VideoDecoderPool | null {
     },
     loadedIds() {
       return [...sources.keys()];
+    },
+    async resetAllSources() {
+      await Promise.all(
+        [...sources.values()].map((s) => s.reset())
+      );
     },
     destroy() {
       for (const source of sources.values()) source.destroy();

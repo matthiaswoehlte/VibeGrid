@@ -217,6 +217,27 @@ export function useVideoExporter({
             return;
           }
 
+          // Plan 8d — reset every loaded decoder source so each export
+          // starts deterministic. Without this, the pool carries state
+          // from previous exports in the same page session: each
+          // export-start triggers a backward-seek + flush recovery on
+          // every source, and after enough cumulative runs (observed:
+          // ~5 exports, especially when per-frame time grew due to
+          // additional FX clips) one source ends up stuck delivering
+          // the same frame for the rest of the export. Reset is
+          // ~50-200 ms per source; cheap vs re-downloading.
+          if (videoDecoderPool) {
+            try {
+              await videoDecoderPool.resetAllSources();
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn(
+                '[useVideoExporter] decoder-pool reset failed (proceeding):',
+                err
+              );
+            }
+          }
+
           // Plan 5.9d — derive the offline-render deps from the live
           // timeline. mixAudioOffline consumes the audio clips + the
           // audio-enabled video clips and emits one mixed buffer.
@@ -238,7 +259,25 @@ export function useVideoExporter({
             .filter((vc) => vc.url !== '');
 
           const fps = 30;
-          const audioDurationSec = audioBuffer.duration;
+          // Plan 8d — export length comes from the TIMELINE content end,
+          // NOT the audio buffer's full duration. MP3s routinely have
+          // 100+ s of trailing silence padded after the music (we
+          // already trim that from the on-timeline clip via
+          // `findEffectiveAudioEndSec`). If we kept using
+          // `audioBuffer.duration` the exporter would still render the
+          // silent tail — exported file 2-4× the actual content length.
+          // The audio mixer (mixAudioOffline) outputs silence past the
+          // clip's lengthBeats, so we're safe to set the export
+          // duration to the last clip's end across ALL tracks (audio +
+          // video + FX). Min 1 s as a floor so a 0-clip timeline still
+          // produces a valid (if uninteresting) file.
+          const lastClipEndBeats = timeline.clips.length > 0
+            ? Math.max(
+                ...timeline.clips.map((c) => c.startBeat + c.lengthBeats)
+              )
+            : 0;
+          const lastClipEndSec = (lastClipEndBeats * 60) / bpm;
+          const audioDurationSec = Math.max(lastClipEndSec, 1);
           const totalFrames = Math.ceil(audioDurationSec * fps);
           offlineAbortRef.current = new AbortController();
           setExportState({
