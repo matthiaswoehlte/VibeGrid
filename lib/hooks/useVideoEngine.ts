@@ -4,6 +4,60 @@ import { useAppStore } from '@/lib/store';
 import { createVideoEngine, type VideoEngine } from '@/lib/video/engine';
 import type { TimelineState, Clip } from '@/lib/timeline/types';
 import type { MediaRef } from '@/lib/storage/types';
+import type { AppState } from '@/lib/store/types';
+
+// Plan 8d — drift tolerance for native video playback vs the audio-
+// driven timeline clock. The two clocks aren't bit-identical, so we
+// only seek-correct when the drift exceeds this; otherwise we let
+// native playback advance at its own rate (re-seeking every frame
+// would interrupt the decoder and visibly stutter).
+const VIDEO_DRIFT_TOLERANCE_S = 0.2;
+
+/**
+ * Plan 8d — for a video mediaId, find the clip that is currently
+ * ACTIVE at the playhead (any clip whose [startBeat, startBeat +
+ * lengthBeats) contains the current beat), and compute the source-
+ * relative time the video element should be at.
+ *
+ * Returns null when no referencing clip is active. The caller should
+ * pause the element in that case.
+ *
+ * This is the live-preview counterpart of the offline-render formula:
+ *   sourceTime = globalTime - clipStartSec + sourceInPointSec
+ * documented in docs/architecture/export-pipeline.md ("Source-relative
+ * Time-Mapping"). Without it, multi-clip-per-track scenarios (e.g. a
+ * SceneFlow Transfer with four scene clips on one main-video track)
+ * leave scenes 2-N frozen on whatever frame the native decoder
+ * happened to deliver when the user hit Play.
+ */
+function findActiveSourceTime(
+  state: AppState,
+  mediaId: string
+): { sourceTimeSec: number; videoDurationHint: number | null } | null {
+  const beats = state.timeline.playhead.beats;
+  const bpm = state.audio.grid.bpm || 120;
+  for (const clip of state.timeline.clips) {
+    if (clip.mediaId !== mediaId) continue;
+    if (clip.kind !== 'video') continue;
+    if (beats < clip.startBeat || beats >= clip.startBeat + clip.lengthBeats) {
+      continue;
+    }
+    const sourceInPointSec =
+      (clip.params as { sourceInPointSec?: number } | undefined)
+        ?.sourceInPointSec ?? 0;
+    const sourceTimeSec =
+      ((beats - clip.startBeat) * 60) / bpm + sourceInPointSec;
+    // mediaRef.duration is a hint — useful to know when target exceeds
+    // the source's actual length so we freeze on the last frame rather
+    // than letting the video element loop back to 0 on play().
+    const ref = state.media.mediaRefs.find((m) => m.id === mediaId);
+    return {
+      sourceTimeSec,
+      videoDurationHint: ref?.duration ?? null
+    };
+  }
+  return null;
+}
 
 export interface UseVideoEngineReturn {
   /** Stable accessor across re-renders. Returns `null` when the
@@ -43,6 +97,9 @@ export function useVideoEngine(): UseVideoEngineReturn {
   // stable `getElement` closure can read the latest engine without
   // capturing a stale value through the React state.
   const [engine, setEngine] = useState<VideoEngine | null>(null);
+  // Hand for the load()-success path to invoke the latest
+  // syncVideoPlayback closure (captured fresh on each engine init).
+  const syncOnLoadRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -117,6 +174,12 @@ export function useVideoEngine(): UseVideoEngineReturn {
         () => {
           // Success — drop the entry so future re-additions get a clean slate.
           retryState.delete(mediaId);
+          // Plan 8d — immediately sync the newly-loaded element's
+          // play/pause/currentTime against the current timeline state.
+          // Without this, a scene that finishes loading AFTER the user
+          // hit Play stays paused at frame 0 forever (the subscription
+          // already fired with this mediaId NOT in loadedIds()).
+          syncOnLoadRef.current?.();
         },
         (err: unknown) => {
           if (isPermanentError(err)) {
@@ -199,6 +262,70 @@ export function useVideoEngine(): UseVideoEngineReturn {
       }
     }
 
+    /**
+     * Plan 8d — per-clip playback sync. Replaces the old engine.play()-
+     * everything approach which broke multi-clip-per-track scenarios.
+     *
+     * For each loaded video element:
+     *  - If a clip referencing it is active at the current playhead AND
+     *    the timeline is playing: seek to source-relative time (only if
+     *    drift exceeds tolerance) and play().
+     *  - If active but timeline paused: seek to source-relative time
+     *    and ensure the element is paused (for scrubbing).
+     *  - If no referencing clip is active: pause the element.
+     *
+     * Called from the subscription on every relevant state change AND
+     * from the load() success path so newly-loaded videos get into
+     * sync the moment their bytes arrive.
+     */
+    function syncVideoPlayback(state: AppState): void {
+      if (!newEngine) return;
+      const isPlaying = state.timeline.playhead.playing;
+      for (const mediaId of newEngine.loadedIds()) {
+        const el = newEngine.getElement(mediaId);
+        if (!el) continue;
+        const active = findActiveSourceTime(state, mediaId);
+        if (!active) {
+          // No referencing clip active at the playhead — pause and reset
+          // to the start so the next time this video becomes active we
+          // see frame 0 rather than wherever native playback drifted to.
+          if (!el.paused) el.pause();
+          if (el.currentTime !== 0) {
+            try {
+              el.currentTime = 0;
+            } catch {
+              /* ignore — element may not yet be seekable */
+            }
+          }
+          continue;
+        }
+        // Clamp target to the video duration (the clip can outlast the
+        // source if snap rounding stretched lengthBeats — without the
+        // clamp, play() on a video at currentTime>=duration loops back
+        // to 0 and we get a flicker at the boundary).
+        const target =
+          active.videoDurationHint !== null && active.videoDurationHint > 0
+            ? Math.min(active.sourceTimeSec, active.videoDurationHint - 0.01)
+            : active.sourceTimeSec;
+        if (Math.abs(el.currentTime - target) > VIDEO_DRIFT_TOLERANCE_S) {
+          try {
+            el.currentTime = Math.max(0, target);
+          } catch {
+            /* not seekable yet — will retry next tick */
+          }
+        }
+        if (isPlaying) {
+          if (el.paused) {
+            el.play().catch(() => {
+              /* autoplay-blocked is OK; user re-clicks Play */
+            });
+          }
+        } else if (!el.paused) {
+          el.pause();
+        }
+      }
+    }
+
     // Initial reconcile — load anything already in the rehydrated store.
     const initial = useAppStore.getState();
     reconcile(initial.timeline, initial.media.mediaRefs);
@@ -213,24 +340,23 @@ export function useVideoEngine(): UseVideoEngineReturn {
         reconcile(state.timeline, state.media.mediaRefs);
       }
 
-      // Play / pause sync.
-      const wasPlaying = prev.timeline.playhead.playing;
-      const isPlaying = state.timeline.playhead.playing;
-      if (isPlaying && !wasPlaying) newEngine.play();
-      if (!isPlaying && wasPlaying) newEngine.pause();
-
-      // Seek-while-paused: user is scrubbing.
+      // Per-clip playback sync — fires on play/pause toggle, on every
+      // playhead-beats advance, and when clips themselves change (so
+      // newly-added clips immediately get into sync).
       if (
-        !isPlaying &&
-        state.timeline.playhead.beats !== prev.timeline.playhead.beats
+        state.timeline.playhead.playing !== prev.timeline.playhead.playing ||
+        state.timeline.playhead.beats !== prev.timeline.playhead.beats ||
+        state.timeline.clips !== prev.timeline.clips
       ) {
-        const grid = state.audio.grid;
-        const sec =
-          (state.timeline.playhead.beats * 60) / grid.bpm +
-          grid.offsetMs / 1000;
-        void newEngine.seekAllTo(sec);
+        syncVideoPlayback(state);
       }
     });
+
+    // Expose syncVideoPlayback to the load-success path via a closure-
+    // captured reference. Newly-loaded videos need an immediate sync —
+    // they weren't in `loadedIds()` when the last subscriber tick ran.
+    syncOnLoadRef.current = () =>
+      syncVideoPlayback(useAppStore.getState());
 
     return () => {
       // Cancel any pending retry timers so they don't fire after the
@@ -242,6 +368,7 @@ export function useVideoEngine(): UseVideoEngineReturn {
       unsub();
       newEngine.destroy();
       engineRef.current = null;
+      syncOnLoadRef.current = null;
       setEngine(null);
     };
   }, []);

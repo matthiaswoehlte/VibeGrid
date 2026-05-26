@@ -388,14 +388,22 @@ if (typeof window !== 'undefined') {
     playsInline = true;
     src = '';
     preload = '';
+    // Plan 8d — `paused` mirrors real HTMLMediaElement default-true and
+    // tracks play()/pause() calls. useVideoEngine's per-clip play
+    // orchestration gates on `el.paused` to avoid redundant play()/
+    // pause() spam, so the mock has to model it.
+    paused = true;
     onloadedmetadata: (() => void) | null = null;
     onloadeddata: (() => void) | null = null;
     onseeked: (() => void) | null = null;
     onerror: (() => void) | null = null;
     async play(): Promise<void> {
+      this.paused = false;
       return undefined;
     }
-    pause(): void {}
+    pause(): void {
+      this.paused = true;
+    }
     load(): void {
       queueMicrotask(() => {
         this.onloadedmetadata?.();
