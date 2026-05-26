@@ -113,8 +113,16 @@ export function VoicePicker({
 
   function stop() {
     if (audioRef.current) {
+      // Detach event handlers BEFORE clearing src — Chrome fires another
+      // `error` event when src is cleared on an element that already had
+      // a source, which would re-trigger the toast and re-enter stop()
+      // in an infinite loop.
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
-      audioRef.current.src = '';
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
+      audioRef.current = null;
     }
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
@@ -146,7 +154,17 @@ export function VoicePicker({
       audioRef.current = audio;
       audio.onended = () => stop();
       audio.onerror = () => {
-        toast.error('Audio-Wiedergabe fehlgeschlagen');
+        // Surface the HTMLMediaElement error code so we can tell
+        // decode-failure (3) from network-issue (2) from
+        // unsupported-codec (4) without DevTools open.
+        const code = audio.error?.code;
+        const codeName =
+          code === 1 ? 'ABORTED'
+          : code === 2 ? 'NETWORK'
+          : code === 3 ? 'DECODE'
+          : code === 4 ? 'SRC_NOT_SUPPORTED'
+          : 'UNKNOWN';
+        toast.error(`Audio-Wiedergabe fehlgeschlagen (${codeName})`);
         stop();
       };
       await audio.play();
@@ -224,10 +242,10 @@ export function VoicePicker({
                         type="button"
                         onClick={() => pickVoice(v.id)}
                         className={
-                          'w-full flex items-center gap-2 text-left px-2 py-1 text-xs ' +
+                          'w-full flex items-center gap-2 text-left px-2 py-1 text-xs border-l-2 ' +
                           (isPicked
-                            ? 'bg-[var(--a1)]/30 text-[var(--text)]'
-                            : 'text-[var(--text)] hover:bg-[var(--surface-3)]')
+                            ? 'bg-[var(--surface-3)] text-[var(--text)] border-[var(--a1)]'
+                            : 'text-[var(--text)] hover:bg-[var(--surface-3)] border-transparent')
                         }
                       >
                         <span className="flex-1 truncate">
