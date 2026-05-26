@@ -1,8 +1,8 @@
 'use client';
 import { useAppStore } from '@/lib/store';
-import { getPlugin } from '@/lib/renderer/registry';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import { isReservedParamKey } from '@/lib/timeline/overlap';
+import { getClipParamSchema } from '@/lib/timeline/clip-schema';
 import type { AutomationCurve } from '@/lib/automation/types';
 import { AutomationPoint as PointDot } from './AutomationPoint';
 import { AutomationCurvePath } from './AutomationCurvePath';
@@ -25,16 +25,20 @@ export function AutomationLane({
   const clip = useAppStore((s) => s.timeline.clips.find((c) => c.id === clipId));
 
   if (!clip) return null;
-  if (!clip.fxId) return null;
-  const plugin = getPlugin(clip.fxId);
-  if (!plugin) return null;
+  // Plan 8d — resolve schema via the shared helper so audio clips
+  // (which have a built-in synthetic Volume slider schema) also get
+  // a preview lane when their volume param is automated. The old
+  // `if (!clip.fxId) return null` gate hid the lane for any non-FX
+  // clip.
+  const schema = getClipParamSchema(clip);
+  if (!schema) return null;
 
   const params = (clip.params ?? {}) as Record<string, unknown>;
   // Only slider params with active automation curves are visualised. Reserved
   // keys (__blend etc.) are filtered out — they're internal.
-  const automated = Object.entries(plugin.paramSchema).filter(([k, schema]) => {
+  const automated = Object.entries(schema).filter(([k, s]) => {
     if (isReservedParamKey(k)) return false;
-    return schema.kind === 'slider' && isAutomationCurve(params[k]);
+    return s.kind === 'slider' && isAutomationCurve(params[k]);
   });
   if (automated.length === 0) return null;
 

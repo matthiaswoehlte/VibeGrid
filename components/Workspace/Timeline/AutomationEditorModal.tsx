@@ -4,6 +4,10 @@ import { useAppStore } from '@/lib/store';
 import { getPlugin } from '@/lib/renderer/registry';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import { isReservedParamKey } from '@/lib/timeline/overlap';
+import {
+  getClipParamSchema,
+  getClipDefaultParams
+} from '@/lib/timeline/clip-schema';
 import type { AutomationCurve } from '@/lib/automation/types';
 import { ParamControl } from '@/components/ui/ParamControl';
 import { AutomateButton } from '../Inspector/AutomateButton';
@@ -41,19 +45,22 @@ export function AutomationEditorModal() {
     return () => window.removeEventListener('keydown', onKey);
   }, [editorClipId, setEditorClip]);
 
-  if (!editorClipId || !clip || !clip.fxId) return null;
-  const plugin = getPlugin(clip.fxId);
-  if (!plugin) return null;
+  // Plan 8d — schema resolution via the shared helper so audio clips
+  // (which carry a synthetic Volume schema) can open the editor too.
+  // Previously gated on clip.fxId which only FX clips have.
+  if (!editorClipId || !clip) return null;
+  const schema = getClipParamSchema(clip);
+  if (!schema) return null;
 
   const params = {
-    ...(plugin.getDefaultParams() as Record<string, unknown>),
+    ...getClipDefaultParams(clip),
     ...(clip.params ?? {})
   };
 
   // Split the schema into automated-sliders (big curve editor) and
   // everything-else (compact Inspector-style controls). Reserved __ params
   // never appear in either list.
-  const schemaEntries = Object.entries(plugin.paramSchema).filter(
+  const schemaEntries = Object.entries(schema).filter(
     ([k]) => !isReservedParamKey(k)
   );
   const automated = schemaEntries.filter(
@@ -79,7 +86,15 @@ export function AutomationEditorModal() {
       <div className="bg-[var(--surface-1)] border border-[var(--border)] rounded-lg shadow-2xl w-[90vw] h-[85vh] max-w-[1400px] flex flex-col">
         <header className="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-2)]">
           <div>
-            <div className="text-sm font-bold text-[var(--text)]">{plugin.name}</div>
+            <div className="text-sm font-bold text-[var(--text)]">
+              {/* FX clip: use the plugin name. Audio clip: a friendly
+                  default — the clip.label below already shows the filename. */}
+              {clip.fxId
+                ? (getPlugin(clip.fxId)?.name ?? 'Automation')
+                : clip.kind === 'audio'
+                  ? 'Audio Clip'
+                  : 'Automation'}
+            </div>
             <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">
               Automation editor — {clip.label}
             </div>

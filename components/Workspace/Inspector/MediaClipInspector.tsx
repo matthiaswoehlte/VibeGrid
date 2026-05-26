@@ -1,5 +1,6 @@
 'use client';
 import { useAppStore } from '@/lib/store';
+import { isAutomationCurve } from '@/lib/automation/resolve';
 import { VolumeSection } from './VolumeSection';
 import { VideoAudioToggle } from './VideoAudioToggle';
 import type { Clip } from '@/lib/timeline/types';
@@ -11,15 +12,26 @@ import type { Clip } from '@/lib/timeline/types';
  * Header shows `mediaRef.filename` when a media binding exists,
  * falls back to a kind-specific label ("Audio Clip" / "Video Clip")
  * for slots that haven't been bound yet.
+ *
+ * Plan 8d — when any of the clip's params has been converted to an
+ * AutomationCurve (e.g. the auto-duck volume curve laid down on the
+ * sync-audio clip by the Transfer flow), the "Open editor" link
+ * appears just like in the FX clip view. Without this, an automated
+ * audio clip showed the "automated" badge but had no way to open
+ * the full-screen AutomationEditorModal.
  */
 export function MediaClipInspector({ clip }: { clip: Clip }) {
   const mediaRef = useAppStore((s) =>
     clip.mediaId ? s.media.mediaRefs.find((m) => m.id === clip.mediaId) : undefined
   );
+  const openEditor = useAppStore((s) => s.setAutomationEditorClipId);
   const headerLabel =
     mediaRef?.filename
     ?? (clip.kind === 'audio' ? 'Audio Clip' : 'Video Clip');
   const kindLabel = clip.kind === 'audio' ? 'Audio clip' : 'Video clip';
+  const hasAutomation = Object.values(clip.params ?? {}).some((v) =>
+    isAutomationCurve(v)
+  );
 
   return (
     <div className="space-y-3">
@@ -36,6 +48,17 @@ export function MediaClipInspector({ clip }: { clip: Clip }) {
       <div className="px-3 space-y-2">
         {clip.kind === 'audio' && <VolumeSection clip={clip} />}
         {clip.kind === 'video' && <VideoAudioToggle clip={clip} />}
+        {hasAutomation && (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => openEditor(clip.id)}
+              className="text-xs text-[var(--a2)] underline hover:text-[var(--a1)]"
+            >
+              Open editor
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
