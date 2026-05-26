@@ -217,6 +217,45 @@ Drei Bestandteile:
 
 Diese Architektur ist explizit dafür ausgelegt, dass später eine Trim-UI dazukommt, ohne den Render-Pfad anfassen zu müssen.
 
+### Live-Preview hatte denselben Bug — Plan 8d Hotfix
+
+**Stand 2026-05-26:** Bis Plan 8d war der einzige Multi-Clip-pro-Track-
+Workflow in der Live-Preview "ein Image-Track mit zwei Bildern" —
+keine Source-Relative-Time-Berechnung nötig (Bilder sind statisch).
+Mit Plan 8d's `main-video`-Spur (4 SceneFlow-Szenen sequentiell auf
+einer Spur) trat die Live-Preview in dieselbe Falle wie der frühere
+Offline-Export:
+
+`useVideoEngine` hatte einen globalen `engine.play()`-Aufruf, der
+ALLE geladenen Videos gleichzeitig vom aktuellen `currentTime`
+abspielen ließ. Was passierte:
+
+- Szene 1: spielt von t=0 ihre echte Dauer durch (z.B. 5 s),
+  hält dann am letzten Frame an (Video hat ended-Event gefeuert).
+  User sieht "freeze mid clip 1".
+- Szenen 2-N: wurden ASYNCHRON von R2 nachgeladen. Als der
+  globale `play()` lief, waren sie noch nicht in `loadedIds()` —
+  sie wurden also nie gestartet. Stehen für immer auf Frame 0.
+
+**Fix:** dieselbe `globalTime - clipStartSec + sourceInPointSec`-
+Formel ist jetzt auch in der Live-Preview. `useVideoEngine`
+orchestriert PRO LOADED VIDEO ELEMENT:
+
+- Wenn der Playhead innerhalb eines referenzierenden Clips ist:
+  `el.currentTime` auf source-relative Sekunde syncen (nur bei
+  Drift > 200 ms, sonst native Wiedergabe laufen lassen).
+- Wenn `timeline.playhead.playing` true: `el.play()`.
+- Wenn der Playhead außerhalb liegt: `el.pause()` + zurück auf
+  Frame 0 (damit der nächste Wechsel auf diese Spur bei Frame 0
+  startet, nicht bei der Driftposition).
+- Neu geladene Videos kriegen via `syncOnLoadRef`-Callback einen
+  sofortigen Sync, sobald `load()` resolved — sonst bleiben sie
+  bis zum nächsten Store-Tick auf Frame 0.
+
+Code: `lib/hooks/useVideoEngine.ts:syncVideoPlayback`. Tests in
+`tests/unit/hooks/useVideoEngine.test.tsx` unter dem describe-Block
+"Plan 8d — per-clip source-relative play orchestration".
+
 ---
 
 ## Bytes-Cache: Warum & Wie

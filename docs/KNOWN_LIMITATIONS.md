@@ -729,6 +729,137 @@ hot-paths.
 
 ---
 
+## SceneFlow Timeline Integration (Plan 8d)
+
+Plan 8d shipped 2026-05-25: "Transfer to Timeline" rebuilds the
+VibeGrid timeline from a SceneFlow story — optional sync-audio,
+optional beat-snap, deterministic per-scene mediaIds.
+
+### Wipe-on-Transfer (kein Merge)
+
+Jeder Transfer **löscht alle Timeline-Tracks und Clips** sowie alle
+SceneFlow-eigenen MediaRefs des aktuellen Users für genau diese
+Story (URL-Match auf `/sceneflow/{userId}/{storyId}/`) und baut die
+Timeline neu auf. Andere User-Daten (Image, Audio, FX, manuell
+hochgeladene Songs) bleiben unberührt **wenn sie nicht in der
+gewipten Timeline lagen** — aber: jede Timeline-Arbeit, die seit
+dem letzten Transfer hinzugefügt wurde, ist nach dem Transfer weg.
+Confirm-Modal mit Pflicht-Checkbox erzwingt explizite Bestätigung.
+
+**Begründung:** Merge-Logik (welches Clip ist neu? was hat sich am
+Snap geändert? wo verschiebe ich existierende FX-Clips?) wäre
+komplex und fehleranfällig. Wipe ist deterministisch.
+
+### Singleton-Tracks: main-video, sync-audio
+
+Beide TrackKinds sind 1-pro-Story. Im "+ Track hinzufügen"-Picker
+erscheinen sie nur, wenn nicht bereits vorhanden. Es gibt
+**keine Drag-Reorder**-Implementierung für Tracks im aktuellen
+Stand — die Render-Reihenfolge wird ausschließlich vom
+`sortedTracks(tracks)`-Selector erzwungen (sync-audio first,
+dann main-video, dann der Rest in Original-Reihenfolge).
+
+### Beat-Snap (off | beat | bar)
+
+Layout-Algorithmus ist **rein deterministisch**: Szenen-Dauer in
+Sekunden → Beats via BPM → optional auf nächste Beat-Grenze oder
+Bar-Grenze (4 Beats) gesnapped. Crossfade-Guard: `effectiveCrossfade
+= min(crossfadeBeats, floor(lengthBeats / 2))` — eine 1-Beat-Szene
+kann nicht 2 Beats crossfaden. Kein perceptual onset-matching, kein
+DTW. "Beat" heißt hier "BPM-Grid", nicht "echte Schlag-Position im
+Audio".
+
+### Sync-Audio: BPM-Detect läuft im Browser
+
+Beim Upload eines Songs (StorySetupForm oder SyncAudioDropZone)
+läuft `detectBeats(channelData, sampleRate)` direkt im Browser
+über die erste Kanal-Spur. Großdateien (>3 MB) zeigen einen
+Toast-Hinweis vorab, weil `decodeAudioData` + Analyse synchron
+einige Sekunden blocken können. Kein Worker. Kein Server-side
+detect-Fallback.
+
+### BPM-Detect: Algorithmus + Tempo-Octave-Ambiguität
+
+Der Detector arbeitet mit:
+1. Half-wave-rectified **energy flux** (max(0, Δenergy)) — hebt
+   percussive Transients hervor, ignoriert sustained Energie.
+2. Peak-picking mit ±40 ms Local-Max-Fenster + 50 ms Refractory.
+3. **Tempogram** via Inter-Onset-Interval-Paar-Histogramm:
+   für jedes Onset-Paar innerhalb 1.5 s wird der Gap gebinned (5 ms
+   Auflösung). Jeder BPM-Kandidat in [60, 200] wird mit der Summe
+   der Histogramm-Gewichte an seiner Grund- und 2/3/4-fachen
+   Periode bewertet (mit Faktor 1/m).
+4. Parabolische Interpolation um den Peak für Sub-Bin-Präzision.
+
+Plan-8d-Bugfix: User hat 122-BPM-Hardrock gemeldet, der als 188 BPM
+erkannt wurde (3:2-Harmonik durch Median-basiertes Verfahren).
+Mit dem neuen Algorithmus → 122 ± 0 (verifiziert mit echter
+VibeGridDemo-Rock.mp3, 139.7 s, 296 Onsets, Confidence 1.000).
+
+**Verbleibende Limitation:** bei langsamen Stücken (≤110 BPM) mit
+gleichmäßigem 8tel-Hi-Hat-Pattern kann der Detector die doppelte
+BPM melden (200 statt 100), weil die Hi-Hats auf dem doppelten
+Tempo-Grid mehr harmonische Multiples akkumulieren als die
+Kick/Snare auf dem Original-Grid. **Workaround:** die BPM ist
+in der Topbar manuell editierbar — User können nach Auto-Detect
+den Wert halbieren/verdoppeln und dann re-snappen.
+
+Spezifische Test-Aussagen (verifiziert):
+- Echte VibeGridDemo-Rock.mp3 (122 BPM laut Quelle) → 122 ✓
+- 122 BPM synthetic (Kick+Snare+Hi-Hat) → 122 ✓
+- 130-150 BPM (gemixt) → ±2 ✓
+- 220 BPM Click-Track → 110 (geoktavt down) ✓
+- 100 BPM gemixt Hi-Hat-Pattern → ~200 (bekannte 2×-Limitation)
+
+### Re-Snap bei Song-Wechsel: Transition-Verlust
+
+`SyncAudioDropZone` ruft nach BPM-Detect `replaceMainVideoClips(...)`
+mit `transition: 'cut'` für jeden Main-Video-Clip auf. **Crossfades,
+die beim ursprünglichen Transfer aus den Szenen-`transition`-Feldern
+übernommen wurden, gehen verloren** — die Clips landen sequentiell
+ohne Überlappung. Workaround: vor Song-Wechsel manuell merken
+welche Szenen Crossfades hatten und nach dem Re-Snap per
+Erneut-Transfer aus SceneFlow regenerieren.
+
+### `existingClip.label` ist `file.name`, nicht der Original-Songtitel
+
+Sync-Audio-Clip-Label wird beim Upload aus dem File-Namen
+abgeleitet. Wer ein Re-Encode mit anderem Filename hochlädt,
+sieht im Timeline-Label den neuen Filename — die Story-Tabelle
+selbst speichert keine Music-Metadata (Title/Artist/Album).
+
+### `videoLoadProgress` bleibt für gewipte mediaRefs liegen — nicht mehr
+
+`purgeSceneflowMediaRefs(storyId, userId)` und `removeMediaRef(id)`
+löschen den zugehörigen `videoLoadProgress`-Eintrag mit, damit
+keine toten Progress-Balken in der UI verbleiben. Diese Aufräum-
+Logik gilt **nur** für SceneFlow-Wipes — andere mediaRef-Lebenszyklen
+(Image, Standalone-Audio, FX) sind davon nicht betroffen.
+
+### Endcard-Dauer hart 5 Sekunden (server-side resolution)
+
+`/api/sceneflow/stories/[id]/transfer` setzt für Endcard-Szenen
+**immer** `durationSec = ENDCARD_DEFAULT_DURATION_SEC = 5`,
+unabhängig von dem Wert in `scene.duration`. Begründung: Endcards
+haben kein Video, nur ein Bild — eine Story-Editor-Eingabe für
+"3 Sekunden" wäre für Renderer-Kompatibilität konfliktanfällig.
+Wer eine andere Endcard-Dauer braucht, muss `ENDCARD_DEFAULT_DURATION_SEC`
+in `lib/sceneflow/clip-layout.ts` ändern (zentral) und das auch
+Backend-seitig spiegeln.
+
+### Migration 008: `VG_projects` wurde gewiped
+
+Die TrackKind-Erweiterung um `main-video` + `sync-audio` war
+nicht persist-schema-kompatibel mit gespeicherten v6-Projekten,
+die nur `image|video|audio|fx` kannten. Migration 008 hat
+**alle Zeilen in `public.VG_projects` gelöscht**, statt einen
+Schema-Migrator zu pflegen. User-Daten in anderen Tabellen
+(VG_stories, VG_scenes, VG_characters, VG_credit_*) sind nicht
+betroffen. Bei späteren TrackKind-Änderungen sollte ein
+Zustand-`migrate()`-Hook gegenüber Wipe der bevorzugte Weg sein.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
