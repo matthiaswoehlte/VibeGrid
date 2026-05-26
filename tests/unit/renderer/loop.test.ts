@@ -207,4 +207,85 @@ describe('renderer loop tick', () => {
     const calls = (ctx as unknown as { __calls: Array<{ method: string }> }).__calls;
     expect(calls.some((c) => c.method === 'arc')).toBe(true);
   });
+
+  // Plan 8d regression — Transfer-to-Timeline puts video clips on a
+  // `main-video` TRACK (with `clip.kind: 'video'`). An earlier version
+  // of the loop only treated `track.kind === 'video'` as a video lane,
+  // so transferred SceneFlow clips were loaded by useVideoEngine but
+  // never drawn. This regression test guards against re-introducing
+  // that gap.
+  it('renders video clips on a main-video track (Plan 8d singleton)', () => {
+    const videoEl = {
+      readyState: 4,
+      videoWidth: 1920,
+      videoHeight: 1080
+    } as unknown as HTMLVideoElement;
+    const { ctx, deps } = makeDeps({
+      getCurrentTime: () => 0,
+      getVideoElement: () => videoEl,
+      getTimelineState: () => ({
+        tracks: [
+          { id: 'tmv', kind: 'main-video', name: 'Main Video', muted: false, order: 0 }
+        ],
+        clips: [
+          {
+            id: 'mv1',
+            trackId: 'tmv',
+            kind: 'video',
+            mediaId: 'scene-1',
+            startBeat: 0,
+            lengthBeats: 8,
+            label: 'Szene 1'
+          }
+        ],
+        playhead: { beats: 0, playing: true },
+        zoom: 1,
+        snap: 'beat'
+      })
+    });
+    const renderer = createRenderer(deps);
+    renderer.tick();
+    const calls = (ctx as unknown as {
+      __calls: Array<{ method: string; args: unknown[] }>;
+    }).__calls;
+    const drawCalls = calls.filter((c) => c.method === 'drawImage');
+    expect(drawCalls.length).toBeGreaterThan(0);
+    // First drawImage must be the video element — not the background paint.
+    expect(drawCalls[0].args[0]).toBe(videoEl);
+  });
+
+  it('skips main-video track when its single clip is outside the playhead', () => {
+    const videoEl = { readyState: 4 } as unknown as HTMLVideoElement;
+    const { ctx, deps } = makeDeps({
+      getCurrentTime: () => 0,
+      getVideoElement: () => videoEl,
+      getTimelineState: () => ({
+        tracks: [
+          { id: 'tmv', kind: 'main-video', name: 'Main Video', muted: false, order: 0 }
+        ],
+        clips: [
+          {
+            // Clip starts at beat 100 — playhead at beat 0 → inactive.
+            id: 'mv1',
+            trackId: 'tmv',
+            kind: 'video',
+            mediaId: 'scene-1',
+            startBeat: 100,
+            lengthBeats: 8,
+            label: 'Szene 1'
+          }
+        ],
+        playhead: { beats: 0, playing: false },
+        zoom: 1,
+        snap: 'beat'
+      })
+    });
+    const renderer = createRenderer(deps);
+    renderer.tick();
+    const calls = (ctx as unknown as {
+      __calls: Array<{ method: string; args: unknown[] }>;
+    }).__calls;
+    // Background paint, no drawImage.
+    expect(calls.find((c) => c.method === 'drawImage')).toBeUndefined();
+  });
 });

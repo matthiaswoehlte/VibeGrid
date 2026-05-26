@@ -308,7 +308,13 @@ export function createRenderer(deps: RendererDeps): Renderer {
     let ownsFirstImageBitmap = false;
     for (const track of timeline.tracks) {
       const isImage = track.kind === 'image';
-      const isVideo = track.kind === 'video';
+      // Plan 8d — `main-video` is a SceneFlow-owned singleton track that
+      // carries clips of `kind: 'video'`. The renderer treats it
+      // identically to a regular `'video'` track. Without this, the
+      // transfer pipeline drops video clips onto a track the renderer
+      // skips, and the canvas stays black despite the video elements
+      // being loaded by useVideoEngine (which only checks CLIP kind).
+      const isVideo = track.kind === 'video' || track.kind === 'main-video';
       if (!isImage && !isVideo) continue;
       if (track.muted) continue;
       const ic = activeClipOnTrack(track.id, timeline.clips, beats);
