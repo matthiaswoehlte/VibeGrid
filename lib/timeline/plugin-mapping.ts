@@ -24,7 +24,17 @@ export const TRACK_FX_KINDS = [
   'zoom-pulse',
   'text',
   'dissolve',
-  'sunray'
+  'sunray',
+  // Plan 8e — 9 new beat-sync FX kinds.
+  'beat-flash',
+  'rgb-split',
+  'zoom-punch',
+  'screen-shake',
+  'vignette-breathe',
+  'lens-flare-burst',
+  'film-grain-burst',
+  'glitch-slice',
+  'letterbox-squeeze'
 ] as const;
 
 export type TrackFxKind = (typeof TRACK_FX_KINDS)[number];
@@ -35,14 +45,29 @@ export type TrackFxKind = (typeof TRACK_FX_KINDS)[number];
  *  Sunray is directional light; Text always on top. Order matches
  *  the old PascalCase RENDER_ORDER in lib/renderer/loop.ts. */
 export const RENDER_ORDER_TRACK_KIND = [
+  // Image-modifying FX (re-draw the frame on a transformed context).
   'dissolve',
   'contour',
   'zoom-pulse',
+  // Plan 8e — new image-modifying FX, layered after the existing ones.
+  'rgb-split',
+  'zoom-punch',
+  'screen-shake',
+  'glitch-slice',
+  // Overlay FX (paint on top of whatever was drawn underneath).
   'sweep',
   'particles',
   'pulse',
   'sunray',
-  'text'
+  // Plan 8e — new overlay FX.
+  'beat-flash',
+  'vignette-breathe',
+  'lens-flare-burst',
+  'film-grain-burst',
+  // Text always above the rest of the overlay stack.
+  'text',
+  // Letterbox is the geometric mask — must paint over EVERYTHING.
+  'letterbox-squeeze'
 ] as const satisfies readonly TrackFxKind[];
 
 /** Lookup index — unknown kinds sort to the end. */
@@ -64,7 +89,17 @@ export type PluginFxKind =
   | 'ZoomPulse'
   | 'Text'
   | 'Dissolve'
-  | 'Sunray';
+  | 'Sunray'
+  // Plan 8e — 9 new beat-sync FX kinds.
+  | 'BeatFlash'
+  | 'RGBSplit'
+  | 'ZoomPunch'
+  | 'ScreenShake'
+  | 'VignetteBreathe'
+  | 'LensFlareBurst'
+  | 'FilmGrainBurst'
+  | 'GlitchSlice'
+  | 'LetterboxSqueeze';
 
 /** PascalCase → lowercase. The Particle ↔ particles name asymmetry
  *  is the only non-trivial entry — singular plugin name, plural
@@ -78,7 +113,17 @@ export const PLUGIN_KIND_TO_TRACK_KIND: Record<PluginFxKind, TrackFxKind> = {
   ZoomPulse: 'zoom-pulse',
   Text: 'text',
   Dissolve: 'dissolve',
-  Sunray: 'sunray'
+  Sunray: 'sunray',
+  // Plan 8e — 9 new beat-sync FX kinds.
+  BeatFlash: 'beat-flash',
+  RGBSplit: 'rgb-split',
+  ZoomPunch: 'zoom-punch',
+  ScreenShake: 'screen-shake',
+  VignetteBreathe: 'vignette-breathe',
+  LensFlareBurst: 'lens-flare-burst',
+  FilmGrainBurst: 'film-grain-burst',
+  GlitchSlice: 'glitch-slice',
+  LetterboxSqueeze: 'letterbox-squeeze'
 };
 
 /** Inverse of PLUGIN_KIND_TO_TRACK_KIND — used by the renderer to
@@ -91,7 +136,17 @@ export const TRACK_KIND_TO_PLUGIN_KIND: Record<TrackFxKind, PluginFxKind> = {
   'zoom-pulse': 'ZoomPulse',
   text: 'Text',
   dissolve: 'Dissolve',
-  sunray: 'Sunray'
+  sunray: 'Sunray',
+  // Plan 8e — 9 new beat-sync FX kinds.
+  'beat-flash': 'BeatFlash',
+  'rgb-split': 'RGBSplit',
+  'zoom-punch': 'ZoomPunch',
+  'screen-shake': 'ScreenShake',
+  'vignette-breathe': 'VignetteBreathe',
+  'lens-flare-burst': 'LensFlareBurst',
+  'film-grain-burst': 'FilmGrainBurst',
+  'glitch-slice': 'GlitchSlice',
+  'letterbox-squeeze': 'LetterboxSqueeze'
 };
 
 /** Human-readable label shown in the Inspector header and clip-band. */
@@ -103,7 +158,17 @@ export const FX_DISPLAY_NAME: Record<TrackFxKind, string> = {
   'zoom-pulse': 'Zoom Pulse',
   text: 'Text',
   dissolve: 'Dissolve',
-  sunray: 'Sunray'
+  sunray: 'Sunray',
+  // Plan 8e — 9 new beat-sync FX.
+  'beat-flash': 'Beat Flash',
+  'rgb-split': 'RGB Split',
+  'zoom-punch': 'Zoom Punch',
+  'screen-shake': 'Screen Shake',
+  'vignette-breathe': 'Vignette Breathe',
+  'lens-flare-burst': 'Lens Flare',
+  'film-grain-burst': 'Film Grain',
+  'glitch-slice': 'Glitch Slice',
+  'letterbox-squeeze': 'Letterbox'
 };
 
 /** Clip-band background color in the Timeline UI. Keep contrast vs
@@ -123,5 +188,16 @@ export const FX_CLIP_COLORS: Record<TrackFxKind, string> = {
   particles: '#2ee0d0',    // teal — matches --a3 (electric default)
   text: '#6a3a7a',
   dissolve: '#3a5a3a',
-  sunray: '#7a6a1a'
+  sunray: '#7a6a1a',
+  // Plan 8e — 9 new beat-sync FX. Distinct hues, all 6-digit hex
+  // (Clip.tsx appends a 2-digit alpha suffix — see comment on this map).
+  'beat-flash': '#f5d76e',          // warm yellow flash
+  'rgb-split': '#ff5a8a',           // hot pink — channel-shift vibe
+  'zoom-punch': '#5a7aff',          // bold blue
+  'screen-shake': '#ff9a3a',        // orange — high-energy
+  'vignette-breathe': '#2a3a5a',    // deep navy — vignette/dark theme
+  'lens-flare-burst': '#ffe89a',    // pale gold — light flare
+  'film-grain-burst': '#8a8a8a',    // neutral grey — film noise
+  'glitch-slice': '#7aff7a',        // acid green — glitch palette
+  'letterbox-squeeze': '#1a1a1a'    // near-black — cinema bars
 };

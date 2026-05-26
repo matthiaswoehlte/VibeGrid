@@ -37,7 +37,17 @@ export type FxKind =
   // Plan 5.8a — three new FX kinds.
   | 'Text'
   | 'Dissolve'
-  | 'Sunray';
+  | 'Sunray'
+  // Plan 8e — 9 new beat-sync FX kinds.
+  | 'BeatFlash'
+  | 'RGBSplit'
+  | 'ZoomPunch'
+  | 'ScreenShake'
+  | 'VignetteBreathe'
+  | 'LensFlareBurst'
+  | 'FilmGrainBurst'
+  | 'GlitchSlice'
+  | 'LetterboxSqueeze';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;

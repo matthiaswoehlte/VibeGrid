@@ -210,6 +210,46 @@ function drawImageContain(
   ctx.drawImage(src, sx, sy, sw, sh);
 }
 
+/**
+ * Plan 8e — `object-fit: contain` rect for FX plugins that re-draw the
+ * frame on a transformed context (ZoomPunch, ScreenShake, RGBSplit,
+ * GlitchSlice). Returns the destination rect (sx, sy, sw, sh) that
+ * matches what `drawImageContain` would use, so FX produce a frame
+ * geometrically identical to the main image pass — no stretch, no
+ * letterbox mismatch.
+ *
+ * Caller guarantees `rc.imageBitmap` exists (Kategorie-A FX gate on it).
+ */
+export function containRect(rc: RenderContext): {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+} {
+  const bm = rc.imageBitmap!;
+  const scale = Math.min(rc.width / bm.width, rc.height / bm.height);
+  const sw = bm.width * scale;
+  const sh = bm.height * scale;
+  const sx = (rc.width - sw) / 2;
+  const sy = (rc.height - sh) / 2;
+  return { sx, sy, sw, sh };
+}
+
+/**
+ * Plan 8e — kinds whose `render()` requires `rc.imageBitmap`. The Plan-8d
+ * world only had Contour + ZoomPulse on this list; Plan 8e adds the new
+ * image-modifying FX (ZoomPunch, ScreenShake, RGBSplit, GlitchSlice). FX
+ * outside this set work on a pure-overlay canvas and need no bitmap.
+ */
+const IMAGE_MODIFYING_KINDS: ReadonlySet<string> = new Set([
+  'Contour',
+  'ZoomPulse',
+  'ZoomPunch',
+  'ScreenShake',
+  'RGBSplit',
+  'GlitchSlice'
+]);
+
 export function createRenderer(deps: RendererDeps): Renderer {
   if (!isClient()) {
     throw new Error('Renderer cannot be created outside the browser');
@@ -438,10 +478,11 @@ export function createRenderer(deps: RendererDeps): Renderer {
         ?? (pluginKind ? listPluginsByKind(pluginKind)[0] : undefined);
       if (!plugin) continue;
 
-      // Contour reads rc.imageBitmap for Canny edges; ZoomPulse re-draws
-      // the bitmap with a scale transform. Both require a bitmap. Pulse,
-      // Sweep, Particle paint pure overlays and work on a black canvas.
-      if ((plugin.kind === 'Contour' || plugin.kind === 'ZoomPulse') && !imageBitmap) continue;
+      // Image-modifying FX (Contour, ZoomPulse + Plan 8e additions) re-draw
+      // the bitmap on a transformed context — all require `rc.imageBitmap`.
+      // Pure-overlay FX (Pulse, Sweep, Particle, BeatFlash, Vignette, etc.)
+      // work on whatever was painted underneath and skip this gate.
+      if (IMAGE_MODIFYING_KINDS.has(plugin.kind) && !imageBitmap) continue;
 
       const guard = lastFiredBeatGuard(nearestBeatIndex, lastFiredByClip.get(clip.id) ?? null);
       const shouldFire = phase.isOnBeat && guard.shouldFire;

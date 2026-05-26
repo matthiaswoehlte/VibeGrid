@@ -9,17 +9,50 @@ import {
 } from '@/lib/timeline/plugin-mapping';
 
 describe('plugin-mapping — FX kind constants & helpers', () => {
-  it('TRACK_FX_KINDS contains exactly the 8 lowercase FX kinds', () => {
+  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8e: 17 kinds)', () => {
     expect([...TRACK_FX_KINDS].sort()).toEqual([
+      'beat-flash',
       'contour',
       'dissolve',
+      'film-grain-burst',
+      'glitch-slice',
+      'lens-flare-burst',
+      'letterbox-squeeze',
       'particles',
       'pulse',
+      'rgb-split',
+      'screen-shake',
       'sunray',
       'sweep',
       'text',
-      'zoom-pulse'
-    ]);
+      'vignette-breathe',
+      'zoom-pulse',
+      'zoom-punch'
+    ].sort());
+  });
+
+  it('Plan 8e — all 9 new FX kinds are present', () => {
+    const plan8e = [
+      'beat-flash',
+      'rgb-split',
+      'zoom-punch',
+      'screen-shake',
+      'vignette-breathe',
+      'lens-flare-burst',
+      'film-grain-burst',
+      'glitch-slice',
+      'letterbox-squeeze'
+    ] as const;
+    for (const k of plan8e) {
+      expect((TRACK_FX_KINDS as readonly string[]).includes(k)).toBe(true);
+      expect(RENDER_ORDER_TRACK_KIND.indexOf(k as never)).toBeGreaterThanOrEqual(0);
+      expect(FX_DISPLAY_NAME[k as never]).toBeTruthy();
+      expect(TRACK_KIND_TO_PLUGIN_KIND[k as never]).toBeTruthy();
+    }
+  });
+
+  it('Plan 8e — letterbox-squeeze is the LAST entry in RENDER_ORDER (paints over all)', () => {
+    expect(RENDER_ORDER_TRACK_KIND[RENDER_ORDER_TRACK_KIND.length - 1]).toBe('letterbox-squeeze');
   });
 
   it('RENDER_ORDER_TRACK_KIND covers every FX kind exactly once', () => {

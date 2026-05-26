@@ -860,6 +860,50 @@ Zustand-`migrate()`-Hook gegenüber Wipe der bevorzugte Weg sein.
 
 ---
 
+## Plan 8e — FX-Pack caveats
+
+### RGBSplit channel isolation is a composite-tint approximation
+RGBSplit uses `multiply` with `rgba(255,0,0,1)` / `rgba(0,0,255,1)` on
+two per-clip offscreens to isolate the red and blue channels of the
+shifted bitmap copies. Because Canvas2D `multiply` operates on
+premultiplied alpha, bright pixels may leak a tinge into the suppressed
+channels — perceptually a "red shadow" can show faint green/blue at the
+brightest highlights. Acceptable trade-off vs. an ImageData pixel-loop,
+which would cost ~2M ops/frame per channel at 1080p. If pixel-accurate
+isolation is needed in a future revision, route through an ImageData
+path with a documented perf budget.
+
+### FilmGrainBurst performance scaling
+At `grainSize=1` the FX writes a fresh ImageData of `canvas.width ×
+canvas.height × 4` bytes per frame within the decay window — ~8 MB
+allocation + 2M `Math.random()` calls at 1080p. `grainSize=2` cuts that
+by 75%, `grainSize=4` by 94%. The decay window is short (default 0.15
+beats ≈ 75 ms at 120 BPM), so cost is bounded per beat. Long sessions
+with many overlapping FilmGrain clips on a low-end CPU may stutter; the
+recommended mitigation is to bump `grainSize` rather than lower the
+beat rate.
+
+### Per-clip offscreens leak across clip removal
+RGBSplit, FilmGrainBurst, and GlitchSlice each maintain a
+`Map<clipId, OffscreenCanvas>` keyed by `RenderContext.clipId`.
+`FxPlugin.dispose()` clears these maps, but `dispose()` only fires on
+plugin re-registration (HMR + page reload). In a long edit session
+where the user adds and removes many clips, the maps grow unbounded;
+at 1080p each entry is ~8 MB (FilmGrain) or 2 × 8 MB (RGBSplit).
+Export pipeline is unaffected (export renders rebuild the renderer).
+HMR / page reload restores baseline. A future revision could subscribe
+to clip-remove events from the store and prune by clipId.
+
+### ColorGradeShift deferred to Plan 8f
+The originally-planned ColorGradeShift FX (saturate/contrast/hue
+rotation per beat) relied on `ctx.filter`, which is not reliably
+supported on `OffscreenCanvas` in Safari/iOS WebKit. Live preview
+would render correctly but the offline export pass would produce a
+no-op for the FX. Deferred to Plan 8f, expected to land alongside a
+WebGL-backed renderer slot or an ImageData-based color matrix.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._

@@ -102,7 +102,17 @@ export function activeFxClipsByKind(
     'zoom-pulse': [],
     text: [],
     dissolve: [],
-    sunray: []
+    sunray: [],
+    // Plan 8e — 9 new beat-sync FX kinds.
+    'beat-flash': [],
+    'rgb-split': [],
+    'zoom-punch': [],
+    'screen-shake': [],
+    'vignette-breathe': [],
+    'lens-flare-burst': [],
+    'film-grain-burst': [],
+    'glitch-slice': [],
+    'letterbox-squeeze': []
   };
   for (const c of state.clips) {
     // Skip media-bearing clips — they're handled outside this selector.
