@@ -894,6 +894,37 @@ Export pipeline is unaffected (export renders rebuild the renderer).
 HMR / page reload restores baseline. A future revision could subscribe
 to clip-remove events from the store and prune by clipId.
 
+### Preset Pack preview button is disabled in v0.1
+The Play button on pack cards and FX rows in the Preset-Pack browser
+renders as a disabled icon with a "Preview coming soon" tooltip.
+Implementing a real 2-second preview would require hijacking the
+render loop, allocating a temporary FX stack, and restoring state on
+button release — a meaningful chunk of work. Deferred to Plan 9a-v2
+alongside the cloud preset marketplace.
+
+### Preset Pack `displayTriggerLabel` is display-only
+Pack entries with `displayTriggerLabel: '1/6'` or `'1/8'` still fire
+at the per-beat cadence the renderer enforces. The label preserves
+design fidelity with the prototype that promised sub-beat trigger
+divisions. Genuine sub-beat triggering arrives in Plan 10+ together
+with a renderer-level trigger granularity setting.
+
+### Preset Pack track-rename breaks `findOrCreateFxTrack` re-use
+`findOrCreateFxTrack` matches existing FX tracks by `track.name ===
+fxKind` (PascalCase, e.g. `'ZoomPunch'`). If a user renames the track
+in the timeline panel ("Kick FX"), a second Apply of the same pack
+will create a NEW track instead of layering onto the renamed one.
+Acceptable for v0.1; a per-track `meta.fxKind` tag could solve it
+later, but that's overkill until users hit the case in practice.
+
+### Preset Pack curves authored clip-relative; flow-mode mismatch
+Built-in packs author automation curves in clip-relative beats (0 =
+clip onset). `apply-pack.ts` offsets points by `startBeat` so they
+read correctly in Beat Mode (the default). If the user toggles Flow
+Mode after applying a pack, the resolver stretches each curve over
+the full clip length — packs were not designed for that. Acceptable
+for v0.1; documented here so the surprise is searchable.
+
 ### ColorGradeShift deferred to Plan 8f
 The originally-planned ColorGradeShift FX (saturate/contrast/hue
 rotation per beat) relied on `ctx.filter`, which is not reliably

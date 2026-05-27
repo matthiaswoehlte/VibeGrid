@@ -8,6 +8,7 @@ import { Stage } from './Stage';
 import { Timeline } from './Timeline';
 import { Inspector } from './Inspector';
 import { AutomationEditorModal } from './Timeline/AutomationEditorModal';
+import { WorkspaceHeader } from './WorkspaceHeader';
 
 const TIMELINE_MIN_PX = 120;
 const STAGE_MIN_PX = 160;
@@ -59,12 +60,20 @@ export function Workspace({
   }, []);
 
   return (
-    <div className="flex flex-1 min-h-0">
-      {/* Desktop LeftPanel — hidden on Mobile; MediaDrawer + FXDrawer
-          (mounted in page.tsx) take over the same content. */}
-      <aside className="hidden md:block w-64 shrink-0 border-r border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
-        <LeftPanel />
-      </aside>
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Plan 9a — global header above the workspace flex. Fixed height
+          (~40px); the inner flex retains the LeftPanel/Stage/Inspector
+          arrangement so Mobile Stage's h-[40vh] math (Plan 5.10) stays
+          intact. Hidden on Mobile where the TabBar takes its place. */}
+      <div className="hidden md:block">
+        <WorkspaceHeader />
+      </div>
+      <div className="flex flex-1 min-h-0">
+        {/* Desktop LeftPanel — hidden on Mobile; MediaDrawer + FXDrawer
+            (mounted in page.tsx) take over the same content. */}
+        <aside className="hidden md:block w-64 shrink-0 border-r border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
+          <LeftPanel />
+        </aside>
       <main className="flex-1 flex flex-col min-w-0">
         {/* On Desktop the Stage flex-grows above the resize handle; on
             Mobile the Stage component itself locks to h-[40vh] (Plan 5.10
@@ -140,13 +149,14 @@ export function Workspace({
           <Timeline engine={engine} />
         </div>
       </main>
-      {/* Desktop Inspector — hidden on Mobile; InspectorSheet (mounted in
-          page.tsx) takes over with a bottom-sheet UX. */}
-      {inspectorOpen && (
-        <aside className="hidden md:block w-72 shrink-0 border-l border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
-          <Inspector />
-        </aside>
-      )}
+        {/* Desktop Inspector — hidden on Mobile; InspectorSheet (mounted in
+            page.tsx) takes over with a bottom-sheet UX. */}
+        {inspectorOpen && (
+          <aside className="hidden md:block w-72 shrink-0 border-l border-[var(--border)] bg-[var(--surface-1)] overflow-y-auto">
+            <Inspector />
+          </aside>
+        )}
+      </div>
       <AutomationEditorModal />
     </div>
   );

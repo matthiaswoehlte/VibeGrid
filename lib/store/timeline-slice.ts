@@ -178,6 +178,10 @@ export const createTimelineSlice: StateCreator<
             ]
           }
         }));
+        // Plan 9a — return the generated id so callers (e.g.
+        // findOrCreateFxTrack in lib/presets/store-bridge.ts) can use
+        // it without needing a second `tracks.find()` round-trip.
+        return id;
       },
       removeTrack: (trackId) => {
         const t = get().timeline;

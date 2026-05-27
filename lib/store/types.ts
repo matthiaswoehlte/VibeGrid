@@ -39,7 +39,10 @@ export interface TimelineActions {
    *  soft-rejects via toast (no throw) — Multi-Audio is parked for
    *  Plan 5.9d. The AddTrackButton picker only exposes image / video
    *  / fx. */
-  addTrack(kind: TrackKind, label?: string): void;
+  /** Plan 9a — returns the generated track id so callers (e.g. the
+   *  preset-pack store-bridge) can immediately reference the new track
+   *  without an extra `tracks.find()` lookup. */
+  addTrack(kind: TrackKind, label?: string): string;
   /** Removes a track. Throws if any clip has `trackId === id`. */
   removeTrack(trackId: string): void;
   /** Reorders `tracks[]` to match the given id sequence. Unknown ids are
