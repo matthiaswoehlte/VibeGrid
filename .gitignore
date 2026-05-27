@@ -58,3 +58,17 @@ Thumbs.db
 # Local CC1 launch prompt at the repo root — copy/paste content, never shared
 # (CC2 launch prompt is now repo-tracked at docs/Tests/CC2_START_PROMPT.md)
 /CC1_START_PROMPT.md
+
+# Local junk drops at repo root — debug screenshots, scratch notes,
+# audio test files. Real documentation belongs in /docs, never the root.
+/TODO.txt
+/Contour*.png
+/a[0-9]*.png
+/POstenaustausch*
+/tts-preview-test.mp3
+
+# Word / Excel / PowerPoint temp lock files (created next to the open file)
+~$*
+
+# Large local demo recordings — keep on disk for reference, never commit
+docs/Tests/Demoszene/Recording*.mp4
