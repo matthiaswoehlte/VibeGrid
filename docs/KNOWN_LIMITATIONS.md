@@ -925,13 +925,126 @@ Mode after applying a pack, the resolver stretches each curve over
 the full clip length — packs were not designed for that. Acceptable
 for v0.1; documented here so the surprise is searchable.
 
-### ColorGradeShift deferred to Plan 8f
+### ColorGradeShift (Plan 8f.1 — shipped via WebGL2)
 The originally-planned ColorGradeShift FX (saturate/contrast/hue
 rotation per beat) relied on `ctx.filter`, which is not reliably
-supported on `OffscreenCanvas` in Safari/iOS WebKit. Live preview
-would render correctly but the offline export pass would produce a
-no-op for the FX. Deferred to Plan 8f, expected to land alongside a
-WebGL-backed renderer slot or an ImageData-based color matrix.
+supported on `OffscreenCanvas` in Safari/iOS WebKit. Plan 8f.1 ships
+the FX via a WebGL2-backed renderer slot — GLSL fragment shader,
+per-clip OffscreenCanvas, composited back onto the main 2D canvas. See
+"WebGL2 requirement" below.
+
+### WebGL2 requirement (Plan 8f.1 onward)
+WebGL2-backed FX (`ColorGradeShift`, plus future Plan-8g effects) require
+Safari 17+ (Sept 2023), Chrome 69+, or Firefox 105+. On older browsers
+the effect is skipped silently in the render and the Inspector shows a
+"WebGL2 not available" banner over the param controls. Live-preview and
+exports both honour the same skip — no half-rendered output.
+
+### WebGL composite bandwidth
+Each WebGL2 FX blits its OffscreenCanvas result onto the main 2D canvas
+via `drawImage` per frame. At 1080p that's ~8 MB/frame, at 4K ~32 MB/
+frame, multiplied by the count of active WebGL FX. Thermal-limited
+mobile devices may drop FPS under sustained 4K WebGL load — the
+auto-scaler progressively halves the WebGL OffscreenCanvas dimensions
+(scale 1.0 → 0.75 → 0.5) when avg FPS sinks under 45.
+
+### Quality auto-scaling warm-up
+For the first 30 frames after the renderer mounts (~0.5 s at 60 FPS),
+the rolling FPS window has not stabilised and the auto-scaler is
+inactive. Persistent low-FPS conditions only begin to trigger
+scale-downs after that baseline window. The QualityIndicator badge in
+the WorkspaceHeader reflects the live scale.
+
+### Multi-Select: selectedClipId is a synced compat-field (Plan 9b)
+`ui.selectedClipIds: string[]` is the source-of-truth for clip
+selection. `ui.selectedClipId: string | null` (singular) is kept
+in sync as a compat-field: it mirrors `selectedClipIds[0]` when the
+selection has exactly one clip, otherwise `null`. Every action that
+mutates `selectedClipIds` (`selectClips`, `addToSelection`,
+`clearSelection`, `duplicateSelectedClips`, `deleteSelectedClips`,
+`removeClip`) must update the singular field in the same `set()`
+call. Architect chose this over a derived selector to keep the 43+
+existing consumers (Inspector, AutomationEditor, Mobile
+InspectorSheet, etc.) untouched.
+
+### Resize-Min-Clamp: per-clip, not group-coordinated (Plan 9b)
+`resizeSelectedClips` clamps each clip independently at `lengthBeats
+= 0.5`. When the group is dragged enough to push the shortest clip
+to the minimum, relative length-ratios within the group drift —
+shorter clips clamp first while longer ones keep shrinking.
+Architect-Decision L4: the alternative (block the resize for the
+whole group once any one clip is at min) would make resizing a mixed
+selection feel "stuck", which is worse UX in DAW conventions. The
+ratio-drift is acceptable.
+
+### Ctrl+D Duplicate-Offset: rightmost-edge minus leftmost-edge (Plan 9b)
+Ctrl+D duplicates the selection at an offset equal to the span of
+the current selection (`max(startBeat + lengthBeats) -
+min(startBeat)`). So duplicates begin exactly where the originals
+end, with no overlap. This is the Logic Pro / Ableton convention.
+
+### Duplicate-Overlap: silent skip (Plan 9b)
+`duplicateSelectedClips` skips any duplicate that would land at the
+exact same `(trackId, startBeat)` as a clip that already exists.
+Architect-Decision L2: consistent with Plan 9a (preset-pack apply).
+The toast shows "X of Y clips duplicated (Z overlap)" when at least
+one was skipped.
+
+### Group-Move: same-track overlaps are allowed (Plan 9b)
+`moveSelectedClips` only clamps so no clip lands below `startBeat 0`.
+Same-track overlaps with NON-selected clips are NOT prevented — they
+are renderable via Plan 5.6's `__blend` cross-fade mechanism. If a
+group-move would create an unwanted overlap, the user undoes (Ctrl+Z
+when available) or moves the colliding clip out of the way first.
+
+### Group-Resize: edge-handle UI not yet wired (Plan 9b, deferred)
+The store action `resizeSelectedClips(delta, edge)` is implemented
+and tested, but the per-clip resize handle in `Clip.tsx` still
+operates on single clips only. Wiring the handle to dispatch a
+group-resize when the active clip is part of a multi-selection is
+follow-up work (small scope, no new architecture).
+
+### Contour edge-extraction spike (Plan 9b follow-up)
+Contour edge detection (Sobel + flood-fill) is synchronous on the
+main thread. Per-extract cost is bounded by `EDGE_SCALE = 0.5`
+(half-resolution Sobel — 4× less pixel work) and the spike sits in
+the 50–125 ms range on 1080p sources. On dense / high-detail frames
+it can still reach 200 ms+ — that's a single-frame stall visible as
+a brief stutter.
+
+**What we did to mitigate:**
+- Half-resolution Sobel + nearest-neighbor downscale + in-place
+  coordinate upscale (perf commit 974b427).
+- Beat-triggered re-extraction (perf commit 51ca920): the spike is
+  pinned to musical beat boundaries instead of 500 ms video-bucket
+  transitions, so the visual edge-refresh reads as intentional rather
+  than as a glitch. Max 1 extract per beat per clip → at 120 BPM
+  that's 2 extracts/s/clip instead of the previous 2/s decoupled
+  from the music.
+
+**Trade-offs accepted:**
+- Edges on a moving video clip update once per beat, not on every
+  frame. Within a beat window, the previous beat's edges are reused
+  even if the video advanced through a 500 ms bucket. Visually
+  subtle — edges visually "stick" between beats.
+- On extremely dense edge frames (forest, dense crowd, text-heavy)
+  the per-extract cost can still exceed 100 ms. Future option: move
+  extraction to a Web Worker (would eliminate main-thread blocking
+  entirely; deferred — not in this plan's scope).
+
+**Why we did NOT lower `EDGE_SCALE` below 0.5:**
+Tested empirically at 0.25. Quarter-resolution Sobel produces MORE
+paths via aliasing on detailed sources, which raises per-frame
+polyline-render cost enough to net-negate the extract savings. Also
+introduced pathological max-spike on certain frames (a single
+extract on a connected-component-heavy frame went from 191 ms to
+363 ms). 0.5 is the sweet spot for this codebase.
+
+**Why the mark-on-push flood-fill rewrite was reverted:**
+V8 inlines the variadic `stack.push(a, b, c, ..., h)` call better
+than 8 separate `tryPush()` function calls in a closure. The
+allocation savings from pre-checking neighbors do NOT outweigh the
+closure call overhead at the edge densities our 540p Sobel produces.
 
 ---
 
