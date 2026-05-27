@@ -6,6 +6,13 @@ import type { AutomationSnap } from '@/lib/automation/snap';
 import type { ExportState } from '@/lib/export/types';
 import type { MobileUIState, MobileUIActions } from './mobile-ui-slice';
 import type { AppMode } from './app-mode-slice';
+import type { HistoryState } from './history-types';
+import type { RecordingSet } from './recording-set';
+
+// Plan 10 — re-export so external callers (NewProjectButton,
+// Transport, deserialize) can import without coupling to the
+// recording-set module path.
+export type { RecordingSet };
 
 export interface UIState {
   zoom: number;
@@ -152,6 +159,21 @@ export interface MediaActions {
 
 export interface AppState {
   ui: UIState;
+  /** Plan 10 — bounded undo / redo history. Transient (never persisted). */
+  history: HistoryState;
+  /** Plan 10 — global recording-set action. External callers
+   *  (NewProjectButton, Transport, deserialize) invoke via
+   *  `useAppStore.getState().recordingSet(...)`. ESLint enforces that
+   *  no direct `set()` / `useAppStore.setState()` calls bypass this. */
+  recordingSet: RecordingSet;
+  /** Plan 10 — pop one entry off `past`, push current state onto `future`. */
+  undo(): void;
+  /** Plan 10 — pop one entry off `future`, push current state onto `past`. */
+  redo(): void;
+  /** Plan 10 — wipe both past and future stacks. Called by
+   *  `lib/project/deserialize.ts` after a successful project-load so
+   *  Ctrl+Z doesn't reach across project boundaries. */
+  clearHistory(): void;
   setZoom(zoom: number): void;
   setSelectedClipId(id: string | null): void;
   /** Plan 9b — replace the current selection with `ids`. Pass `[]` to clear. */
