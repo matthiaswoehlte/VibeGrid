@@ -24,7 +24,15 @@ export const createAppModeSlice: StateCreator<
   [],
   [],
   AppModeState & AppModeActions
-> = (set) => ({
+> = (_set, get) => ({
   appMode: initialAppModeState.appMode,
-  setAppMode: (appMode) => set({ appMode })
+  // Plan 10 — Undo: transient — skip (top-level workspace mode)
+  setAppMode: (appMode) =>
+    get().recordingSet(
+      'AppMode',
+      (s) => {
+        s.appMode = appMode;
+      },
+      { skip: true }
+    )
 });

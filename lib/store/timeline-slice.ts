@@ -97,80 +97,98 @@ export const createTimelineSlice: StateCreator<
   // Closes over the slice's `set` — avoids fragile Parameters<typeof …>[0]
   // indirection. No-op when clip or key is missing, and when transform returns
   // the same reference (used by isAutomationCurve guards).
+  // Plan 10 — small helper to route a clip-param patch through
+  // recordingSet so each one becomes a proper history entry.
   const patchClipParam = (
     clipId: string,
     key: string,
-    transform: (current: unknown) => unknown
+    transform: (current: unknown) => unknown,
+    label: string,
+    options?: { coalesce?: boolean }
   ): void => {
-    set((state) => ({
-      timeline: {
-        ...state.timeline,
-        clips: state.timeline.clips.map((c) => {
-          if (c.id !== clipId) return c;
-          const params = c.params ?? {};
-          if (!(key in params)) return c;
-          const next = transform(params[key]);
-          if (next === params[key]) return c;
-          return { ...c, params: { ...params, [key]: next } };
-        })
-      }
-    }));
+    get().recordingSet(
+      label,
+      (state) => {
+        state.timeline = {
+          ...state.timeline,
+          clips: state.timeline.clips.map((c) => {
+            if (c.id !== clipId) return c;
+            const params = c.params ?? {};
+            if (!(key in params)) return c;
+            const next = transform(params[key]);
+            if (next === params[key]) return c;
+            return { ...c, params: { ...params, [key]: next } };
+          })
+        };
+      },
+      options
+    );
   };
 
   return {
     timeline: initialTimelineState,
     timelineActions: {
+      // Plan 10 — addClip records as own history entry. Label uses
+      // clip kind so the Undo tooltip is informative ("Add Pulse").
       addClip: (clip) => {
-        const intermediate = ops.addClip(get().timeline, clip);
-        set({ timeline: regenerateBlendsForTrack(intermediate, clip.trackId) });
+        get().recordingSet(`Add ${clip.kind}`, (s) => {
+          const intermediate = ops.addClip(s.timeline, clip);
+          s.timeline = regenerateBlendsForTrack(intermediate, clip.trackId);
+        });
       },
+      // Plan 10 — coalesce: true. See Plan-10-Rev3 Modul 6 / W2
+      // comment: consecutive moves fold into one Undo step. Constant
+      // label "Move Clip" preserves Label-Match (W8).
       moveClip: (clipId, newStartBeat) => {
         const current = get().timeline.clips.find((c) => c.id === clipId);
         if (!current) return;
-        const intermediate = ops.moveClip(get().timeline, clipId, newStartBeat);
-        set({ timeline: regenerateBlendsForTrack(intermediate, current.trackId) });
+        get().recordingSet('Move Clip', (s) => {
+          const intermediate = ops.moveClip(s.timeline, clipId, newStartBeat);
+          s.timeline = regenerateBlendsForTrack(intermediate, current.trackId);
+        }, { coalesce: true });
       },
+      // Plan 10 — coalesce: true (resize drag folds to one undo).
       resizeClip: (clipId, newLengthBeats) => {
         const current = get().timeline.clips.find((c) => c.id === clipId);
         if (!current) return;
-        const intermediate = ops.resizeClip(get().timeline, clipId, newLengthBeats);
-        set({ timeline: regenerateBlendsForTrack(intermediate, current.trackId) });
+        get().recordingSet('Resize Clip', (s) => {
+          const intermediate = ops.resizeClip(s.timeline, clipId, newLengthBeats);
+          s.timeline = regenerateBlendsForTrack(intermediate, current.trackId);
+        }, { coalesce: true });
       },
       removeClip: (clipId) => {
         const current = get().timeline.clips.find((c) => c.id === clipId);
-        set((s) => {
+        if (!current) return;
+        get().recordingSet('Delete Clip', (s) => {
           const intermediate = ops.removeClip(s.timeline, clipId);
-          const regenerated = current
-            ? regenerateBlendsForTrack(intermediate, current.trackId)
-            : intermediate;
+          s.timeline = regenerateBlendsForTrack(intermediate, current.trackId);
           // Plan 9b — also strip from selectedClipIds + sync compat field.
           const nextSelectedIds = s.ui.selectedClipIds.filter((id) => id !== clipId);
-          const selectionChanged =
-            nextSelectedIds.length !== s.ui.selectedClipIds.length;
-          const nextSelectedSingular =
-            nextSelectedIds.length === 1 ? nextSelectedIds[0] : null;
-          const editorChanged = s.ui.automationEditorClipId === clipId;
-          if (!selectionChanged && !editorChanged) {
-            return { timeline: regenerated };
+          if (nextSelectedIds.length !== s.ui.selectedClipIds.length) {
+            s.ui.selectedClipIds = nextSelectedIds;
+            s.ui.selectedClipId =
+              nextSelectedIds.length === 1 ? nextSelectedIds[0] : null;
           }
-          return {
-            timeline: regenerated,
-            ui: {
-              ...s.ui,
-              selectedClipIds: selectionChanged ? nextSelectedIds : s.ui.selectedClipIds,
-              selectedClipId: selectionChanged
-                ? nextSelectedSingular
-                : s.ui.selectedClipId,
-              automationEditorClipId: editorChanged ? null : s.ui.automationEditorClipId
-            }
-          };
+          if (s.ui.automationEditorClipId === clipId) {
+            s.ui.automationEditorClipId = null;
+          }
         });
       },
       setClipParams: (clipId, params) =>
-        set({ timeline: ops.setClipParams(get().timeline, clipId, params) }),
-      setPlayhead: (beats) => set({ timeline: ops.setPlayhead(get().timeline, beats) }),
+        get().recordingSet('Clip Params', (s) => {
+          s.timeline = ops.setClipParams(s.timeline, clipId, params);
+        }),
+      setPlayhead: (beats) =>
+        // Undo: transient — skip (called 60×/s during playback)
+        get().recordingSet('Playhead', (s) => {
+          s.timeline = ops.setPlayhead(s.timeline, beats);
+        }, { skip: true }),
       setMuted: (trackId, muted) =>
-        set({ timeline: ops.setMuted(get().timeline, trackId, muted) }),
+        // Plan 10 — coalesce: true. Architect L2: schnelles Mute-
+        // Toggling = 1 Undo-Schritt. Bleibt rückgängig machbar.
+        get().recordingSet('Mute Track', (s) => {
+          s.timeline = ops.setMuted(s.timeline, trackId, muted);
+        }, { coalesce: true }),
 
       // Plan 5.9a/5.9c/5.9d — dynamic multi-track actions. The
       // `'audio'` soft-reject from 5.9c is gone — Multi-Audio is the
@@ -183,18 +201,15 @@ export const createTimelineSlice: StateCreator<
             ? crypto.randomUUID()
             : `track-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const finalLabel = label ?? defaultLabelFor(kind, get().timeline.tracks);
-        set((s) => ({
-          timeline: {
+        get().recordingSet('Add Track', (s) => {
+          s.timeline = {
             ...s.timeline,
             tracks: [
               ...s.timeline.tracks,
               { id, kind, name: finalLabel, muted: false }
             ]
-          }
-        }));
-        // Plan 9a — return the generated id so callers (e.g.
-        // findOrCreateFxTrack in lib/presets/store-bridge.ts) can use
-        // it without needing a second `tracks.find()` round-trip.
+          };
+        });
         return id;
       },
       removeTrack: (trackId) => {
@@ -203,15 +218,15 @@ export const createTimelineSlice: StateCreator<
         if (hasClips) {
           throw new Error('Track enthält Clips — erst leeren');
         }
-        set((s) => ({
-          timeline: {
+        get().recordingSet('Remove Track', (s) => {
+          s.timeline = {
             ...s.timeline,
             tracks: s.timeline.tracks.filter((tr) => tr.id !== trackId)
-          }
-        }));
+          };
+        });
       },
       reorderTracks: (orderedIds) => {
-        set((s) => {
+        get().recordingSet('Reorder Tracks', (s) => {
           const byId = new Map(s.timeline.tracks.map((tr) => [tr.id, tr]));
           const next: typeof s.timeline.tracks = [];
           for (const id of orderedIds) {
@@ -221,47 +236,45 @@ export const createTimelineSlice: StateCreator<
               byId.delete(id);
             }
           }
-          // Append leftovers (unknown ids in `orderedIds` ignored; tracks
-          // not mentioned keep their original relative order at the end).
           for (const tr of s.timeline.tracks) {
             if (byId.has(tr.id)) next.push(tr);
           }
-          return { timeline: { ...s.timeline, tracks: next } };
+          s.timeline = { ...s.timeline, tracks: next };
         });
       },
       setTrackLabel: (trackId, label) => {
         const trimmed = label.trim();
         if (!trimmed) return;
-        set((s) => ({
-          timeline: {
+        // Plan 10 — coalesce: true. Typing into the track-name field
+        // produces many setTrackLabel calls; folding to one undo.
+        get().recordingSet('Rename Track', (s) => {
+          s.timeline = {
             ...s.timeline,
             tracks: s.timeline.tracks.map((tr) =>
               tr.id === trackId ? { ...tr, name: trimmed } : tr
             )
-          }
-        }));
+          };
+        }, { coalesce: true });
       },
       setClipParam: (clipId, key, value) => {
-        set((s) => ({
-          timeline: {
+        // Plan 10 — coalesce: true. Slider drag in Inspector produces
+        // many setClipParam calls per second; folding to one undo.
+        get().recordingSet(key, (s) => {
+          s.timeline = {
             ...s.timeline,
             clips: s.timeline.clips.map((c) =>
               c.id === clipId
                 ? { ...c, params: { ...(c.params ?? {}), [key]: value } }
                 : c
             )
-          }
-        }));
+          };
+        }, { coalesce: true });
       },
       convertParamToAutomation: (clipId, key, beat, initialValue) => {
-        // Can't use patchClipParam — that bails when the key is missing from
-        // clip.params (true for fresh clips with no overrides). For those we
-        // need to write a brand-new entry using `initialValue` (the resolved
-        // default the Inspector passes from `plugin.getDefaultParams()`).
-        set((state) => ({
-          timeline: {
-            ...state.timeline,
-            clips: state.timeline.clips.map((c) => {
+        get().recordingSet('Enable Automation', (s) => {
+          s.timeline = {
+            ...s.timeline,
+            clips: s.timeline.clips.map((c) => {
               if (c.id !== clipId) return c;
               const params = c.params ?? {};
               const existing = key in params ? params[key] : initialValue;
@@ -269,24 +282,29 @@ export const createTimelineSlice: StateCreator<
               if (existing === undefined) return c;
               return { ...c, params: { ...params, [key]: makeCurve(existing, beat, 'linear') } };
             })
-          }
-        }));
+          };
+        });
       },
       convertParamToStatic: (clipId, key) =>
         patchClipParam(clipId, key, (current) =>
-          isAutomationCurve(current) ? toStaticValue(current) : current
+          isAutomationCurve(current) ? toStaticValue(current) : current,
+          'Disable Automation'
         ),
       addParamPoint: (clipId, key, point) =>
         patchClipParam(clipId, key, (current) =>
           isAutomationCurve(current)
             ? addPoint(current as AutomationCurve<unknown>, point as AutomationPoint<unknown>)
-            : current
+            : current,
+          'Edit Automation',
+          { coalesce: true }
         ),
       removeParamPoint: (clipId, key, index) =>
         patchClipParam(clipId, key, (current) =>
           isAutomationCurve(current)
             ? removePoint(current as AutomationCurve<unknown>, index)
-            : current
+            : current,
+          'Edit Automation',
+          { coalesce: true }
         ),
       updateParamPoint: (clipId, key, index, patch) =>
         patchClipParam(clipId, key, (current) =>
@@ -296,17 +314,21 @@ export const createTimelineSlice: StateCreator<
                 index,
                 patch as Partial<AutomationPoint<unknown>>
               )
-            : current
+            : current,
+          'Edit Automation',
+          { coalesce: true }
         ),
       setParamInterpolation: (clipId, key, interpolation) =>
         patchClipParam(clipId, key, (current) =>
           isAutomationCurve(current)
             ? { ...(current as AutomationCurve<unknown>), interpolation }
-            : current
+            : current,
+          'Interpolation'
         ),
       updateParamPoints: (clipId, key, updates) => {
         if (updates.length === 0) return;
-        set((state) => {
+        // Plan 10 — coalesce: true (Editor multi-point drag)
+        get().recordingSet('Edit Automation', (state) => {
           const clips = state.timeline.clips.map((c) => {
             if (c.id !== clipId) return c;
             const params = c.params ?? {};
@@ -322,11 +344,11 @@ export const createTimelineSlice: StateCreator<
             }
             return { ...c, params: { ...params, [key]: curve } };
           });
-          return { timeline: { ...state.timeline, clips } };
-        });
+          state.timeline = { ...state.timeline, clips };
+        }, { coalesce: true });
       },
       setBlendInterpolation: (clipId, interpolation) => {
-        set((s) => {
+        get().recordingSet('Blend Interpolation', (s) => {
           const clips = s.timeline.clips.map((c) => {
             if (c.id !== clipId) return c;
             const blend = c.params?.[BLEND_KEY];
@@ -339,33 +361,30 @@ export const createTimelineSlice: StateCreator<
               }
             };
           });
-          return { timeline: { ...s.timeline, clips } };
+          s.timeline = { ...s.timeline, clips };
         });
       },
-      // Plan 8d — Transfer-flow wipe. All tracks + clips dropped; the
-      // SceneFlow handler immediately re-adds main-video + sync-audio.
-      // selectedClipId + automationEditorClipId in UI also cleared so
-      // the Inspector doesn't keep a dangling reference to a deleted clip.
+      // Plan 8d — Transfer-flow wipe.
       clearAllTracks: () => {
-        set((s) => ({
-          timeline: { ...s.timeline, tracks: [], clips: [] },
-          ui: {
-            ...s.ui,
-            selectedClipId: null,
-            automationEditorClipId: null
-          }
-        }));
+        get().recordingSet('Clear All Tracks', (s) => {
+          s.timeline = { ...s.timeline, tracks: [], clips: [] };
+          s.ui.selectedClipId = null;
+          s.ui.automationEditorClipId = null;
+        });
       },
-      // Plan 8d — re-snap after BPM change. Map keyed by mediaId so
-      // matching by content survives clip-array reordering. Clip.id is
-      // PRESERVED (only startBeat + lengthBeats mutate) — Undo/Redo,
-      // automation point references, and JSONB persistence stay valid.
+      // Plan 8d — re-snap after BPM change.
+      // Plan 10 — replaceMainVideoClips runs as part of the SceneFlow
+      // Transfer flow. Per Architect-L3 the entire Transfer is OUT of
+      // the Undo scope (skip + caller-side toast) because MediaRefs
+      // are R2-bound and can't be reverted. Marking skip here means
+      // any caller other than the Transfer-flow also can't undo it
+      // — acceptable because there is no such caller.
       replaceMainVideoClips: (layoutByMediaId) => {
-        set((s) => {
+        get().recordingSet('Replace Main Video', (s) => {
           const mainTrackId = s.timeline.tracks.find(
             (t) => t.kind === 'main-video'
           )?.id;
-          if (!mainTrackId) return s;
+          if (!mainTrackId) return;
           const clips = s.timeline.clips.map((c) => {
             if (c.trackId !== mainTrackId) return c;
             if (!c.mediaId) return c;
@@ -377,8 +396,8 @@ export const createTimelineSlice: StateCreator<
               lengthBeats: layout.lengthBeats
             };
           });
-          return { timeline: { ...s.timeline, clips } };
-        });
+          s.timeline = { ...s.timeline, clips };
+        }, { skip: true });
       }
     }
   };

@@ -35,10 +35,17 @@ export const createMobileUISlice: StateCreator<
   [],
   [],
   Pick<AppState, 'mobileUI' | 'mobileUIActions'>
-> = (set) => ({
+> = (_set, get) => ({
   mobileUI: initialMobileUIState,
   mobileUIActions: {
     setMobileTab: (mobileTab) =>
-      set((s) => ({ mobileUI: { ...s.mobileUI, mobileTab } }))
+      // Plan 10 — Undo: transient — skip (mobile-tab is UI-mode)
+      get().recordingSet(
+        'MobileTab',
+        (s) => {
+          s.mobileUI = { ...s.mobileUI, mobileTab };
+        },
+        { skip: true }
+      )
   }
 });
