@@ -112,7 +112,11 @@ export function activeFxClipsByKind(
     'lens-flare-burst': [],
     'film-grain-burst': [],
     'glitch-slice': [],
-    'letterbox-squeeze': []
+    'letterbox-squeeze': [],
+    // Plan 8f.1 — WebGL2 FX.
+    'color-grade-shift': [],
+    // Plan 8f.2 — second WebGL2 FX.
+    'retro-vhs': []
   };
   for (const c of state.clips) {
     // Skip media-bearing clips — they're handled outside this selector.

@@ -6,6 +6,7 @@ import { mixAudioOffline, type VideoAudioClip } from './mix-audio-offline';
 import type { Clip, TimelineState } from '@/lib/timeline/types';
 import type { MediaRef } from '@/lib/storage/types';
 import type { BeatGrid } from '@/lib/audio/types';
+import { qualityManager } from '@/lib/renderer/webgl/quality';
 
 // WebCodecs types (VideoEncoder, AudioEncoder, VideoFrame, AudioData)
 // ship in lib.dom on recent TypeScript versions but we cast loosely here
@@ -105,6 +106,23 @@ const BACKPRESSURE_QUEUE_HIGH = 4;
 export async function renderOffline(
   deps: OfflineRenderDeps,
   options: OfflineRenderOptions = {}
+): Promise<OfflineRenderResult> {
+  // Plan 8f.1 — Freeze the WebGL quality manager at scale=1.0 for the
+  // duration of the export. Without this, the per-frame export tick rate
+  // (decoupled from the 60fps display) would be interpreted as an FPS
+  // signal and trigger spurious scale-downs mid-export. try/finally
+  // guarantees the manager unfreezes even if encoding throws.
+  qualityManager.setOffline(true);
+  try {
+    return await renderOfflineInternal(deps, options);
+  } finally {
+    qualityManager.setOffline(false);
+  }
+}
+
+async function renderOfflineInternal(
+  deps: OfflineRenderDeps,
+  options: OfflineRenderOptions
 ): Promise<OfflineRenderResult> {
   const width = options.width ?? DEFAULTS.width;
   const height = options.height ?? DEFAULTS.height;

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { PresetPackBrowser } from '@/components/PresetPacks/PresetPackBrowser';
+import { QualityIndicator } from './QualityIndicator';
 
 /**
  * Plan 9a — global workspace header. Sits above the LeftPanel/Stage/
@@ -18,9 +19,12 @@ export function WorkspaceHeader() {
       <div className="flex items-center gap-2 text-sm text-[var(--text)]">
         <span className="font-bold tracking-tight">VibeGrid</span>
       </div>
-      <div className="flex items-center gap-2 text-xs text-[var(--text-dim)]">
-        <span className="w-2 h-2 rounded-full bg-green-400" />
-        <span>{bpm} BPM</span>
+      <div className="flex items-center gap-3 text-xs text-[var(--text-dim)]">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-400" />
+          <span>{bpm} BPM</span>
+        </div>
+        <QualityIndicator />
       </div>
       <div className="flex items-center gap-2">
         <button

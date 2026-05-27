@@ -34,7 +34,11 @@ export const TRACK_FX_KINDS = [
   'lens-flare-burst',
   'film-grain-burst',
   'glitch-slice',
-  'letterbox-squeeze'
+  'letterbox-squeeze',
+  // Plan 8f.1 — first WebGL2 FX kind.
+  'color-grade-shift',
+  // Plan 8f.2 — second WebGL2 FX kind.
+  'retro-vhs'
 ] as const;
 
 export type TrackFxKind = (typeof TRACK_FX_KINDS)[number];
@@ -54,6 +58,14 @@ export const RENDER_ORDER_TRACK_KIND = [
   'zoom-punch',
   'screen-shake',
   'glitch-slice',
+  // Plan 8f.1 — WebGL2 image-modifying FX (renders OffscreenCanvas →
+  // drawImage onto main 2D canvas; sits with the other image-modifying
+  // layers before the overlay group).
+  'color-grade-shift',
+  // Plan 8f.2 — RetroVHS sits next to ColorGradeShift in the
+  // image-modifying group. Both re-sample the bitmap in GLSL; ordering
+  // between them is cosmetic (last-rendered wins on opaque output).
+  'retro-vhs',
   // Overlay FX (paint on top of whatever was drawn underneath).
   'sweep',
   'particles',
@@ -99,7 +111,11 @@ export type PluginFxKind =
   | 'LensFlareBurst'
   | 'FilmGrainBurst'
   | 'GlitchSlice'
-  | 'LetterboxSqueeze';
+  | 'LetterboxSqueeze'
+  // Plan 8f.1 — WebGL2 FX.
+  | 'ColorGradeShift'
+  // Plan 8f.2 — second WebGL2 FX.
+  | 'RetroVHS';
 
 /** PascalCase → lowercase. The Particle ↔ particles name asymmetry
  *  is the only non-trivial entry — singular plugin name, plural
@@ -123,7 +139,11 @@ export const PLUGIN_KIND_TO_TRACK_KIND: Record<PluginFxKind, TrackFxKind> = {
   LensFlareBurst: 'lens-flare-burst',
   FilmGrainBurst: 'film-grain-burst',
   GlitchSlice: 'glitch-slice',
-  LetterboxSqueeze: 'letterbox-squeeze'
+  LetterboxSqueeze: 'letterbox-squeeze',
+  // Plan 8f.1 — WebGL2 FX.
+  ColorGradeShift: 'color-grade-shift',
+  // Plan 8f.2 — second WebGL2 FX.
+  RetroVHS: 'retro-vhs'
 };
 
 /** Inverse of PLUGIN_KIND_TO_TRACK_KIND — used by the renderer to
@@ -146,7 +166,11 @@ export const TRACK_KIND_TO_PLUGIN_KIND: Record<TrackFxKind, PluginFxKind> = {
   'lens-flare-burst': 'LensFlareBurst',
   'film-grain-burst': 'FilmGrainBurst',
   'glitch-slice': 'GlitchSlice',
-  'letterbox-squeeze': 'LetterboxSqueeze'
+  'letterbox-squeeze': 'LetterboxSqueeze',
+  // Plan 8f.1 — WebGL2 FX.
+  'color-grade-shift': 'ColorGradeShift',
+  // Plan 8f.2 — second WebGL2 FX.
+  'retro-vhs': 'RetroVHS'
 };
 
 /** Human-readable label shown in the Inspector header and clip-band. */
@@ -168,7 +192,11 @@ export const FX_DISPLAY_NAME: Record<TrackFxKind, string> = {
   'lens-flare-burst': 'Lens Flare',
   'film-grain-burst': 'Film Grain',
   'glitch-slice': 'Glitch Slice',
-  'letterbox-squeeze': 'Letterbox'
+  'letterbox-squeeze': 'Letterbox',
+  // Plan 8f.1 — WebGL2 FX.
+  'color-grade-shift': 'Color Grade',
+  // Plan 8f.2 — second WebGL2 FX.
+  'retro-vhs': 'Retro VHS'
 };
 
 /** Clip-band background color in the Timeline UI. Keep contrast vs
@@ -199,5 +227,9 @@ export const FX_CLIP_COLORS: Record<TrackFxKind, string> = {
   'lens-flare-burst': '#ffe89a',    // pale gold — light flare
   'film-grain-burst': '#8a8a8a',    // neutral grey — film noise
   'glitch-slice': '#7aff7a',        // acid green — glitch palette
-  'letterbox-squeeze': '#1a1a1a'    // near-black — cinema bars
+  'letterbox-squeeze': '#1a1a1a',   // near-black — cinema bars
+  // Plan 8f.1 — WebGL2 FX. Warm magenta/violet (color-grading vibe).
+  'color-grade-shift': '#c47aff',
+  // Plan 8f.2 — RetroVHS. Faded teal/cyan (analog tape colour-shift vibe).
+  'retro-vhs': '#3aaab3'
 };

@@ -51,6 +51,17 @@ export function Inspector() {
         </div>
         <PreloadIndicator state={plugin.preloadState} />
       </header>
+      {/* Plan 8f.1 — WebGL2-Plugins (ColorGradeShift et al.) set
+          preloadState='error' when the browser lacks WebGL2. Surface a
+          dedicated banner so users understand why the controls below
+          don't appear to affect the render. */}
+      {plugin.preloadState === 'error' && (
+        <div className="mx-3 p-2 rounded border border-red-500/40 bg-red-500/10 text-[11px] text-red-300">
+          <strong className="block mb-0.5">WebGL2 not available</strong>
+          This effect requires WebGL2. Update to Safari 17+, Chrome 69+,
+          or Firefox 105+. The effect is skipped silently in the render.
+        </div>
+      )}
       <div className="px-3 space-y-2">
         {Object.entries(plugin.paramSchema).map(([key, schema]) => {
           // Plan 5.8b — visibleWhen filter. Returning null drops the

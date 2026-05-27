@@ -2,6 +2,7 @@ import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeClipOnTrack, getActiveFxClips } from '@/lib/timeline/selectors';
+import { qualityManager } from '@/lib/renderer/webgl/quality';
 import { resolveClipParams, resolveParam } from '@/lib/automation/resolve';
 import type { StaticOrAuto } from '@/lib/automation/types';
 import { computeClipAlpha } from './blend';
@@ -247,7 +248,11 @@ const IMAGE_MODIFYING_KINDS: ReadonlySet<string> = new Set([
   'ZoomPunch',
   'ScreenShake',
   'RGBSplit',
-  'GlitchSlice'
+  'GlitchSlice',
+  // Plan 8f.1 — WebGL2 FX that re-samples `rc.imageBitmap` in GLSL.
+  'ColorGradeShift',
+  // Plan 8f.2 — RetroVHS, same re-sampling pattern.
+  'RetroVHS'
 ]);
 
 export function createRenderer(deps: RendererDeps): Renderer {
@@ -594,6 +599,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
     if (rafId !== null) return;
     const raf = deps.rafCallback ?? requestAnimationFrame;
     const loop = () => {
+      // Plan 8f.1 — record live-preview frame timing for the WebGL
+      // quality auto-scaler. setOffline(true) makes this a no-op during
+      // offline export, so no double-counting.
+      qualityManager.recordFrame(performance.now());
       tick();
       rafId = raf(loop);
     };

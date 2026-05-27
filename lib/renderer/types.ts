@@ -47,7 +47,11 @@ export type FxKind =
   | 'LensFlareBurst'
   | 'FilmGrainBurst'
   | 'GlitchSlice'
-  | 'LetterboxSqueeze';
+  | 'LetterboxSqueeze'
+  // Plan 8f.1 — WebGL2 FX (first of the foundation).
+  | 'ColorGradeShift'
+  // Plan 8f.2 — second WebGL2 FX.
+  | 'RetroVHS';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;

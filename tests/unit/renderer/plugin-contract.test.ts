@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { listPlugins } from '@/lib/renderer/registry';
 import { registerBuiltInPlugins, _resetBuiltInPluginsForTests } from '@/lib/fx';
 import { makeRenderContext } from './_helpers';
+import {
+  _overrideCapabilities,
+  _resetCapabilities
+} from '@/lib/renderer/webgl/capabilities';
 
 // Plan 8e — install a complete OffscreenCanvas stub for jsdom BEFORE
 // registering plugins. FilmGrainBurst calls createImageData/putImageData
@@ -67,7 +71,11 @@ const ALL_PLUGIN_KINDS = [
   'LensFlareBurst',
   'FilmGrainBurst',
   'GlitchSlice',
-  'LetterboxSqueeze'
+  'LetterboxSqueeze',
+  // Plan 8f.1 — WebGL2 FX.
+  'ColorGradeShift',
+  // Plan 8f.2 — second WebGL2 FX.
+  'RetroVHS'
 ] as const;
 
 const ALL_PLUGIN_IDS = [
@@ -88,10 +96,33 @@ const ALL_PLUGIN_IDS = [
   'lens-flare-burst',
   'film-grain-burst',
   'glitch-slice',
-  'letterbox-squeeze'
+  'letterbox-squeeze',
+  // Plan 8f.1 — WebGL2 FX.
+  'color-grade-shift',
+  // Plan 8f.2 — second WebGL2 FX.
+  'retro-vhs'
 ];
 
 describe('FxPlugin contract', () => {
+  // Plan 8f.1 — render-without-throw test invokes WebGL FX plugins
+  // (ColorGradeShift). The stub OffscreenCanvas above only handles 2D
+  // context; the WebGL2 detection path would call gl.getParameter and
+  // crash. Pin capabilities to webgl2=false so WebGL FX skip silently.
+  beforeAll(() => {
+    _overrideCapabilities({
+      webgl2: false,
+      maxTextureSize: 0,
+      highPrecision: false,
+      isMobile: false,
+      tier: 'low',
+      maxParticles: 0,
+      maxRaySteps: 0
+    });
+  });
+  afterAll(() => {
+    _resetCapabilities();
+  });
+
   it.each(listPlugins().map((p) => [p.id, p] as const))(
     'plugin %s conforms to the FxPlugin contract',
     (_id, plugin) => {
@@ -122,8 +153,8 @@ describe('FxPlugin contract', () => {
     }
   });
 
-  it('registers exactly 17 plugins (v0.1 + Plan 5.8a + Plan 8e)', () => {
-    expect(listPlugins().length).toBe(17);
+  it('registers exactly 19 plugins (v0.1 + Plan 5.8a + Plan 8e + Plan 8f.1 + Plan 8f.2)', () => {
+    expect(listPlugins().length).toBe(19);
     expect(
       listPlugins()
         .map((p) => p.id)

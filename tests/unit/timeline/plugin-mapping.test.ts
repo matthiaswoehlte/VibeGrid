@@ -9,9 +9,10 @@ import {
 } from '@/lib/timeline/plugin-mapping';
 
 describe('plugin-mapping — FX kind constants & helpers', () => {
-  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8e: 17 kinds)', () => {
+  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8f.2: 19 kinds)', () => {
     expect([...TRACK_FX_KINDS].sort()).toEqual([
       'beat-flash',
+      'color-grade-shift',
       'contour',
       'dissolve',
       'film-grain-burst',
@@ -20,6 +21,7 @@ describe('plugin-mapping — FX kind constants & helpers', () => {
       'letterbox-squeeze',
       'particles',
       'pulse',
+      'retro-vhs',
       'rgb-split',
       'screen-shake',
       'sunray',
@@ -53,6 +55,22 @@ describe('plugin-mapping — FX kind constants & helpers', () => {
 
   it('Plan 8e — letterbox-squeeze is the LAST entry in RENDER_ORDER (paints over all)', () => {
     expect(RENDER_ORDER_TRACK_KIND[RENDER_ORDER_TRACK_KIND.length - 1]).toBe('letterbox-squeeze');
+  });
+
+  it('Plan 8f.1 — color-grade-shift is in RENDER_ORDER + maps roundtrip', () => {
+    expect((TRACK_FX_KINDS as readonly string[]).includes('color-grade-shift')).toBe(true);
+    expect(RENDER_ORDER_TRACK_KIND.indexOf('color-grade-shift' as never)).toBeGreaterThanOrEqual(0);
+    expect(FX_DISPLAY_NAME['color-grade-shift']).toBe('Color Grade');
+    expect(TRACK_KIND_TO_PLUGIN_KIND['color-grade-shift']).toBe('ColorGradeShift');
+    expect(PLUGIN_KIND_TO_TRACK_KIND.ColorGradeShift).toBe('color-grade-shift');
+  });
+
+  it('Plan 8f.2 — retro-vhs is in RENDER_ORDER + maps roundtrip', () => {
+    expect((TRACK_FX_KINDS as readonly string[]).includes('retro-vhs')).toBe(true);
+    expect(RENDER_ORDER_TRACK_KIND.indexOf('retro-vhs' as never)).toBeGreaterThanOrEqual(0);
+    expect(FX_DISPLAY_NAME['retro-vhs']).toBe('Retro VHS');
+    expect(TRACK_KIND_TO_PLUGIN_KIND['retro-vhs']).toBe('RetroVHS');
+    expect(PLUGIN_KIND_TO_TRACK_KIND.RetroVHS).toBe('retro-vhs');
   });
 
   it('RENDER_ORDER_TRACK_KIND covers every FX kind exactly once', () => {

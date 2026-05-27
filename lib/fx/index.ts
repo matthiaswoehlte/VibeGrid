@@ -17,6 +17,10 @@ import { lensFlareBurstPlugin } from './lens-flare-burst';
 import { filmGrainBurstPlugin } from './film-grain-burst';
 import { glitchSlicePlugin } from './glitch-slice';
 import { letterboxSqueezePlugin } from './letterbox-squeeze';
+// Plan 8f.1 — first WebGL2 FX.
+import { colorGradeShiftPlugin } from './color-grade-shift';
+// Plan 8f.2 — second WebGL2 FX.
+import { retroVhsPlugin } from './retro-vhs';
 
 let registered = false;
 
@@ -46,6 +50,10 @@ export function registerBuiltInPlugins(): void {
   register(filmGrainBurstPlugin);
   register(glitchSlicePlugin);
   register(letterboxSqueezePlugin);
+  // Plan 8f.1 — WebGL2 FX.
+  register(colorGradeShiftPlugin);
+  // Plan 8f.2 — second WebGL2 FX.
+  register(retroVhsPlugin);
   registered = true;
 }
 
