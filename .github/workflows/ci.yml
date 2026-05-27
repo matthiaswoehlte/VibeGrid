@@ -24,6 +24,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Plan 7 + 8.6 server-side modules (lib/db/pg.ts,
+    # lib/auth/better-auth-server.ts, lib/fal/client.ts) throw at
+    # module-load if their env vars are missing. Next.js' production
+    # build runs a "Collecting page data" phase that imports every
+    # route module — so the build fails before Playwright starts.
+    # These fake values mirror the placeholders in `vitest.setup.ts`;
+    # they're only sufficient to get past the module-load checks
+    # because no e2e test actually hits the database, the auth
+    # cookies, or fal.ai.
+    env:
+      DATABASE_URL: 'postgresql://ci-fake:ci-fake@127.0.0.1:5432/ci-fake'
+      BETTER_AUTH_SECRET: 'ci-secret-not-used-anywhere-ci-secret-not-used-anywhere'
+      NEXT_PUBLIC_BASE_URL: 'http://localhost:3000'
+      FAL_KEY: 'ci-fake-fal-key-not-real'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
