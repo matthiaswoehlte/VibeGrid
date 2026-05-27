@@ -22,6 +22,24 @@ const inflight = new Set<string>();
  *  video sweeps through many 500 ms buckets. FIFO eviction. */
 const MAX_CACHE_ENTRIES = 128;
 
+/**
+ * Beat-Trigger state per clip. Records `(beatIndex, bitmapKey)` of the
+ * LAST extract for each clipId. The render path re-extracts only when
+ * the beatIndex changes — bitmap-key changes mid-beat (video bucket
+ * transitions every 500 ms) do NOT trigger a fresh Sobel run; the
+ * previous beat's edges are reused. Trade-off: edges visually lag by
+ * up to one beat on video clips, in exchange for the per-frame spike
+ * cost being capped at "max 1 extract per beat per clip" (≤ 4 extracts/s
+ * at 240 BPM, ≤ 1/s at 60 BPM).
+ *
+ * The spike still happens — but at a predictable musical instant where
+ * a visual "edge-refresh" reads as intentional, not as a stutter.
+ */
+const lastExtractByClip = new Map<
+  string,
+  { beatIndex: number; bitmapKey: string }
+>();
+
 /** Mint a stable string id for an ImageBitmap that has no `imageBitmapKey`
  *  context (direct `preload()` calls in tests, future API consumers).
  *  WeakMap-backed so entries are GC'd with the bitmap. */
@@ -48,6 +66,7 @@ function evictIfFull(): void {
 export function _resetContourCacheForTests(): void {
   cache.clear();
   inflight.clear();
+  lastExtractByClip.clear();
 }
 
 /** Edge-detection threshold for extractContours. */
@@ -245,28 +264,65 @@ export const contourPlugin: FxPlugin<ContourParams> = {
     // video: `${mediaId}|${500ms-bucket}`). Direct callers without a
     // RenderContext from the loop (tests, future) fall back to a bitmap-
     // derived id so caching still works per-bitmap.
-    const key = rc.imageBitmapKey ?? getBitmapKey(rc.imageBitmap);
-    let paths = cache.get(key);
-    if (!paths) {
+    const currentBitmapKey =
+      rc.imageBitmapKey ?? getBitmapKey(rc.imageBitmap);
+    const currentBeat = rc.beatIndex;
+    const last = lastExtractByClip.get(rc.clipId);
+
+    // Beat-Trigger: re-extract only when this clip enters a new beat,
+    // not on every bitmap-key bucket transition. Architect intent: the
+    // visual edge-refresh becomes musically synchronous and the spike
+    // is "hidden" inside the user's perception of a beat.
+    const needsExtract = !last || last.beatIndex !== currentBeat;
+
+    let paths: ContourPath[] | undefined;
+    if (needsExtract) {
       // Cache miss → extract synchronously. Blocks the RAF for 50-200 ms
-      // (the cost of getImageData + Canny). For video clips this hits
-      // once per 500 ms bucket transition; for images this hits once on
-      // first render. The inflight guard collapses concurrent miss
-      // attempts on the same key during the same call stack — paranoia,
-      // since extraction is synchronous.
-      if (inflight.has(key)) return;
-      inflight.add(key);
-      try {
-        paths = extractFromBitmap(rc.imageBitmap);
-        cache.set(key, paths);
-        evictIfFull();
-      } catch {
-        return;
-      } finally {
-        inflight.delete(key);
+      // (the cost of getImageData + Canny on the half-res frame).
+      // Inflight guard collapses concurrent miss attempts on the same
+      // clip during the same call stack — paranoia, since extraction
+      // is synchronous.
+      if (inflight.has(rc.clipId)) {
+        paths = last ? cache.get(last.bitmapKey) : undefined;
+        if (!paths || paths.length === 0) return;
+      } else {
+        inflight.add(rc.clipId);
+        try {
+          paths = extractFromBitmap(rc.imageBitmap);
+          cache.set(currentBitmapKey, paths);
+          lastExtractByClip.set(rc.clipId, {
+            beatIndex: currentBeat,
+            bitmapKey: currentBitmapKey
+          });
+          evictIfFull();
+        } catch {
+          return;
+        } finally {
+          inflight.delete(rc.clipId);
+        }
+      }
+    } else {
+      // Same beat as last extract — reuse those paths regardless of
+      // whether the current bitmap-key matches (stale edges OK by
+      // design within a beat window).
+      paths = cache.get(last!.bitmapKey);
+      if (!paths) {
+        // FIFO eviction dropped the cached entry; fall through to a
+        // fresh extract so we don't render edge-less.
+        try {
+          paths = extractFromBitmap(rc.imageBitmap);
+          cache.set(currentBitmapKey, paths);
+          lastExtractByClip.set(rc.clipId, {
+            beatIndex: currentBeat,
+            bitmapKey: currentBitmapKey
+          });
+          evictIfFull();
+        } catch {
+          return;
+        }
       }
     }
-    if (paths.length === 0) return;
+    if (!paths || paths.length === 0) return;
 
     const bw = rc.imageBitmap.width;
     const bh = rc.imageBitmap.height;
