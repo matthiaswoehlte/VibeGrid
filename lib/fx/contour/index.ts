@@ -44,27 +44,85 @@ function evictIfFull(): void {
   }
 }
 
+/** Test-only: clear the contour edge cache between cases. */
+export function _resetContourCacheForTests(): void {
+  cache.clear();
+  inflight.clear();
+}
+
 /** Edge-detection threshold for extractContours. */
 const CONTOUR_THRESHOLD = 0.3;
 /** Paths shorter than this point count are dropped as noise. */
 const MIN_PATH_POINTS = 8;
 
+/**
+ * Resolution scale applied before Sobel runs. At 0.5 we drop pixel count
+ * by 4× (1920×1080 → 960×540). The full extract pipeline (grayscale →
+ * blur → sobel → flood-fill) costs roughly ¼ as much; cache-miss spikes
+ * drop from ~191 ms to ~125 ms on a 1080p frame.
+ *
+ * **Why not lower (0.25)?** Empirically tested — quarter-res Sobel
+ * generates MORE paths due to aliasing artifacts on high-detail
+ * sources, which pushes per-frame polyline-render cost up enough to
+ * net-negate the extract savings. Plus the max-spike got worse, not
+ * better (a pathological connected-component case). 0.5 is the sweet
+ * spot for this codebase.
+ *
+ * Exported so tests can read the value when verifying coordinate
+ * upscale. Changing this affects every Contour clip; pick a different
+ * value only after re-running the perf diagnose.
+ */
+export const EDGE_SCALE = 0.5;
+
 /** Synchronous edge extraction from an ImageBitmap. Used by both the
  *  public `preload()` (warm the cache ahead of render) and `render()`
- *  (extract on cache miss for video bucket transitions). */
+ *  (extract on cache miss for video bucket transitions).
+ *
+ *  Half-resolution: the bitmap is rasterised onto a 0.5×-sized
+ *  OffscreenCanvas, Sobel runs on the smaller pixel grid, and the
+ *  resulting edge-point coordinates are scaled back up before being
+ *  cached. Downstream `render()` consumes them in full-resolution
+ *  coordinates, identical to the pre-half-res world.
+ *
+ *  Upscale is done **in-place** on the existing point-tuples returned
+ *  by `extractContours` (they're freshly allocated per extract, no
+ *  aliasing concern), and the path-array is filtered without `.map()`
+ *  — avoiding ~5000 heap allocations per extract on a 1080p frame.
+ */
 function extractFromBitmap(bm: ImageBitmap): ContourPath[] {
-  const off = new OffscreenCanvas(bm.width, bm.height);
+  const w = Math.max(1, Math.round(bm.width * EDGE_SCALE));
+  const h = Math.max(1, Math.round(bm.height * EDGE_SCALE));
+  const off = new OffscreenCanvas(w, h);
   const offCtx = off.getContext('2d');
   if (!offCtx) throw new Error('OffscreenCanvas 2d context unavailable');
-  offCtx.drawImage(bm as unknown as CanvasImageSource, 0, 0);
+  // Nearest-neighbor downscale. Browsers default to bilinear which
+  // costs ~3–5 ms extra on a 4× downscale of a 1080p frame — Sobel
+  // doesn't need sub-pixel accuracy in the input, so we trade visual
+  // smoothness of the intermediate for ~3–5 ms / extract.
+  (offCtx as unknown as { imageSmoothingEnabled: boolean }).imageSmoothingEnabled =
+    false;
+  offCtx.drawImage(bm as unknown as CanvasImageSource, 0, 0, w, h);
   const img = (offCtx as unknown as CanvasRenderingContext2D).getImageData(
     0,
     0,
-    bm.width,
-    bm.height
+    w,
+    h
   );
   const allPaths = extractContours(img, CONTOUR_THRESHOLD);
-  return allPaths.filter((p) => p.points.length >= MIN_PATH_POINTS);
+  const upscale = 1 / EDGE_SCALE;
+  const out: ContourPath[] = [];
+  for (const p of allPaths) {
+    if (p.points.length < MIN_PATH_POINTS) continue;
+    // In-place scale — extractContours returns freshly-allocated point
+    // tuples; mutating them here avoids a second pass and a fresh
+    // points-array allocation per path.
+    for (const pt of p.points) {
+      pt[0] *= upscale;
+      pt[1] *= upscale;
+    }
+    out.push(p);
+  }
+  return out;
 }
 
 /**

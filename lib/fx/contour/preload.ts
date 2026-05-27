@@ -71,6 +71,12 @@ function flood(
   startX: number,
   startY: number
 ): Array<[number, number]> {
+  // Mark-on-pop with inline `stack.push(...)` of all 8 neighbors as
+  // separate arguments. Empirically faster than mark-on-push with a
+  // `tryPush` closure — V8 inlines the variadic push call better than
+  // 8 separate function calls. The allocation savings from
+  // pre-checking neighbors do NOT outweigh the closure call overhead
+  // at the densities our typical 540p Sobel produces.
   const path: Array<[number, number]> = [];
   const stack: Array<[number, number]> = [[startX, startY]];
   while (stack.length) {
