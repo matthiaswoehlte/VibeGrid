@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { PresetPackBrowser } from '@/components/PresetPacks/PresetPackBrowser';
 import { QualityIndicator } from './QualityIndicator';
+import { UndoRedoButtons } from './UndoRedoButtons';
 
 /**
  * Plan 9a — global workspace header. Sits above the LeftPanel/Stage/
@@ -27,6 +28,7 @@ export function WorkspaceHeader() {
         <QualityIndicator />
       </div>
       <div className="flex items-center gap-2">
+        <UndoRedoButtons />
         <button
           type="button"
           onClick={() => setBrowserOpen(true)}

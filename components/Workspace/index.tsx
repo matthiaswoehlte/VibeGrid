@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { AudioEngine } from '@/lib/audio/engine';
 import { useAppStore } from '@/lib/store';
 import { useIsMobile } from '@/lib/utils/breakpoints';
+import { useUndoRedoShortcuts } from '@/lib/hooks/useUndoRedoShortcuts';
 import { LeftPanel } from './LeftPanel';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
@@ -34,6 +35,11 @@ export function Workspace({
   // and switches the Timeline from a fixed pixel height to flex-grow so
   // it fills the area between the 40vh Stage and the bottom TabBar.
   const isMobile = useIsMobile();
+
+  // Plan 10 — Ctrl/Cmd+Z (undo), Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z (redo).
+  // Mounted at the Workspace level so it works regardless of where the
+  // focus is on the canvas / timeline. Skips when an input has focus.
+  useUndoRedoShortcuts();
 
   // Global Delete / Backspace shortcut — removes the currently selected clip.
   // No-op when an input/textarea/contenteditable has focus (don't interfere
