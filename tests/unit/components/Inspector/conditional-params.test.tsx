@@ -36,9 +36,11 @@ function setupStore(params: Record<string, unknown>): void {
   useAppStore.setState({
     ui: {
       zoom: 1,
+      selectedClipIds: [TEXT_CLIP_ID],
       selectedClipId: TEXT_CLIP_ID,
       automationEditorClipId: null,
       automationSnap: 'off',
+      clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false
     },

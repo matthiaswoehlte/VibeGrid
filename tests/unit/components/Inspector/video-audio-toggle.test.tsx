@@ -12,9 +12,11 @@ beforeEach(() => {
   useAppStore.setState({
     ui: {
       zoom: 1,
+      selectedClipIds: ['v1'],
       selectedClipId: 'v1',
       automationEditorClipId: null,
       automationSnap: 'off',
+      clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false
     },

@@ -57,9 +57,11 @@ beforeEach(() => {
     audio: { ...s.audio, grid: { bpm: 120, source: 'manual', beatsPerBar: 4, offsetMs: 0 } },
     ui: {
       zoom: 1,
+      selectedClipIds: [],
       selectedClipId: null,
       automationEditorClipId: null,
       automationSnap: 'off',
+      clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false
     }

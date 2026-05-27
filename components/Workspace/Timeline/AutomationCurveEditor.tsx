@@ -9,14 +9,23 @@ import { AutomationPointEditOverlay } from './AutomationPointEditOverlay';
 
 const INTERPOLATION_MODES: Interpolation[] = ['linear', 'step', 'easeIn', 'easeOut'];
 
-const SNAP_UNITS: AutomationSnap[] = ['off', '1', '1/2', '1/4', '1/8', '1/16'];
+const SNAP_UNITS: AutomationSnap[] = [
+  'off',
+  '1',
+  '1/2',
+  '1/4',
+  '1/8',
+  '1/16',
+  '1/32'
+];
 const SNAP_LABEL: Record<AutomationSnap, string> = {
   off: 'off',
   '1': '1/1',
   '1/2': '1/2',
   '1/4': '1/4',
   '1/8': '1/8',
-  '1/16': '1/16'
+  '1/16': '1/16',
+  '1/32': '1/32'
 };
 
 const CURVE_HEIGHT = 180;

@@ -9,6 +9,21 @@ import type { AppMode } from './app-mode-slice';
 
 export interface UIState {
   zoom: number;
+  /**
+   * Plan 9b — primary selection state. `string[]` (not Set) so zustand's
+   * default Object.is comparator stays effective and serialisation stays
+   * trivial (would be `{}` for Set).
+   *
+   * `selectedClipId` (singular) below is a SYNCED COMPAT-FIELD kept in
+   * lockstep with `selectedClipIds`:
+   *   - selectedClipIds.length === 1 → selectedClipId = selectedClipIds[0]
+   *   - else                          → selectedClipId = null
+   * Every action that mutates `selectedClipIds` MUST update
+   * `selectedClipId` in the same `set()` call. The compat field exists
+   * so the 43 pre-Plan-9b consumers (Inspector, AutomationEditor,
+   * Mobile InspectorSheet, etc.) don't need a coordinated rewrite.
+   */
+  selectedClipIds: string[];
   selectedClipId: string | null;
   /** Clip id whose AutomationEditorModal is currently open, or null when
    *  the modal is closed. Plan 5.5–5.6 called this `expandedAutomationClipId`
@@ -19,6 +34,16 @@ export interface UIState {
    *  handling were carried over without change. */
   automationEditorClipId: string | null;
   automationSnap: AutomationSnap;
+  /**
+   * Plan 9b follow-up — global clip-snap resolution. Controls how new
+   * drops, drag-moves, group-moves, and Shift+Arrow shifts snap to the
+   * beat grid. Synced with localStorage `vg_clip_snap` for cross-session
+   * persistence (write-through). Default '1' (one beat).
+   *
+   * Subscribers: `Tracks.tsx` (drop/move), `Ruler.tsx` + `Tracks.tsx`
+   * grid-background (visualisation), `ClipSnapPicker.tsx` (selector UI).
+   */
+  clipSnap: AutomationSnap;
   exportState: ExportState;
   /** Hotfix: global Beat ↔ Flow toggle. When true, beat-triggered FX
    *  (Pulse flash, ZoomPulse scale, Particles burst) are suppressed and
@@ -129,8 +154,28 @@ export interface AppState {
   ui: UIState;
   setZoom(zoom: number): void;
   setSelectedClipId(id: string | null): void;
+  /** Plan 9b — replace the current selection with `ids`. Pass `[]` to clear. */
+  selectClips(ids: string[]): void;
+  /** Plan 9b — append `ids` to the current selection (dedup). */
+  addToSelection(ids: string[]): void;
+  /** Plan 9b — alias for `selectClips([])`. */
+  clearSelection(): void;
+  /** Plan 9b — group-shift every selected clip by `deltaBeats`. Atomic
+   *  store mutation (one history entry). Guard: clamps so no clip goes
+   *  below startBeat 0. */
+  moveSelectedClips(deltaBeats: number): void;
+  /** Plan 9b — group-resize every selected clip by `deltaBeats`. Each clip
+   *  clamps independently to a 0.5-beat minimum (per architect decision L4). */
+  resizeSelectedClips(deltaBeats: number, edge: 'start' | 'end'): void;
+  /** Plan 9b — duplicate every selected clip at +offsetBeats. Automation
+   *  curves are deep-cloned with the same beat offset. Returns the count
+   *  of duplicated clips (skipped overlaps reported via toast). */
+  duplicateSelectedClips(offsetBeats: number): number;
+  /** Plan 9b — delete every selected clip in one mutation. */
+  deleteSelectedClips(): void;
   setAutomationEditorClipId(clipId: string | null): void;
   setAutomationSnap(snap: AutomationSnap): void;
+  setClipSnap(snap: AutomationSnap): void;
   setExportState(patch: Partial<ExportState>): void;
   setFlowMode(value: boolean): void;
   timeline: TimelineState;

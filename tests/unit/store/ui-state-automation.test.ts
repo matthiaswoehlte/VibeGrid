@@ -50,9 +50,11 @@ describe('automationEditorClipId cleanup', () => {
       },
       ui: {
         zoom: s.ui.zoom,
+        selectedClipIds: ['clip-x'],
         selectedClipId: 'clip-x',
         automationEditorClipId: 'clip-x',
         automationSnap: 'off',
+      clipSnap: '1',
         exportState: EXPORT_INITIAL_STATE,
         flowMode: false
       }

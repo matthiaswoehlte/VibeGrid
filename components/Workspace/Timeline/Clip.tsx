@@ -6,6 +6,7 @@ import {
   FX_CLIP_COLORS,
   type TrackFxKind
 } from '@/lib/timeline/plugin-mapping';
+import { dispatchGroupDragStart } from '@/lib/timeline/group-drag-bus';
 
 const BEAT_PX_BASE = 40;
 
@@ -31,8 +32,12 @@ const KIND_COLOR: Record<TrackKind, string> = {
 export function Clip({ clip }: { clip: ClipT }) {
   const zoom = useAppStore((s) => s.ui.zoom);
   const px = BEAT_PX_BASE * zoom;
-  const selected = useAppStore((s) => s.ui.selectedClipId === clip.id);
-  const setSelected = useAppStore((s) => s.setSelectedClipId);
+  // Plan 9b — selection is now an array. Per-clip subscription avoids
+  // re-rendering all clips when the selection changes via `includes`.
+  const selected = useAppStore((s) => s.ui.selectedClipIds.includes(clip.id));
+  const selectedCount = useAppStore((s) => s.ui.selectedClipIds.length);
+  const selectClips = useAppStore((s) => s.selectClips);
+  const addToSelection = useAppStore((s) => s.addToSelection);
   const resizeClip = useAppStore((s) => s.timelineActions.resizeClip);
   // For video/audio clips, the resize handle can't extend the clip past
   // the source media's intrinsic duration — beyond that the renderer
@@ -164,13 +169,67 @@ export function Clip({ clip }: { clip: ClipT }) {
   // 33 / 66 hex suffix = ~20% / ~40% alpha — translucent fills layered over
   // the dark surface read as glowing washes instead of solid blocks.
   const bgAlpha = selected ? '66' : '33';
+  // Plan 9b — selected clips get a red ring + glow (#ff3b3b). The bg
+  // stays FX-coloured so the user still sees clip-kind at a glance;
+  // only the ring + outer glow change.
+  const SELECTED_RING = '#ff3b3b';
+
+  // Plan 9b — click-to-select. Shift/Ctrl/Meta toggles individual clips
+  // in the selection; plain click replaces it. Multi-clip selected ≥2:
+  // a plain click on a NON-selected clip replaces; on a selected clip,
+  // we keep the selection (so the next drag can group-move).
+  const onClickSelect = (e: React.MouseEvent) => {
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      if (selected) {
+        // Toggle off — read current ids inline (no stale closure).
+        const next = useAppStore
+          .getState()
+          .ui.selectedClipIds.filter((id) => id !== clip.id);
+        selectClips(next);
+      } else {
+        addToSelection([clip.id]);
+      }
+      return;
+    }
+    if (selected && selectedCount > 1) {
+      // Plain click on a clip that's already part of a multi-selection:
+      // keep the group intact — the user is positioning their cursor for
+      // a group-move drag.
+      return;
+    }
+    selectClips([clip.id]);
+  };
+
+  // Plan 9b — onPointerDownCapture (Architect Option A): when this clip
+  // is part of a multi-selection AND the user initiates a primary-button
+  // drag, divert to the group-drag bus and stop propagation BEFORE
+  // @dnd-kit's listeners can claim the event for single-clip drag.
+  //   - Shift held → 'copy' mode (Phase 6 duplicate)
+  //   - else        → 'move' mode (Phase 5 group-move)
+  // Lone-selected (1 clip) keeps @dnd-kit's single-drag path so the
+  // legacy single-clip ergonomics are preserved.
+  const onPointerDownCapture = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    if (!selected) return;
+    if (selectedCount < 2 && !e.shiftKey) return;
+    const consumed = dispatchGroupDragStart({
+      clipId: clip.id,
+      mode: e.shiftKey ? 'copy' : 'move',
+      pointerEvent: e
+    });
+    if (consumed) {
+      e.stopPropagation();
+    }
+  };
 
   return (
     <div
       ref={setNodeRef}
+      data-clip-id={clip.id}
       {...attributes}
       {...listeners}
-      onClick={() => setSelected(clip.id)}
+      onPointerDownCapture={onPointerDownCapture}
+      onClick={onClickSelect}
       style={{
         // Plan 5.10-aware: base position via `left` (so the clip is
         // anchored to the right content-X for its startBeat), drag
@@ -189,7 +248,7 @@ export function Clip({ clip }: { clip: ClipT }) {
         backgroundColor: `${color}${bgAlpha}`,
         borderLeft: `3px solid ${color}`,
         boxShadow: selected
-          ? `inset 0 0 0 1px ${color}, 0 0 12px ${color}66`
+          ? `inset 0 0 0 2px ${SELECTED_RING}, 0 0 12px ${SELECTED_RING}66`
           : `inset 0 0 0 1px ${color}55`
       }}
       className="absolute top-1 bottom-1 rounded text-xs px-1.5 cursor-grab active:cursor-grabbing overflow-hidden"

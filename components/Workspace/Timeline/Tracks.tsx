@@ -1,5 +1,11 @@
 'use client';
-import { useRef, type DragEvent as ReactDragEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent
+} from 'react';
 import { toast } from 'sonner';
 import { useDndMonitor, type DragEndEvent } from '@dnd-kit/core';
 import { useAppStore } from '@/lib/store';
@@ -13,10 +19,24 @@ import {
 import { canDropOnTrack } from '@/lib/timeline/track-validation';
 import { sortedTracks } from '@/lib/timeline/selectors';
 import { applySyncAudioFromArrayBuffer } from '@/lib/sceneflow/apply-sync-audio';
+import { useWebGLClipCleanup } from '@/lib/hooks/useWebGLClipCleanup';
+import { snapBeat } from '@/lib/automation/snap';
+import { readClipSnap } from '@/components/Workspace/ClipSnapPicker';
+import {
+  clipsInRubberband,
+  computeCtrlDOffset,
+  type Rect,
+  type TrackBand
+} from '@/lib/timeline/multi-select';
+import {
+  setGroupDragListener,
+  type GroupDragMode
+} from '@/lib/timeline/group-drag-bus';
 import { Clip } from './Clip';
 import { AutomationLane } from './AutomationLane';
 import { TrackHeader } from './TrackHeader';
 import { SyncAudioDropZone } from './SyncAudioDropZone';
+import { GridBackground } from './GridBackground';
 import { MobileAutomationButton } from '@/components/Mobile/MobileAutomationButton';
 
 const BEAT_PX_BASE = 40;
@@ -42,7 +62,45 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   const moveClip = useAppStore((s) => s.timelineActions.moveClip);
   const addClip = useAppStore((s) => s.timelineActions.addClip);
   const getMediaRef = useAppStore((s) => s.mediaActions.getMediaRef);
+  const selectClips = useAppStore((s) => s.selectClips);
+  const clearSelection = useAppStore((s) => s.clearSelection);
+  const moveSelectedClips = useAppStore((s) => s.moveSelectedClips);
+  const duplicateSelectedClips = useAppStore(
+    (s) => s.duplicateSelectedClips
+  );
+  const deleteSelectedClips = useAppStore((s) => s.deleteSelectedClips);
   const px = BEAT_PX_BASE * zoom;
+
+  // Plan 9b — rubberband selection state. Local to this component
+  // (transient, no store). `null` means no rubberband active.
+  const tracksRootRef = useRef<HTMLDivElement | null>(null);
+  const [rubberband, setRubberband] = useState<Rect | null>(null);
+
+  // Plan 9b — group-drag state (move OR copy). Ghost-only preview
+  // during drag; store mutation only on PointerUp. Architect-D4.
+  const [groupDrag, setGroupDrag] = useState<{
+    mode: GroupDragMode;
+    deltaBeats: number;
+    /** Snapshot of selectedClipIds at drag-start so we render ghosts
+     *  for the right set even if selection changes mid-drag. */
+    clipIds: string[];
+  } | null>(null);
+
+  // Plan 8f.1 — release per-clip WebGL2 contexts when their owning clip
+  // is removed. Memoise the id-array so the cleanup hook's useEffect
+  // only re-runs when the clip SET changes — without the memo every
+  // unrelated Tracks re-render (rubberband, group-drag, resize tick at
+  // 60 fps) recreates the array and triggers the effect's O(N)
+  // Set-diff for nothing.
+  const clipIdsKey = clips.map((c) => c.id).join('\n');
+  const clipIds = useMemo(
+    () => clips.map((c) => c.id),
+    // Stable string-key avoids array-identity churn while still
+    // capturing add/remove/reorder.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clipIdsKey]
+  );
+  useWebGLClipCleanup(clipIds);
 
   // Plan 5.10: DndContext is now mounted in app/(studio)/page.tsx so the
   // InspectorSheet (mounted as a sibling of Workspace) can use
@@ -123,7 +181,10 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     const clip = clips.find((c) => c.id === data.clipId);
     if (!clip) return;
     const dxBeats = e.delta.x / px;
-    moveClip(clip.id, Math.max(0, clip.startBeat + dxBeats));
+    // Beat-Snap on move — resolution from the global ClipSnapPicker
+    // (localStorage-persisted). 'off' falls through to free-float.
+    const target = snapBeat(clip.startBeat + dxBeats, readClipSnap());
+    moveClip(clip.id, target);
   };
 
   // Native HTML5 drop target — FxLibrary and MediaLibrary use native draggable
@@ -156,7 +217,10 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     if (!clipArea) return;
     const rect = clipArea.getBoundingClientRect();
     const xInArea = e.clientX - rect.left;
-    const startBeat = Math.max(0, xInArea / px);
+    // Snap to the user-selected grid resolution (default '1' beat,
+    // configurable in the WorkspaceHeader via ClipSnapPicker). 'off'
+    // bypasses snapping for free-float positioning.
+    const startBeat = snapBeat(xInArea / px, readClipSnap());
 
     // Plan 5.9a — multi-track: identify the exact track under the cursor.
     const droppedTrackId = clipArea.getAttribute('data-track-id');
@@ -256,9 +320,17 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           );
           return;
         }
+        // Video clips can land on either a regular 'video' track OR
+        // the SceneFlow-owned 'main-video' singleton (Plan 8d). Both
+        // are valid per canDropOnTrack; the renderer treats them
+        // identically. Without main-video in the predicate here, clips
+        // dropped onto the main-video lane after a clear would silently
+        // fall back to the first 'video' track (or fail if none exists).
+        const isVideoLane = (kind: TrackKind | undefined): boolean =>
+          kind === 'video' || kind === 'main-video';
         const videoTrack = droppedTrackId
-          ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'video')
-          : tracks.find((t) => t.kind === 'video');
+          ? tracks.find((t) => t.id === droppedTrackId && isVideoLane(t.kind))
+          : tracks.find((t) => isVideoLane(t.kind));
         if (!videoTrack) {
           toast.error('No video track found');
           return;
@@ -393,6 +465,226 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     onDragEnd
   });
 
+  // Plan 9b — global keyboard shortcuts for the selection.
+  // Input-Guard (W6): skip when an input/textarea/select has focus, so
+  // Backspace in the Inspector's number-field doesn't delete clips.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const ae = document.activeElement as HTMLElement | null;
+      const tag = ae?.tagName ?? '';
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        ae?.isContentEditable
+      ) {
+        return;
+      }
+      const cmd = e.ctrlKey || e.metaKey;
+      const state = useAppStore.getState();
+
+      if (e.key === 'Escape') {
+        if (state.ui.selectedClipIds.length > 0) {
+          e.preventDefault();
+          clearSelection();
+        }
+        return;
+      }
+      if (cmd && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        selectClips(state.timeline.clips.map((c) => c.id));
+        return;
+      }
+      if (cmd && (e.key === 'd' || e.key === 'D')) {
+        // Architect D2 — offset = rightmost-edge − leftmost-edge.
+        e.preventDefault();
+        const offset = computeCtrlDOffset(
+          state.ui.selectedClipIds,
+          state.timeline.clips
+        );
+        if (offset > 0) {
+          const total = state.ui.selectedClipIds.length;
+          const added = duplicateSelectedClips(offset);
+          const skipped = total - added;
+          if (added > 0 && skipped === 0) {
+            toast.success(`${added} clips duplicated`);
+          } else if (added > 0 && skipped > 0) {
+            toast.message(
+              `${added} of ${total} clips duplicated (${skipped} overlap)`
+            );
+          } else if (added === 0 && total > 0) {
+            toast.error('No clips duplicated (all overlap)');
+          }
+        }
+        return;
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (state.ui.selectedClipIds.length === 0) return;
+        e.preventDefault();
+        const n = state.ui.selectedClipIds.length;
+        deleteSelectedClips();
+        toast.message(`${n} ${n === 1 ? 'clip' : 'clips'} deleted`);
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (state.ui.selectedClipIds.length === 0) return;
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const step = e.shiftKey ? 4 : 1;
+        e.preventDefault();
+        moveSelectedClips(dir * step);
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    clearSelection,
+    selectClips,
+    moveSelectedClips,
+    duplicateSelectedClips,
+    deleteSelectedClips
+  ]);
+
+  // Plan 9b — register the group-drag bus listener. Activated by
+  // Clip.tsx via dispatchGroupDragStart when the user PointerDowns
+  // on a selected clip in a multi-selection (or shift+drag).
+  useEffect(() => {
+    setGroupDragListener(({ pointerEvent, mode }) => {
+      const startX = pointerEvent.clientX;
+      const initialIds = useAppStore.getState().ui.selectedClipIds;
+      if (initialIds.length === 0) return;
+      setGroupDrag({ mode, deltaBeats: 0, clipIds: [...initialIds] });
+
+      const onMove = (ev: PointerEvent) => {
+        const dx = ev.clientX - startX;
+        // Live delta in beats — snapped only on commit so the ghost
+        // tracks the cursor smoothly.
+        setGroupDrag((prev) =>
+          prev ? { ...prev, deltaBeats: dx / px } : prev
+        );
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        setGroupDrag((prev) => {
+          if (!prev) return null;
+          const snapped = snapBeat(prev.deltaBeats, readClipSnap());
+          if (snapped !== 0) {
+            if (prev.mode === 'move') {
+              moveSelectedClips(snapped);
+            } else {
+              const total = prev.clipIds.length;
+              const added = duplicateSelectedClips(snapped);
+              const skipped = total - added;
+              if (added > 0 && skipped === 0) {
+                toast.success(`${added} clips duplicated`);
+              } else if (added > 0 && skipped > 0) {
+                toast.message(
+                  `${added} of ${total} clips duplicated (${skipped} overlap)`
+                );
+              } else if (added === 0) {
+                toast.error('No clips duplicated (all overlap)');
+              }
+            }
+          }
+          return null;
+        });
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+    return () => setGroupDragListener(null);
+  }, [px, moveSelectedClips, duplicateSelectedClips]);
+
+  // Plan 9b — rubberband selection. PointerDown on a track-area that
+  // is NOT a clip starts a rubberband. PointerUp with no drag-move
+  // (≤ 3px) treats the gesture as a Click → clearSelection().
+  const onRubberbandPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Only primary-button pointer events trigger rubberband (mouse left,
+    // touch first, pen tip). Buttons === 1 covers left+nothing-else.
+    if (e.button !== 0) return;
+    // Ignore clicks on a clip — clip's own handler runs first.
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-clip-id]')) return;
+    // Ignore clicks on the sticky track-label column.
+    if (target.closest('[data-track-label]')) return;
+    // Ignore clicks on resize handles or sync-audio drop zones.
+    if (target.closest('[data-no-rubberband]')) return;
+
+    const root = tracksRootRef.current;
+    if (!root) return;
+    const rootRect = root.getBoundingClientRect();
+    const startX = e.clientX - rootRect.left;
+    const startY = e.clientY - rootRect.top;
+
+    let movedBeyondThreshold = false;
+    const THRESHOLD = 3;
+
+    const onMove = (ev: PointerEvent) => {
+      const rr = root.getBoundingClientRect();
+      const cx = ev.clientX - rr.left;
+      const cy = ev.clientY - rr.top;
+      if (
+        !movedBeyondThreshold &&
+        (Math.abs(cx - startX) > THRESHOLD || Math.abs(cy - startY) > THRESHOLD)
+      ) {
+        movedBeyondThreshold = true;
+      }
+      if (!movedBeyondThreshold) return;
+      setRubberband({ x1: startX, y1: startY, x2: cx, y2: cy });
+
+      // Live hit-test — compute current track-band rects from the DOM
+      // so the math works regardless of CSS-driven row heights.
+      const trackBands: TrackBand[] = [];
+      const trackEls = root.querySelectorAll('[data-track-id]');
+      trackEls.forEach((el) => {
+        const tid = el.getAttribute('data-track-id');
+        if (!tid) return;
+        const r = el.getBoundingClientRect();
+        trackBands.push({
+          trackId: tid,
+          top: r.top - rootRect.top,
+          height: r.height
+        });
+      });
+      // Scroll-offset: lane content is positioned relative to its own
+      // track-area `<div>` (no shared scrollLeft offset against the
+      // track-area rect). Our hit-test rect is in root-relative coords
+      // already, so scrollLeft is 0 from this code's perspective —
+      // because trackBands are already root-relative.
+      const ids = clipsInRubberband(
+        { x1: startX, y1: startY, x2: cx, y2: cy },
+        clips,
+        trackBands,
+        px,
+        // Track-area `<div>` is positioned right of TrackHeader. The
+        // clip's `left = startBeat * px` is relative to that div, so
+        // we add TRACK_LABEL_WIDTH back so the rubberband math lines
+        // up with clip positions in root-relative coords.
+        -TRACK_LABEL_WIDTH
+      );
+      selectClips(ids);
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      setRubberband(null);
+      if (!movedBeyondThreshold) {
+        // Plain click — clear selection if no actual rubberband drag.
+        clearSelection();
+      }
+      try {
+        (ev.target as Element | null)?.releasePointerCapture?.(ev.pointerId);
+      } catch {
+        /* not captured — ok */
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   return (
     /* Plan 5.10: touch-pan-x on Mobile hints to the browser that
         horizontal pans are preferred within the timeline drop area;
@@ -402,10 +694,60 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
         its own touch-action: none on draggable handles, so clip-drag
         isn't affected by this default. */
     <div
+      ref={tracksRootRef}
       onDragOver={onNativeDragOver}
       onDrop={onNativeDrop}
-      className="touch-pan-x md:touch-auto"
+      onPointerDown={onRubberbandPointerDown}
+      className="touch-pan-x md:touch-auto relative"
     >
+      {/* Plan 9b follow-up — orientation grid background. Spans every
+          track row vertically; starts after the sticky label-column so
+          it aligns with clip positions. `z-0` keeps it under clips
+          (which are auto-stacked above with their own absolute
+          positioning). */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-0 bottom-0 z-0"
+        style={{ left: TRACK_LABEL_WIDTH }}
+      >
+        <GridBackground totalBeats={totalBeats} pxPerBeat={px} />
+      </div>
+      {rubberband && (
+        // Plain absolute-positioned div, NOT an SVG. The SVG path
+        // had two issues that clipped the rect when the user dragged
+        // past certain boundaries: (1) no viewBox → user-space is
+        // tied to the SVG element's CSS size, and with `width: 100%`
+        // on a flex/relative parent the SVG box was sometimes
+        // narrower than the dragged rect; (2) the default SVG
+        // `overflow: hidden` then cropped everything outside that
+        // box, even though the rect coordinates were still valid.
+        // A div bypasses both problems — it positions and renders
+        // independently of any viewBox math.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute z-10"
+          style={{
+            left: Math.min(rubberband.x1, rubberband.x2),
+            top: Math.min(rubberband.y1, rubberband.y2),
+            width: Math.abs(rubberband.x2 - rubberband.x1),
+            height: Math.abs(rubberband.y2 - rubberband.y1),
+            background: 'rgba(168,107,255,0.08)',
+            border: '1px dashed #a86bff'
+          }}
+        />
+      )}
+      {groupDrag && (
+        <GroupDragGhosts
+          clipIds={groupDrag.clipIds}
+          deltaBeats={groupDrag.deltaBeats}
+          mode={groupDrag.mode}
+          px={px}
+          clips={clips}
+          tracks={tracks}
+          labelWidth={TRACK_LABEL_WIDTH}
+          rootRef={tracksRootRef}
+        />
+      )}
         {sortedTracks(tracks).map((t) => {
           // Show the read-only inline lane under the selected clip's track
           // row whenever that clip has at least one automation curve. The
@@ -473,6 +815,85 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
                 </div>
               )}
             </div>
+          );
+        })}
+    </div>
+  );
+}
+
+/**
+ * Plan 9b — non-destructive ghost overlay during group-move/group-copy.
+ * Renders one translucent rectangle per selected clip at its
+ * (startBeat + deltaBeats) position. No store mutation happens until
+ * the parent commits via moveSelectedClips / duplicateSelectedClips on
+ * PointerUp.
+ *
+ * Track-Y resolution: per render we look up each clip's owning track
+ * via getBoundingClientRect of its track-band DOM-element. Cheap
+ * enough at typical track counts (≤20). No memoisation — pointermove
+ * triggers a re-render via deltaBeats state.
+ */
+function GroupDragGhosts(props: {
+  clipIds: readonly string[];
+  deltaBeats: number;
+  mode: GroupDragMode;
+  px: number;
+  clips: readonly import('@/lib/timeline/types').Clip[];
+  tracks: readonly import('@/lib/timeline/types').Track[];
+  labelWidth: number;
+  rootRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const { clipIds, deltaBeats, mode, px, clips, rootRef, labelWidth } = props;
+  const ids = new Set(clipIds);
+  const root = rootRef.current;
+  if (!root) return null;
+  const rootRect = root.getBoundingClientRect();
+  // Resolve each visible track-area DOM-element once.
+  const trackEls = Array.from(
+    root.querySelectorAll<HTMLDivElement>('[data-track-id]')
+  );
+  const trackTopById = new Map<string, { top: number; height: number }>();
+  for (const el of trackEls) {
+    const tid = el.getAttribute('data-track-id');
+    if (!tid) continue;
+    const r = el.getBoundingClientRect();
+    trackTopById.set(tid, {
+      top: r.top - rootRect.top,
+      height: r.height
+    });
+  }
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20">
+      {clips
+        .filter((c) => ids.has(c.id))
+        .map((c) => {
+          const band = trackTopById.get(c.trackId);
+          if (!band) return null;
+          // x = label-column-offset + (startBeat + delta) * px
+          const x = labelWidth + (c.startBeat + deltaBeats) * px;
+          const w = c.lengthBeats * px;
+          // Inset by 4px vertically to mirror the clip's `top-1 bottom-1`.
+          const top = band.top + 4;
+          const height = band.height - 8;
+          return (
+            <div
+              key={`ghost-${c.id}`}
+              style={{
+                position: 'absolute',
+                left: x,
+                top,
+                width: w,
+                height,
+                border: `1px dashed ${mode === 'copy' ? '#5a8fff' : '#ff3b3b'}`,
+                background:
+                  mode === 'copy'
+                    ? 'rgba(90,143,255,0.18)'
+                    : 'rgba(255,59,59,0.18)',
+                borderRadius: 4,
+                opacity: 0.7
+              }}
+            />
           );
         })}
     </div>

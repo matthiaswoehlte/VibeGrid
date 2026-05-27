@@ -143,12 +143,26 @@ export const createTimelineSlice: StateCreator<
           const regenerated = current
             ? regenerateBlendsForTrack(intermediate, current.trackId)
             : intermediate;
+          // Plan 9b — also strip from selectedClipIds + sync compat field.
+          const nextSelectedIds = s.ui.selectedClipIds.filter((id) => id !== clipId);
+          const selectionChanged =
+            nextSelectedIds.length !== s.ui.selectedClipIds.length;
+          const nextSelectedSingular =
+            nextSelectedIds.length === 1 ? nextSelectedIds[0] : null;
+          const editorChanged = s.ui.automationEditorClipId === clipId;
+          if (!selectionChanged && !editorChanged) {
+            return { timeline: regenerated };
+          }
           return {
             timeline: regenerated,
-            ui:
-              s.ui.automationEditorClipId === clipId
-                ? { ...s.ui, automationEditorClipId: null }
-                : s.ui
+            ui: {
+              ...s.ui,
+              selectedClipIds: selectionChanged ? nextSelectedIds : s.ui.selectedClipIds,
+              selectedClipId: selectionChanged
+                ? nextSelectedSingular
+                : s.ui.selectedClipId,
+              automationEditorClipId: editorChanged ? null : s.ui.automationEditorClipId
+            }
           };
         });
       },

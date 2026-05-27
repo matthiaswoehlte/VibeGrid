@@ -7,6 +7,7 @@ function makeState(partial: Partial<AppState> = {}): AppState {
   return {
     ui: {
       zoom: 1,
+      selectedClipIds: [],
       selectedClipId: null,
       automationEditorClipId: null,
       automationSnap: 'off',
@@ -46,9 +47,11 @@ describe('toPersistedShape', () => {
     const state = makeState({
       ui: {
         zoom: 1.5,
+        selectedClipIds: ['x'],
         selectedClipId: 'x',
         automationEditorClipId: 'y',
         automationSnap: '1/4',
+        clipSnap: '1/4',
         exportState: {} as never,
         flowMode: true
       }

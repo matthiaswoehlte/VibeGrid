@@ -24,9 +24,11 @@ export function NewProjectButton() {
       media: { ...initialMediaState },
       ui: {
         zoom: 1,
+        selectedClipIds: [],
         selectedClipId: null,
         automationEditorClipId: null,
         automationSnap: 'off',
+        clipSnap: '1',
         exportState: EXPORT_INITIAL_STATE,
         flowMode: false
       }

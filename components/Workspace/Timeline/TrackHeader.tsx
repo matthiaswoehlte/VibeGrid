@@ -45,6 +45,7 @@ export function TrackHeader({ track, width }: { track: Track; width: number }) {
 
   return (
     <div
+      data-track-label
       className="shrink-0 sticky left-0 z-20 bg-[var(--surface-1)] border-r border-[var(--border)] px-1.5 flex items-center gap-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)] select-none"
       style={{ width }}
     >

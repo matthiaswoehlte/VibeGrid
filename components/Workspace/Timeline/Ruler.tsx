@@ -2,6 +2,7 @@
 import { useAppStore } from '@/lib/store';
 import type { AudioEngine } from '@/lib/audio/engine';
 import { TRACK_LABEL_WIDTH } from './Tracks';
+import { GridBackground } from './GridBackground';
 
 const BEAT_PX_BASE = 40;
 
@@ -79,15 +80,21 @@ export function Ruler({
         aria-valuemax={totalBeats}
         aria-valuenow={Math.round(playheadBeats * 100) / 100}
       >
-        {ticks.map((i) => (
-          <div
-            key={i}
-            className="absolute top-0 bottom-0 text-[10px] text-[var(--text-muted)] border-l border-[var(--border)] pl-1 pointer-events-none"
-            style={{ left: i * px }}
-          >
-            {i % 4 === 0 ? i / 4 + 1 : ''}
-          </div>
-        ))}
+        <GridBackground totalBeats={totalBeats} pxPerBeat={px} />
+        {ticks.map((i) =>
+          // Show bar-number labels every 4 beats. The vertical bar/beat
+          // lines themselves are drawn by GridBackground above, so each
+          // tick is now a label-only span (no border-l).
+          i % 4 === 0 ? (
+            <div
+              key={i}
+              className="absolute top-0 bottom-0 text-[10px] text-[var(--text-muted)] pl-1 pointer-events-none"
+              style={{ left: i * px }}
+            >
+              {i / 4 + 1}
+            </div>
+          ) : null
+        )}
       </div>
     </div>
   );
