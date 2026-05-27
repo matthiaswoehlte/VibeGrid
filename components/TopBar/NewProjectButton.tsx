@@ -19,20 +19,30 @@ export function NewProjectButton() {
     // so the next Save creates a brand-new VG_projects row instead of
     // overwriting the previous project. AutoSave is also gated on
     // projectId, so it stays quiet until the user explicitly saves.
-    useAppStore.setState({
-      timeline: { ...initialTimelineState },
-      media: { ...initialMediaState },
-      ui: {
-        zoom: 1,
-        selectedClipIds: [],
-        selectedClipId: null,
-        automationEditorClipId: null,
-        automationSnap: 'off',
-        clipSnap: '1',
-        exportState: EXPORT_INITIAL_STATE,
-        flowMode: false
-      }
-    });
+    //
+    // Plan 10 — skip:true because a destructive "New Project" wipe MUST
+    // NOT be undoable (architect L3: project-boundary operations clear
+    // the stack). clearHistory() then nukes any pre-reset history that
+    // would otherwise dangle and let Ctrl+Z resurrect a wiped project.
+    useAppStore.getState().recordingSet(
+      'New Project',
+      (s) => {
+        s.timeline = { ...initialTimelineState };
+        s.media = { ...initialMediaState };
+        s.ui = {
+          zoom: 1,
+          selectedClipIds: [],
+          selectedClipId: null,
+          automationEditorClipId: null,
+          automationSnap: 'off',
+          clipSnap: '1',
+          exportState: EXPORT_INITIAL_STATE,
+          flowMode: false
+        };
+      },
+      { skip: true }
+    );
+    useAppStore.getState().clearHistory();
     useCurrentProject.getState().setProject(null);
   };
   return (

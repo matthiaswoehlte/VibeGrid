@@ -77,6 +77,9 @@ export function TransferConfirmModal({
             </li>
             <li>Main-Video + Sync-Audio werden neu erstellt</li>
             <li>FX, Automation, alle anderen Spuren weg</li>
+            <li className="text-[var(--a1)]">
+              Kann nicht rückgängig gemacht werden (Ctrl+Z)
+            </li>
           </ul>
           <p className="text-xs text-[var(--text-muted)]">
             Story enthält {sceneCount} fertige Szenen.

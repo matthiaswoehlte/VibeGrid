@@ -11,11 +11,19 @@ import type { SerializedProject } from './types';
 export function applySerializedProject(serialized: SerializedProject): void {
   const migrated = (migrate(serialized.state, serialized.store_version) ??
     serialized.state) as Partial<AppState>;
-  useAppStore.setState((current) => ({
-    ...current,
-    ui: { ...current.ui, ...(migrated.ui ?? {}) },
-    timeline: { ...current.timeline, ...(migrated.timeline ?? {}) },
-    audio: { ...current.audio, ...(migrated.audio ?? {}) },
-    media: { ...current.media, ...(migrated.media ?? {}) }
-  }));
+  // Plan 10 — skip:true because project hydration is not a user action
+  // and must not appear in the Undo stack. clearHistory() then wipes
+  // the previous project's stack so Ctrl+Z can't reach back across
+  // project boundaries (architect L3).
+  useAppStore.getState().recordingSet(
+    'Load Project',
+    (s) => {
+      if (migrated.ui) Object.assign(s.ui, migrated.ui);
+      if (migrated.timeline) Object.assign(s.timeline, migrated.timeline);
+      if (migrated.audio) Object.assign(s.audio, migrated.audio);
+      if (migrated.media) Object.assign(s.media, migrated.media);
+    },
+    { skip: true }
+  );
+  useAppStore.getState().clearHistory();
 }

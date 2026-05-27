@@ -76,6 +76,10 @@ export function GenerationControls({
     (s) => s.mediaActions.purgeSceneflowMediaRefs
   );
   const setClipParam = useAppStore((s) => s.timelineActions.setClipParam);
+  // Plan 10 — Transfer is a project-boundary wipe; the undo stack from
+  // the previous timeline state must not bleed across or Ctrl+Z would
+  // resurrect deleted clips into a now-inconsistent tracks layout.
+  const clearHistory = useAppStore((s) => s.clearHistory);
 
   const warnings = validateScenesForGeneration({
     story,
@@ -362,6 +366,10 @@ export function GenerationControls({
       }
 
       setPendingPayload(null);
+
+      // Plan 10 — wipe the undo stack now that the destination project
+      // is fully rebuilt. The user was warned in the confirm modal.
+      clearHistory();
 
       const trimmedCount = layout.clips.filter((c) => c.trimmed).length;
       const lipsyncCount = lipsyncClipIds.length;

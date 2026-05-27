@@ -11,14 +11,26 @@ export function Transport({ engine }: { engine: AudioEngine | null }) {
     if (!engine) return;
     if (playing) {
       engine.pause();
-      useAppStore.setState((s) => ({
-        timeline: { ...s.timeline, playhead: { ...s.timeline.playhead, playing: false } }
-      }));
+      // Plan 10 — skip:true because `playhead.playing` is transport
+      // state, not editable content. The whole playhead is excluded
+      // from history (D3/L4), so this mutation must bypass it.
+      useAppStore.getState().recordingSet(
+        'Pause',
+        (s) => {
+          s.timeline.playhead.playing = false;
+        },
+        { skip: true }
+      );
     } else {
       await engine.play();
-      useAppStore.setState((s) => ({
-        timeline: { ...s.timeline, playhead: { ...s.timeline.playhead, playing: true } }
-      }));
+      // Plan 10 — same rationale as the pause branch above.
+      useAppStore.getState().recordingSet(
+        'Play',
+        (s) => {
+          s.timeline.playhead.playing = true;
+        },
+        { skip: true }
+      );
     }
   };
 
@@ -49,12 +61,15 @@ export function Transport({ engine }: { engine: AudioEngine | null }) {
           engine?.pause();
           engine?.seek(0);
           setPlayhead(0);
-          useAppStore.setState((s) => ({
-            timeline: {
-              ...s.timeline,
-              playhead: { ...s.timeline.playhead, playing: false }
-            }
-          }));
+          // Plan 10 — playhead.playing flip is transport state. skip:true
+          // (history excludes the whole playhead per D3/L4).
+          useAppStore.getState().recordingSet(
+            'Stop',
+            (s) => {
+              s.timeline.playhead.playing = false;
+            },
+            { skip: true }
+          );
         }}
         aria-label="Stop"
         className={touchTargetClass}
