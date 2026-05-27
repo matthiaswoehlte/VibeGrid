@@ -1048,6 +1048,43 @@ closure call overhead at the edge densities our 540p Sobel produces.
 
 ---
 
+## Undo / Redo (Plan 10)
+
+### Stack overlebt keinen Page-Reload
+
+Der `history`-Slice ist nicht in `partialize` — beim Reload ist Undo
+leer. Bewusste Entscheidung (Architekt): persistente Stacks blasen
+localStorage auf (mehrere MB) und schaffen Edge-Cases bei
+Schema-Migrations + Cross-Tab-Sync. Wenn das Feedback wird, kann ein
+zukünftiger Plan einen separaten `vibegrid-history`-Key einführen mit
+eigener Capping-Strategie.
+
+### R2-gebundene Operationen sind nicht undobar
+
+Alle `mediaActions` (`addMediaRef`, `removeMediaRef`,
+`addMediaRefMeta`, `purgeSceneflowMediaRefs`) sind `skip:true` —
+Undo würde R2-Blobs verwaisen oder Refs auf gelöschte URLs zeigen.
+Ebenso `replaceMainVideoClips` (SceneFlow Transfer) und der gesamte
+NewProject / LoadProject Flow. UI warnt vor SceneFlow-Transfer mit
+"kann nicht rückgängig gemacht werden (Ctrl+Z)".
+
+### Playhead wird NICHT mit reverted
+
+Architekt-D3 / L4 — DAW-Standard (Ableton, Logic, Pro Tools): Undo
+restored Clip-Struktur, nicht die Scrub-Position. Wenn du auf Sekunde
+60 bist und Ctrl+Z einen Clip an Sekunde 5 löscht, bleibt der
+Playhead auf 60. Begründung: andernfalls würde Ctrl+Z während des
+Playbacks den User zurück werfen, was extrem irritierend wäre.
+
+### RAM-Footprint bis ~100 MB worst-case
+
+`MAX_HISTORY = 100`. Bei einem ausgereizten Projekt (100 Clips, alle
+mit Automation-Kurven) kann ein Snapshot ~1 MB sein, also gesamt
+~100 MB im RAM. Akzeptierter Trade-off — der gleiche Worst-Case ist
+sehr selten, typische Projekte bleiben unter 10 MB.
+
+---
+
 ## Manual verification checklist (run before release)
 
 _To be filled in incrementally. Source of truth: spec §11.7._
