@@ -74,28 +74,123 @@ describe('contour — performance fix (half-resolution + cache)', () => {
     expect(EDGE_SCALE).toBe(0.5);
   });
 
-  it('cache hits on identical imageBitmapKey — no second extraction', () => {
+  it('cache hits within the same beat — no re-extract per frame', () => {
     const bm = makeMockImageBitmap(200, 200);
-    const rc1 = makeRenderContext({ imageBitmap: bm, imageBitmapKey: 'key-A' });
+    const rc1 = makeRenderContext({
+      imageBitmap: bm,
+      imageBitmapKey: 'key-A',
+      clipId: 'clip-1',
+      beatIndex: 0
+    });
     contourPlugin.render(rc1, contourPlugin.getDefaultParams());
     expect(preloadMod.extractContours).toHaveBeenCalledTimes(1);
 
-    // Second render with the SAME key — must hit cache.
-    const rc2 = makeRenderContext({ imageBitmap: bm, imageBitmapKey: 'key-A' });
+    // Same clip, same beat — must hit cache regardless of frame count.
+    const rc2 = makeRenderContext({
+      imageBitmap: bm,
+      imageBitmapKey: 'key-A',
+      clipId: 'clip-1',
+      beatIndex: 0
+    });
     contourPlugin.render(rc2, contourPlugin.getDefaultParams());
     expect(preloadMod.extractContours).toHaveBeenCalledTimes(1);
   });
 
-  it('cache invalidates on new imageBitmapKey — re-extract', () => {
+  it('beat-trigger: re-extract on beat change', () => {
     const bm = makeMockImageBitmap(200, 200);
-    const rc1 = makeRenderContext({ imageBitmap: bm, imageBitmapKey: 'key-A' });
+    const rc1 = makeRenderContext({
+      imageBitmap: bm,
+      imageBitmapKey: 'key-A',
+      clipId: 'clip-1',
+      beatIndex: 0
+    });
     contourPlugin.render(rc1, contourPlugin.getDefaultParams());
     expect(preloadMod.extractContours).toHaveBeenCalledTimes(1);
 
-    // Different key (simulates a Video bucket transition) — must miss.
-    const rc2 = makeRenderContext({ imageBitmap: bm, imageBitmapKey: 'key-B' });
+    // Same clip, NEXT beat — must re-extract.
+    const rc2 = makeRenderContext({
+      imageBitmap: bm,
+      imageBitmapKey: 'key-A',
+      clipId: 'clip-1',
+      beatIndex: 1
+    });
     contourPlugin.render(rc2, contourPlugin.getDefaultParams());
     expect(preloadMod.extractContours).toHaveBeenCalledTimes(2);
+  });
+
+  it('beat-trigger: bitmap-key change WITHIN same beat does NOT re-extract', () => {
+    // Architect L1 — video bucket transitions every 500 ms used to
+    // force a fresh Sobel each time. The Beat-Trigger pins extraction
+    // to musical-beat boundaries; mid-beat bitmap changes accept stale
+    // edges in exchange for predictable spike placement.
+    const bm = makeMockImageBitmap(200, 200);
+    const rc1 = makeRenderContext({
+      imageBitmap: bm,
+      imageBitmapKey: 'video|0',
+      clipId: 'clip-1',
+      beatIndex: 0
+    });
+    contourPlugin.render(rc1, contourPlugin.getDefaultParams());
+    expect(preloadMod.extractContours).toHaveBeenCalledTimes(1);
+
+    // Same beat, DIFFERENT bitmap-key (video advanced into next 500 ms
+    // bucket while still in beat 0) — must NOT trigger a re-extract.
+    const rc2 = makeRenderContext({
+      imageBitmap: bm,
+      imageBitmapKey: 'video|1',
+      clipId: 'clip-1',
+      beatIndex: 0
+    });
+    contourPlugin.render(rc2, contourPlugin.getDefaultParams());
+    expect(preloadMod.extractContours).toHaveBeenCalledTimes(1);
+  });
+
+  it('beat-trigger: per-clip isolation (clip A advance does not invalidate clip B)', () => {
+    const bm = makeMockImageBitmap(200, 200);
+    contourPlugin.render(
+      makeRenderContext({
+        imageBitmap: bm,
+        imageBitmapKey: 'key-A',
+        clipId: 'clip-A',
+        beatIndex: 0
+      }),
+      contourPlugin.getDefaultParams()
+    );
+    contourPlugin.render(
+      makeRenderContext({
+        imageBitmap: bm,
+        imageBitmapKey: 'key-B',
+        clipId: 'clip-B',
+        beatIndex: 0
+      }),
+      contourPlugin.getDefaultParams()
+    );
+    // Two clips, both first-render → 2 extracts.
+    expect(preloadMod.extractContours).toHaveBeenCalledTimes(2);
+
+    // Clip A advances a beat — only that clip re-extracts.
+    contourPlugin.render(
+      makeRenderContext({
+        imageBitmap: bm,
+        imageBitmapKey: 'key-A',
+        clipId: 'clip-A',
+        beatIndex: 1
+      }),
+      contourPlugin.getDefaultParams()
+    );
+    expect(preloadMod.extractContours).toHaveBeenCalledTimes(3);
+
+    // Clip B still on beat 0 → no extract.
+    contourPlugin.render(
+      makeRenderContext({
+        imageBitmap: bm,
+        imageBitmapKey: 'key-B',
+        clipId: 'clip-B',
+        beatIndex: 0
+      }),
+      contourPlugin.getDefaultParams()
+    );
+    expect(preloadMod.extractContours).toHaveBeenCalledTimes(3);
   });
 
   it('edge-point coordinates are upscaled by 1/EDGE_SCALE before render', () => {
