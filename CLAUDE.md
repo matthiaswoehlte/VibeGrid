@@ -118,6 +118,7 @@ tests/            unit/, integration/, e2e/
 | 8.6 | Admin-UI | ✅ Done |
 | 8d | Timeline-Integration + Beat-Snap | ✅ Done |
 | 8e | FX-Pack (9 neue Beat-Sync-Effekte) | ✅ Done |
+| 9a | Preset-Pack System (7 kuratierte Packs) | ✅ Done |
 
 **Rule:** Never start Plan N+1 before Plan N passes all verification gates.
 
