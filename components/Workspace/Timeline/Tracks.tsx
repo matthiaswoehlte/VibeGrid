@@ -553,45 +553,45 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
       const startX = pointerEvent.clientX;
       const initialIds = useAppStore.getState().ui.selectedClipIds;
       if (initialIds.length === 0) return;
-      setGroupDrag({ mode, deltaBeats: 0, clipIds: [...initialIds] });
+      // Closure-scoped snapshot — independent of React state. Updated
+      // by onMove, read by onUp. We CANNOT read live values via
+      // setGroupDrag's updater callback because React 18 invokes
+      // updaters during the reconciliation phase, NOT synchronously
+      // during the setter call — by the time onUp's side effects run,
+      // the updater has not yet executed and any "snapshot = prev"
+      // assignment is still null. Closure variables sidestep React
+      // entirely for the side-effect path; setGroupDrag is used purely
+      // for ghost rendering.
+      const liveClipIds = [...initialIds];
+      let liveDeltaBeats = 0;
+      setGroupDrag({ mode, deltaBeats: 0, clipIds: liveClipIds });
 
       const onMove = (ev: PointerEvent) => {
         const dx = ev.clientX - startX;
-        // Live delta in beats — snapped only on commit so the ghost
-        // tracks the cursor smoothly.
+        liveDeltaBeats = dx / px;
+        // Ghost rendering — React state update. Updater is pure
+        // (no side effects), Strict-Mode-safe.
         setGroupDrag((prev) =>
-          prev ? { ...prev, deltaBeats: dx / px } : prev
+          prev ? { ...prev, deltaBeats: liveDeltaBeats } : prev
         );
       };
       const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
-        // CRITICAL: setState updaters MUST be pure. React Strict Mode (dev)
-        // double-invokes them to enforce purity — any side effect inside fires
-        // TWICE. Earlier shape (duplicate/move/toast inside the updater)
-        // produced two copies per shift-drag in dev because of this exact
-        // double-invocation. Snapshot the prev state PURELY here, then run
-        // side effects below ONCE (outside the React-controlled function).
-        type GroupDragState = {
-          mode: GroupDragMode;
-          deltaBeats: number;
-          clipIds: string[];
-        };
-        let snapshot: GroupDragState | null = null;
-        setGroupDrag((prev) => {
-          snapshot = prev;
-          return null;
-        });
-        if (!snapshot) return;
-        // TypeScript can't narrow `snapshot` across the setter callback;
-        // assign to a local with the non-null type for the rest of the body.
-        const s: GroupDragState = snapshot;
-        const snapped = snapBeat(s.deltaBeats, readClipSnap());
+        // Clear ghost FIRST via pure setter — no side effects inside.
+        // This is what React Strict Mode could double-invoke safely
+        // (the only effect is setting state to null).
+        setGroupDrag(null);
+
+        // All side effects use CLOSURE variables (liveDeltaBeats,
+        // mode, liveClipIds), NOT React state. They fire exactly once
+        // per onUp invocation regardless of any React internals.
+        const snapped = snapBeat(liveDeltaBeats, readClipSnap());
         if (snapped === 0) return;
-        if (s.mode === 'move') {
+        if (mode === 'move') {
           moveSelectedClips(snapped);
         } else {
-          const total = s.clipIds.length;
+          const total = liveClipIds.length;
           const added = duplicateSelectedClips(snapped);
           const skipped = total - added;
           if (added > 0 && skipped === 0) {
