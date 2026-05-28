@@ -21,6 +21,8 @@ import { letterboxSqueezePlugin } from './letterbox-squeeze';
 import { colorGradeShiftPlugin } from './color-grade-shift';
 // Plan 8f.2 — second WebGL2 FX.
 import { retroVhsPlugin } from './retro-vhs';
+// Plan 8f.3 — third WebGL2 FX.
+import { edgeGlowPlugin } from './edge-glow';
 
 let registered = false;
 
@@ -54,6 +56,8 @@ export function registerBuiltInPlugins(): void {
   register(colorGradeShiftPlugin);
   // Plan 8f.2 — second WebGL2 FX.
   register(retroVhsPlugin);
+  // Plan 8f.3 — third WebGL2 FX.
+  register(edgeGlowPlugin);
   registered = true;
 }
 

@@ -75,7 +75,9 @@ const ALL_PLUGIN_KINDS = [
   // Plan 8f.1 — WebGL2 FX.
   'ColorGradeShift',
   // Plan 8f.2 — second WebGL2 FX.
-  'RetroVHS'
+  'RetroVHS',
+  // Plan 8f.3 — third WebGL2 FX.
+  'EdgeGlow'
 ] as const;
 
 const ALL_PLUGIN_IDS = [
@@ -100,7 +102,9 @@ const ALL_PLUGIN_IDS = [
   // Plan 8f.1 — WebGL2 FX.
   'color-grade-shift',
   // Plan 8f.2 — second WebGL2 FX.
-  'retro-vhs'
+  'retro-vhs',
+  // Plan 8f.3 — third WebGL2 FX.
+  'edge-glow'
 ];
 
 describe('FxPlugin contract', () => {
@@ -153,8 +157,8 @@ describe('FxPlugin contract', () => {
     }
   });
 
-  it('registers exactly 19 plugins (v0.1 + Plan 5.8a + Plan 8e + Plan 8f.1 + Plan 8f.2)', () => {
-    expect(listPlugins().length).toBe(19);
+  it('registers exactly 20 plugins (v0.1 + Plan 5.8a + Plan 8e + Plan 8f.1 + Plan 8f.2 + Plan 8f.3)', () => {
+    expect(listPlugins().length).toBe(20);
     expect(
       listPlugins()
         .map((p) => p.id)
