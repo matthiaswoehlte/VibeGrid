@@ -5,10 +5,10 @@ import type { AudioEngine } from '@/lib/audio/engine';
 /**
  * Global Spacebar → play/pause shortcut (transport reflex).
  *
- * INTENTIONALLY fires even when an input / textarea / contenteditable is
- * focused. This is a DAW-first design decision: the user explicitly wants
- * Spacebar to always control the transport, regardless of where focus sits.
- * Contrast with useUndoRedoShortcuts which SKIPS when an input is focused.
+ * DAW-standard behavior: toggles transport EVERYWHERE except when an input
+ * / textarea / contenteditable has focus — there Spacebar inserts a space
+ * normally so users can type text without unintentionally toggling
+ * playback. Matches the useUndoRedoShortcuts focus-bail pattern.
  *
  * Mirrors the toggle logic in Transport.tsx exactly:
  *   - engine.pause() / engine.play() for the audio engine
@@ -22,6 +22,22 @@ export function useTransportShortcuts(engine: AudioEngine | null): void {
   useEffect(() => {
     async function onKey(e: KeyboardEvent): Promise<void> {
       if (e.key !== ' ') return;
+
+      // Bail when focus is on a text-entry element — let the native space
+      // insertion happen. Same pattern as useUndoRedoShortcuts. Check both
+      // `isContentEditable` (production browsers) AND the property literal
+      // `contentEditable === 'true'` (jsdom test environment lacks the
+      // inheritance-aware getter implementation).
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.contentEditable === 'true')
+      ) {
+        return;
+      }
 
       // Suppress browser default (page scroll on Spacebar).
       e.preventDefault();

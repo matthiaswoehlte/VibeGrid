@@ -99,13 +99,13 @@ describe('useTransportShortcuts', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The "fires when input focused" property is a code-level invariant:
-// useTransportShortcuts intentionally has NO focus-element bail-out guard
-// (contrast with useUndoRedoShortcuts which returns early for INPUT/TEXTAREA).
-// The test below verifies this directly without causing act() nesting from
-// calling input.focus() inside a renderHook() context.
+// Focus-bail: when target is INPUT/TEXTAREA/contenteditable, the hook MUST
+// skip so native text-entry handling (insert space char) wins. DAW-standard
+// behavior matches useUndoRedoShortcuts. Verified by dispatching keydown
+// with the input as `target` — same shape browsers produce when focus is on
+// the element.
 // ---------------------------------------------------------------------------
-describe('useTransportShortcuts — fires when input is focused (no bail-out)', () => {
+describe('useTransportShortcuts — bails when text-entry element is the event target', () => {
   beforeEach(() => {
     setPlayingState(false);
   });
@@ -114,29 +114,73 @@ describe('useTransportShortcuts — fires when input is focused (no bail-out)', 
     vi.restoreAllMocks();
   });
 
-  it('Spacebar is handled even with an input present and active in the DOM', async () => {
+  /** Dispatch Space directly onto `target`, mirroring the browser path where
+   *  keydown bubbles from the focused element up to window. */
+  async function pressSpaceOn(target: Element) {
+    await act(async () => {
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  it('skips toggle when target is an INPUT', async () => {
     const engine = makeEngine();
     const { unmount } = renderHook(() => useTransportShortcuts(engine as never));
-
-    // Add an input to the DOM so document.activeElement is an input-like
-    // element. We deliberately do NOT call .focus() inside an act() to avoid
-    // the "overlapping act()" React testing warning that obscures the real
-    // assertion. The hook registers on window and browsers always deliver
-    // keydown to window regardless of which element has focus.
     const input = document.createElement('input');
     document.body.appendChild(input);
 
-    // Dispatch from window — same path a browser uses for every keypress.
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }));
-      await new Promise((r) => setTimeout(r, 0));
-    });
+    await pressSpaceOn(input);
 
-    // The hook MUST have called play() — proving no input-focus bail-out exists.
+    expect(engine.play).not.toHaveBeenCalled();
+    expect(useAppStore.getState().timeline.playhead.playing).toBe(false);
+
+    unmount();
+    document.body.removeChild(input);
+  });
+
+  it('skips toggle when target is a TEXTAREA', async () => {
+    const engine = makeEngine();
+    const { unmount } = renderHook(() => useTransportShortcuts(engine as never));
+    const ta = document.createElement('textarea');
+    document.body.appendChild(ta);
+
+    await pressSpaceOn(ta);
+
+    expect(engine.play).not.toHaveBeenCalled();
+
+    unmount();
+    document.body.removeChild(ta);
+  });
+
+  it('skips toggle when target is contenteditable', async () => {
+    const engine = makeEngine();
+    const { unmount } = renderHook(() => useTransportShortcuts(engine as never));
+    const div = document.createElement('div');
+    div.contentEditable = 'true';
+    document.body.appendChild(div);
+
+    await pressSpaceOn(div);
+
+    expect(engine.play).not.toHaveBeenCalled();
+
+    unmount();
+    document.body.removeChild(div);
+  });
+
+  it('toggles when target is a non-text element (e.g. button)', async () => {
+    const engine = makeEngine();
+    const { unmount } = renderHook(() => useTransportShortcuts(engine as never));
+    const btn = document.createElement('button');
+    document.body.appendChild(btn);
+
+    await pressSpaceOn(btn);
+
     expect(engine.play).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().timeline.playhead.playing).toBe(true);
 
     unmount();
-    document.body.removeChild(input);
+    document.body.removeChild(btn);
   });
 });
