@@ -4,6 +4,7 @@ import type { AudioEngine } from '@/lib/audio/engine';
 import { useAppStore } from '@/lib/store';
 import { useIsMobile } from '@/lib/utils/breakpoints';
 import { useUndoRedoShortcuts } from '@/lib/hooks/useUndoRedoShortcuts';
+import { useTransportShortcuts } from '@/lib/hooks/useTransportShortcuts';
 import { LeftPanel } from './LeftPanel';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
@@ -40,6 +41,11 @@ export function Workspace({
   // Mounted at the Workspace level so it works regardless of where the
   // focus is on the canvas / timeline. Skips when an input has focus.
   useUndoRedoShortcuts();
+
+  // Global Spacebar → play/pause (DAW transport reflex).
+  // INTENTIONALLY fires even when an input/textarea is focused — per explicit
+  // user requirement: "Spacebar soll immer Play/Pause toggeln egal wo man steht".
+  useTransportShortcuts(engine);
 
   // Global Delete / Backspace shortcut — removes the currently selected clip.
   // No-op when an input/textarea/contenteditable has focus (don't interfere
