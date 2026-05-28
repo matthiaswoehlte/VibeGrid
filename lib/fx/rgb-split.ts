@@ -5,6 +5,7 @@ interface RGBSplitParams {
   offset: number;
   decay: number;
   intensity: number;
+  beatSync: number;
 }
 
 /**
@@ -64,18 +65,30 @@ export const rgbSplitPlugin: FxPlugin<RGBSplitParams> = {
       max: 1,
       step: 0.01,
       default: 0.6
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: (): RGBSplitParams => ({
     offset: 0.004,
     decay: 0.15,
-    intensity: 0.6
+    intensity: 0.6,
+    beatSync: 1,
   }),
   async preload() {},
   render(rc: RenderContext, params: RGBSplitParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const env = Math.max(0, 1 - rc.beatPhase / params.decay);
+    const synced = params.beatSync >= 0.5;
+    const env = synced
+      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      : 1.0;
     if (env < 0.01) return;
     if (typeof OffscreenCanvas === 'undefined') return;
 
