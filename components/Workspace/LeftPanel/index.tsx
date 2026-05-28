@@ -3,15 +3,23 @@ import { useState } from 'react';
 import { MediaLibrary } from './MediaLibrary';
 import { FxLibrary } from './FxLibrary';
 import { LayersList } from './LayersList';
+import { SoundLibrary } from './SoundLibrary';
 
-type Tab = 'media' | 'fx' | 'layers';
+type Tab = 'media' | 'sounds' | 'fx' | 'layers';
+
+const TAB_LABEL: Record<Tab, string> = {
+  media: 'media',
+  sounds: 'sounds',
+  fx: 'fx',
+  layers: 'layers'
+};
 
 export function LeftPanel() {
   const [tab, setTab] = useState<Tab>('media');
   return (
     <div className="h-full flex flex-col">
       <nav className="flex border-b border-[var(--border)]">
-        {(['media', 'fx', 'layers'] as Tab[]).map((t) => (
+        {(['media', 'sounds', 'fx', 'layers'] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -20,12 +28,13 @@ export function LeftPanel() {
               tab === t ? 'text-[var(--text)] border-b-2 border-[var(--a1)]' : 'text-[var(--text-dim)]'
             }`}
           >
-            {t}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </nav>
       <div className="flex-1 overflow-y-auto p-2">
         {tab === 'media' && <MediaLibrary />}
+        {tab === 'sounds' && <SoundLibrary />}
         {tab === 'fx' && <FxLibrary />}
         {tab === 'layers' && <LayersList />}
       </div>
