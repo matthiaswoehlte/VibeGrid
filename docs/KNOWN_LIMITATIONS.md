@@ -1100,3 +1100,23 @@ _To be filled in incrementally. Source of truth: spec §11.7._
 - [ ] Tab switch during recording: warning toast appears.
 - [ ] Export filename has correct timestamp (no `undefined`).
 - [ ] Memory not permanently elevated after export (object URL revoked).
+
+## WebGL2 FX Composition (Plan 8f.3)
+
+VibeGrid hat drei WebGL2-FX-Kategorien (Plan 8f.1 / 8f.2 / 8f.3):
+**ColorGradeShift**, **RetroVHS**, **Edge Glow**.
+
+**Edge Glow chained korrekt** auf vorherige image-modifying FX, weil
+es `source='canvas'` in `renderGlFx` nutzt — sampelt also den bereits
+composed Frame. Render-Order positioniert Edge Glow am ENDE der
+image-modifying group.
+
+**Stacken von ColorGradeShift + RetroVHS auf demselben Clip ist
+"last writer wins"**: beide nutzen `source='bitmap'`, also sampeln
+beide das Original-Bitmap und schreiben separat auf die Main-Canvas.
+Der zweite überschreibt den ersten. Folge-Plan 8f.4 kann beide auf
+`source='canvas'` opten und so die Composition chainen — Edge Glow
+hat den Pfad bereits implementiert und kann als Referenz dienen.
+
+Workaround heute: nur einen der beiden (CGS oder VHS) pro Clip
+einsetzen, Edge Glow kann zusätzlich oben drauf laufen.
