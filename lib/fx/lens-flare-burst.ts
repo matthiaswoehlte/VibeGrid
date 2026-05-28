@@ -9,6 +9,7 @@ interface LensFlareBurstParams {
   centerX: number;
   centerY: number;
   decay: number;
+  beatSync: number;
 }
 
 /**
@@ -76,6 +77,14 @@ export const lensFlareBurstPlugin: FxPlugin<LensFlareBurstParams> = {
       step: 0.01,
       default: 0.2,
       unit: 'beats'
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: (): LensFlareBurstParams => ({
@@ -85,12 +94,16 @@ export const lensFlareBurstPlugin: FxPlugin<LensFlareBurstParams> = {
     rayLength: 0.5,
     centerX: 0.5,
     centerY: 0.5,
-    decay: 0.2
+    decay: 0.2,
+    beatSync: 1,
   }),
   async preload() {},
   render(rc: RenderContext, params: LensFlareBurstParams) {
     if (rc.flowMode) return;
-    const env = Math.max(0, 1 - rc.beatPhase / params.decay);
+    const synced = params.beatSync >= 0.5;
+    const env = synced
+      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      : 1.0;
     if (env < 0.01) return;
     const { width: w, height: h } = rc;
     const cx = w * params.centerX;

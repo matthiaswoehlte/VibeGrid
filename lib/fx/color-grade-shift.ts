@@ -8,6 +8,7 @@ interface ColorGradeShiftParams {
   brightness: number;
   hueShift: number;
   decay: number;
+  beatSync: number;
 }
 
 /**
@@ -77,6 +78,14 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
       step: 0.01,
       default: 0.25,
       unit: 'beats'
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: () => ({
@@ -84,7 +93,8 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
     contrast: 1.3,
     brightness: 1.1,
     hueShift: 0,
-    decay: 0.25
+    decay: 0.25,
+    beatSync: 1,
   }),
 
   async preload() {
@@ -100,7 +110,10 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
   render(rc, params) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const env = Math.max(0, 1 - rc.beatPhase / params.decay);
+    const synced = params.beatSync >= 0.5;
+    const env = synced
+      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      : 1.0;
     if (env < 0.01) return;
 
     renderGlFx({

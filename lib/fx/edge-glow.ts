@@ -9,6 +9,7 @@ interface EdgeGlowParams {
   bgOpacity: number;
   intensity: number;
   decay: number;
+  beatSync: number;
 }
 
 /**
@@ -107,6 +108,14 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
       step: 0.01,
       default: 0.25,
       unit: 'beats'
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: () => ({
@@ -115,7 +124,8 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
     glowAmount: 0.5,
     bgOpacity: 0.3,
     intensity: 1.0,
-    decay: 0.25
+    decay: 0.25,
+    beatSync: 1,
   }),
 
   async preload() {
@@ -135,9 +145,12 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
     // fälschlicherweise skippen.
     if (!rc.ctx?.canvas) return;
 
-    const isFlow = rc.flowMode;
-    const env = isFlow ? 1.0 : Math.max(0, 1 - rc.beatPhase / params.decay);
-    if (!isFlow && env < 0.01) return;
+    const synced = params.beatSync >= 0.5;
+    const isConstant = rc.flowMode || !synced;
+    const env = isConstant
+      ? 1.0
+      : Math.max(0, 1 - rc.beatPhase / params.decay);
+    if (!isConstant && env < 0.01) return;
 
     const color = _hexToRgba01(params.color);
     const canvas = rc.ctx.canvas;

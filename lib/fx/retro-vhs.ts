@@ -11,6 +11,7 @@ interface RetroVhsParams {
   warpIntensity: number;
   decay: number;
   seed: number;
+  beatSync: number;
 }
 
 /**
@@ -105,6 +106,14 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
       max: 999,
       step: 1,
       default: 7
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: () => ({
@@ -115,7 +124,8 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
     dropoutCount: 3,
     warpIntensity: 0.004,
     decay: 0.3,
-    seed: 7
+    seed: 7,
+    beatSync: 1,
   }),
 
   async preload() {
@@ -131,15 +141,16 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
   render(rc, params) {
     if (!rc.imageBitmap) return;
 
-    // Flow Mode: persistente Layer bleiben aktiv, dropout/warp aus.
-    const isFlow = rc.flowMode;
-    const env = isFlow
+    // Flow Mode or beatSync=0: persistente Layer bleiben aktiv, dropout/warp aus.
+    const synced = params.beatSync >= 0.5;
+    const isConstant = rc.flowMode || !synced;
+    const env = isConstant
       ? 1.0
       : Math.max(0, 1 - rc.beatPhase / params.decay);
     // Beat Mode: skip the WebGL call when the envelope has fully
-    // decayed (saves a per-frame texSubImage2D + drawArrays). In Flow
-    // Mode env is pinned at 1.0, so the check is bypassed implicitly.
-    if (!isFlow && env < 0.01) return;
+    // decayed (saves a per-frame texSubImage2D + drawArrays). In
+    // isConstant mode env is pinned at 1.0, so the check is bypassed.
+    if (!isConstant && env < 0.01) return;
 
     renderGlFx({
       rc,
@@ -163,9 +174,9 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
         u_scanline_opacity: params.scanlineOpacity,
         u_scanline_spacing: params.scanlineSpacing,
         u_color_fringe: params.colorFringe,
-        u_dropout_intensity: isFlow ? 0 : params.dropoutIntensity,
+        u_dropout_intensity: isConstant ? 0 : params.dropoutIntensity,
         u_dropout_count: params.dropoutCount,
-        u_warp_intensity: isFlow ? 0 : params.warpIntensity,
+        u_warp_intensity: isConstant ? 0 : params.warpIntensity,
         u_seed: params.seed
       }
     });

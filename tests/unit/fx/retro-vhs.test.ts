@@ -86,7 +86,8 @@ describe('retroVhsPlugin', () => {
       dropoutCount: 3,
       warpIntensity: 0.004,
       decay: 0.3,
-      seed: 7
+      seed: 7,
+      beatSync: 1,
     });
   });
 

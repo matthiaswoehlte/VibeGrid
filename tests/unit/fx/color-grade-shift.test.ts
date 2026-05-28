@@ -25,7 +25,8 @@ describe('colorGradeShiftPlugin', () => {
       contrast: 1.3,
       brightness: 1.1,
       hueShift: 0,
-      decay: 0.25 // env = 1 - 0.99/0.25 = -2.96 → clamped to 0
+      decay: 0.25, // env = 1 - 0.99/0.25 = -2.96 → clamped to 0
+      beatSync: 1,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -37,7 +38,8 @@ describe('colorGradeShiftPlugin', () => {
       contrast: 1.3,
       brightness: 1.1,
       hueShift: 0,
-      decay: 0.25
+      decay: 0.25,
+      beatSync: 1,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -49,7 +51,8 @@ describe('colorGradeShiftPlugin', () => {
       contrast: 1.4,
       brightness: 1.2,
       hueShift: 90,
-      decay: 0.3
+      decay: 0.3,
+      beatSync: 1,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const args = mockedRenderGlFx.mock.calls[0][0];
@@ -132,7 +135,8 @@ describe('colorGradeShiftPlugin', () => {
       contrast: 1.3,
       brightness: 1.1,
       hueShift: 0,
-      decay: 0.25
+      decay: 0.25,
+      beatSync: 1,
     });
   });
 });

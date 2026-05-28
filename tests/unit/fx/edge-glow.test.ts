@@ -25,7 +25,8 @@ describe('edgeGlowPlugin', () => {
       glowAmount: 0.5,
       bgOpacity: 0.3,
       intensity: 1.0,
-      decay: 0.25
+      decay: 0.25,
+      beatSync: 1,
     });
   });
 
@@ -38,7 +39,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -47,7 +48,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: true });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const args = mockedRenderGlFx.mock.calls[0][0];
@@ -58,7 +59,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0 });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx.mock.calls[0][0].source).toBe('canvas');
   });
@@ -67,7 +68,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0 });
     edgeGlowPlugin.render(rc, {
       threshold: 0.15, color: '#ff8800', glowAmount: 0.8,
-      bgOpacity: 0.5, intensity: 0.9, decay: 0.3
+      bgOpacity: 0.5, intensity: 0.9, decay: 0.3, beatSync: 1,
     });
     const args = mockedRenderGlFx.mock.calls[0][0];
     expect(args.uniformNames).toEqual([
