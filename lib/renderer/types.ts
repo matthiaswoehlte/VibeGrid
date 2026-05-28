@@ -53,7 +53,9 @@ export type FxKind =
   // Plan 8f.2 — second WebGL2 FX.
   | 'RetroVHS'
   // Plan 8f.3 — third WebGL2 FX (post-composition Edge Glow).
-  | 'EdgeGlow';
+  | 'EdgeGlow'
+  // Plan 8f.4 — fourth WebGL2 FX (chain-composed Contour outline + sweep).
+  | 'ContourGL';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;

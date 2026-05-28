@@ -118,7 +118,9 @@ export function activeFxClipsByKind(
     // Plan 8f.2 — second WebGL2 FX.
     'retro-vhs': [],
     // Plan 8f.3 — third WebGL2 FX.
-    'edge-glow': []
+    'edge-glow': [],
+    // Plan 8f.4 — fourth WebGL2 FX.
+    'contour-gl': []
   };
   for (const c of state.clips) {
     // Skip media-bearing clips — they're handled outside this selector.

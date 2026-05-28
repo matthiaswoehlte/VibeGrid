@@ -9,11 +9,13 @@ import {
 } from '@/lib/timeline/plugin-mapping';
 
 describe('plugin-mapping — FX kind constants & helpers', () => {
-  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8f.3: 20 kinds)', () => {
+  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8f.4: 21 kinds)', () => {
     expect([...TRACK_FX_KINDS].sort()).toEqual([
       'beat-flash',
       'color-grade-shift',
       'contour',
+      // Plan 8f.4 — Contour GL.
+      'contour-gl',
       'dissolve',
       // Plan 8f.3 — Edge Glow.
       'edge-glow',
@@ -73,6 +75,19 @@ describe('plugin-mapping — FX kind constants & helpers', () => {
     expect(FX_DISPLAY_NAME['retro-vhs']).toBe('Retro VHS');
     expect(TRACK_KIND_TO_PLUGIN_KIND['retro-vhs']).toBe('RetroVHS');
     expect(PLUGIN_KIND_TO_TRACK_KIND.RetroVHS).toBe('retro-vhs');
+  });
+
+  it('Plan 8f.4 — contour-gl is in RENDER_ORDER + maps roundtrip + sits after edge-glow', () => {
+    expect((TRACK_FX_KINDS as readonly string[]).includes('contour-gl')).toBe(true);
+    expect(RENDER_ORDER_TRACK_KIND.indexOf('contour-gl' as never)).toBeGreaterThanOrEqual(0);
+    expect(FX_DISPLAY_NAME['contour-gl']).toBe('Contour GL');
+    expect(TRACK_KIND_TO_PLUGIN_KIND['contour-gl']).toBe('ContourGL');
+    expect(PLUGIN_KIND_TO_TRACK_KIND.ContourGL).toBe('contour-gl');
+    // Contour GL sees the composed canvas including Edge Glow's output,
+    // so it must come AFTER edge-glow in the painter's order.
+    const edgeGlowIdx = RENDER_ORDER_TRACK_KIND.indexOf('edge-glow' as never);
+    const contourGlIdx = RENDER_ORDER_TRACK_KIND.indexOf('contour-gl' as never);
+    expect(contourGlIdx).toBeGreaterThan(edgeGlowIdx);
   });
 
   it('RENDER_ORDER_TRACK_KIND covers every FX kind exactly once', () => {

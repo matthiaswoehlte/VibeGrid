@@ -40,7 +40,9 @@ export const TRACK_FX_KINDS = [
   // Plan 8f.2 — second WebGL2 FX kind.
   'retro-vhs',
   // Plan 8f.3 — third WebGL2 FX kind (chain-composed Edge Glow).
-  'edge-glow'
+  'edge-glow',
+  // Plan 8f.4 — fourth WebGL2 FX kind (chain-composed Contour outline + sweep).
+  'contour-gl'
 ] as const;
 
 export type TrackFxKind = (typeof TRACK_FX_KINDS)[number];
@@ -72,6 +74,12 @@ export const RENDER_ORDER_TRACK_KIND = [
   // (source='canvas' in renderGlFx). Muss daher NACH allen anderen
   // image-modifying FX in der Render-Reihenfolge stehen.
   'edge-glow',
+  // Plan 8f.4 — Contour GL liest ebenfalls den composed Frame und legt
+  // einen Outline-Stroke obendrauf. Position direkt nach Edge Glow:
+  // wenn beide auf dem gleichen Clip liegen, sieht Contour GL Edge
+  // Glow's Output (gewünschte Schichtung: Outline auf Glow, nicht
+  // umgekehrt).
+  'contour-gl',
   // Overlay FX (paint on top of whatever was drawn underneath).
   'sweep',
   'particles',
@@ -123,7 +131,9 @@ export type PluginFxKind =
   // Plan 8f.2 — second WebGL2 FX.
   | 'RetroVHS'
   // Plan 8f.3 — third WebGL2 FX.
-  | 'EdgeGlow';
+  | 'EdgeGlow'
+  // Plan 8f.4 — fourth WebGL2 FX.
+  | 'ContourGL';
 
 /** PascalCase → lowercase. The Particle ↔ particles name asymmetry
  *  is the only non-trivial entry — singular plugin name, plural
@@ -153,7 +163,9 @@ export const PLUGIN_KIND_TO_TRACK_KIND: Record<PluginFxKind, TrackFxKind> = {
   // Plan 8f.2 — second WebGL2 FX.
   RetroVHS: 'retro-vhs',
   // Plan 8f.3 — third WebGL2 FX.
-  EdgeGlow: 'edge-glow'
+  EdgeGlow: 'edge-glow',
+  // Plan 8f.4 — fourth WebGL2 FX.
+  ContourGL: 'contour-gl'
 };
 
 /** Inverse of PLUGIN_KIND_TO_TRACK_KIND — used by the renderer to
@@ -182,7 +194,9 @@ export const TRACK_KIND_TO_PLUGIN_KIND: Record<TrackFxKind, PluginFxKind> = {
   // Plan 8f.2 — second WebGL2 FX.
   'retro-vhs': 'RetroVHS',
   // Plan 8f.3 — third WebGL2 FX.
-  'edge-glow': 'EdgeGlow'
+  'edge-glow': 'EdgeGlow',
+  // Plan 8f.4 — fourth WebGL2 FX.
+  'contour-gl': 'ContourGL'
 };
 
 /** Human-readable label shown in the Inspector header and clip-band. */
@@ -210,7 +224,9 @@ export const FX_DISPLAY_NAME: Record<TrackFxKind, string> = {
   // Plan 8f.2 — second WebGL2 FX.
   'retro-vhs': 'Retro VHS',
   // Plan 8f.3 — Edge Glow (CapCut-style outline + glow).
-  'edge-glow': 'Edge Glow'
+  'edge-glow': 'Edge Glow',
+  // Plan 8f.4 — Contour GL (GPU-port of Contour with stipple + sweep).
+  'contour-gl': 'Contour GL'
 };
 
 /** Clip-band background color in the Timeline UI. Keep contrast vs
@@ -247,5 +263,8 @@ export const FX_CLIP_COLORS: Record<TrackFxKind, string> = {
   // Plan 8f.2 — RetroVHS. Faded teal/cyan (analog tape colour-shift vibe).
   'retro-vhs': '#3aaab3',
   // Plan 8f.3 — Edge Glow. Helles Cyan (Neon-Outline-Vibe).
-  'edge-glow': '#00e5ff'
+  'edge-glow': '#00e5ff',
+  // Plan 8f.4 — Contour GL. Tieferes Lila als Contour (#a86bff), damit
+  // beide Varianten in der Timeline unterscheidbar bleiben.
+  'contour-gl': '#7a4bff'
 };

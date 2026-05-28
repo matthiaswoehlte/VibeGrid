@@ -23,6 +23,8 @@ import { colorGradeShiftPlugin } from './color-grade-shift';
 import { retroVhsPlugin } from './retro-vhs';
 // Plan 8f.3 — third WebGL2 FX.
 import { edgeGlowPlugin } from './edge-glow';
+// Plan 8f.4 — fourth WebGL2 FX.
+import { contourGlPlugin } from './contour-gl';
 
 let registered = false;
 
@@ -58,6 +60,8 @@ export function registerBuiltInPlugins(): void {
   register(retroVhsPlugin);
   // Plan 8f.3 — third WebGL2 FX.
   register(edgeGlowPlugin);
+  // Plan 8f.4 — fourth WebGL2 FX (chain-composed Contour outline).
+  register(contourGlPlugin);
   registered = true;
 }
 
