@@ -75,4 +75,33 @@ describe('renderGlFx — source option', () => {
     // Should NOT be identity.
     expect(containCall!.args.slice(1)).not.toEqual([0, 0, 1, 1]);
   });
+
+  // Regression test for Plan-8g live-smoke bug: Edge Glow on video silently
+  // produced no output. Root cause: pipeline bailed on `!rc.imageBitmap`
+  // regardless of `source`, but Video clips can have undefined imageBitmap
+  // (captureVideoFrame returns undefined when displayWidth=0 etc.) while
+  // rc.ctx.canvas still has valid pixels from drawImage(video). source='canvas'
+  // MUST render in this case — that's the whole point of canvas-source.
+  it("source='canvas' must render even when rc.imageBitmap is undefined (video Edge Glow regression)", () => {
+    const rc = makeRenderContext({ imageBitmap: undefined });
+    renderGlFx({
+      rc, fragSrc: TINY_FRAG, uniforms: {}, uniformNames: [],
+      source: 'canvas'
+    });
+    // The pipeline must reach the upload + drawArrays — without the fix, an
+    // early `return` would skip these entirely.
+    expect(gl.__calls.some((c) => c.method === 'texSubImage2D')).toBe(true);
+    expect(gl.__calls.some((c) => c.method === 'drawArrays')).toBe(true);
+  });
+
+  it("source='bitmap' still bails when rc.imageBitmap is undefined (no regression)", () => {
+    const rc = makeRenderContext({ imageBitmap: undefined });
+    renderGlFx({
+      rc, fragSrc: TINY_FRAG, uniforms: {}, uniformNames: []
+      // default source='bitmap'
+    });
+    // Bitmap-mode legitimately needs the bitmap — early-return is the
+    // correct behavior. No drawArrays should fire.
+    expect(gl.__calls.some((c) => c.method === 'drawArrays')).toBe(false);
+  });
 });

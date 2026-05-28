@@ -48,7 +48,15 @@ export interface RenderGlFxArgs {
 
 export function renderGlFx(args: RenderGlFxArgs): void {
   const { rc, fragSrc, uniforms, uniformNames } = args;
-  if (!rc.imageBitmap) return;
+  const sourceKind = args.source ?? 'bitmap';
+
+  // Bitmap-mode requires rc.imageBitmap (CGS/VHS sample the source bitmap
+  // directly). Canvas-mode samples rc.ctx.canvas — independent of imageBitmap.
+  // Without this distinction, video clips where firstImageBitmap-capture
+  // fails (captureVideoFrame returns undefined: OffscreenCanvas unavailable,
+  // displayWidth=0, etc.) would silently no-op Edge Glow and any future
+  // canvas-source FX. Fix für Bug aus Plan 8g Live-Smoke.
+  if (sourceKind === 'bitmap' && !rc.imageBitmap) return;
 
   const caps = getDeviceCapabilities();
   if (!caps.webgl2) return;
@@ -57,7 +65,6 @@ export function renderGlFx(args: RenderGlFxArgs): void {
   if (!glCtx) return;
 
   const { gl, canvas, locations } = glCtx;
-  const { sx, sy, sw, sh } = containRect(rc);
 
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0, 0, 0, 0);
@@ -98,13 +105,12 @@ export function renderGlFx(args: RenderGlFxArgs): void {
     8
   );
 
-  // Standard-Uniforms.
-  const sourceKind = args.source ?? 'bitmap';
+  // Standard-Uniforms. sourceKind resolved at top of function.
   if (sourceKind === 'canvas') {
     const c = rc.ctx.canvas;
     uploadTextureSource(gl, c as unknown as TexImageSource, c.width, c.height);
   } else {
-    uploadTextureSource(gl, rc.imageBitmap, rc.imageBitmap.width, rc.imageBitmap.height);
+    uploadTextureSource(gl, rc.imageBitmap!, rc.imageBitmap!.width, rc.imageBitmap!.height);
   }
   const uImage = locs.uniforms.get('u_image');
   if (uImage) gl.uniform1i(uImage, 0);
@@ -114,6 +120,8 @@ export function renderGlFx(args: RenderGlFxArgs): void {
       // Identity: shader samples the full canvas (no letterbox remap).
       gl.uniform4f(uContain, 0, 0, 1, 1);
     } else {
+      // bitmap-mode: containRect dereferences rc.imageBitmap (guarded above).
+      const { sx, sy, sw, sh } = containRect(rc);
       gl.uniform4f(
         uContain,
         sx / rc.width, sy / rc.height, sw / rc.width, sh / rc.height
