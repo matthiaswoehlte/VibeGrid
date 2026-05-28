@@ -16,6 +16,7 @@ import { createAudioSlice } from './audio-slice';
 import { createMediaSlice } from './media-slice';
 import { createMobileUISlice } from './mobile-ui-slice';
 import { createAppModeSlice } from './app-mode-slice';
+import { createSoundsSlice } from './sounds-slice';
 import { toPersistedShape, STORE_VERSION } from './persist-shape';
 import type { Track } from '@/lib/timeline/types';
 import { TRACK_FX_KINDS } from '@/lib/timeline/plugin-mapping';
@@ -309,7 +310,8 @@ export const useAppStore = create<AppState>()(
         ...createAudioSlice(set, get, store),
         ...createMediaSlice(set, get, store),
         ...createMobileUISlice(set, get, store),
-        ...createAppModeSlice(set, get, store)
+        ...createAppModeSlice(set, get, store),
+        ...createSoundsSlice(set, get, store)
       };
     }),
     {

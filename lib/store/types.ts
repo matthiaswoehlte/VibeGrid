@@ -8,6 +8,7 @@ import type { MobileUIState, MobileUIActions } from './mobile-ui-slice';
 import type { AppMode } from './app-mode-slice';
 import type { HistoryState } from './history-types';
 import type { RecordingSet } from './recording-set';
+import type { SoundsState, SoundsActions } from './sounds-slice';
 
 // Plan 10 — re-export so external callers (NewProjectButton,
 // Transport, deserialize) can import without coupling to the
@@ -217,4 +218,9 @@ export interface AppState {
    *  Transient, excluded from `partialize`. See `lib/store/app-mode-slice.ts`. */
   appMode: AppMode;
   setAppMode(mode: AppMode): void;
+  /** Plan 8.7 — Sound Library manifest + bootstrap state. Transient
+   *  (manifest is fetched at app-start, never persisted to localStorage
+   *  via partialize). See `lib/store/sounds-slice.ts`. */
+  sounds: SoundsState;
+  soundsActions: SoundsActions;
 }
