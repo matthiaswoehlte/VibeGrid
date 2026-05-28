@@ -245,7 +245,8 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
       e.dataTransfer.types.includes('application/x-vibegrid-fx') ||
       e.dataTransfer.types.includes('application/x-vibegrid-media-image') ||
       e.dataTransfer.types.includes('application/x-vibegrid-media-video') ||
-      e.dataTransfer.types.includes('application/x-vibegrid-media-audio')
+      e.dataTransfer.types.includes('application/x-vibegrid-media-audio') ||
+      e.dataTransfer.types.includes('application/x-vibegrid-sound')
     ) {
       e.preventDefault();
     }
@@ -256,7 +257,8 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     const mediaIdImage = e.dataTransfer.getData('application/x-vibegrid-media-image');
     const mediaIdVideo = e.dataTransfer.getData('application/x-vibegrid-media-video');
     const mediaIdAudio = e.dataTransfer.getData('application/x-vibegrid-media-audio');
-    if (!fxId && !mediaIdImage && !mediaIdVideo && !mediaIdAudio) return;
+    const soundLibraryId = e.dataTransfer.getData('application/x-vibegrid-sound');
+    if (!fxId && !mediaIdImage && !mediaIdVideo && !mediaIdAudio && !soundLibraryId) return;
     e.preventDefault();
 
     // Compute startBeat from the actual clip-area under the cursor (not the
@@ -491,6 +493,61 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
           startBeat,
           lengthBeats,
           label: ref.filename
+        });
+        return;
+      }
+
+      // Plan 8.7 — Sound Library drop. Resolve the SoundEntry from the
+      // manifest in the store, then run addMediaRef + addClip on a
+      // regular `audio` lane. Sync-Audio is explicitly excluded —
+      // library sounds are SFX/stingers, not the song that drives the
+      // BPM grid.
+      if (soundLibraryId) {
+        const manifest = useAppStore.getState().sounds.manifest;
+        const sound = manifest?.categories
+          .flatMap((c) => c.sounds)
+          .find((s) => s.id === soundLibraryId);
+        if (!sound) {
+          toast.error('Sound nicht im Manifest');
+          return;
+        }
+        if (droppedTrackKind && droppedTrackKind !== 'audio') {
+          toast.error(
+            `Sound kann nicht auf "${droppedTrackKind}"-Track — nur auf Audio-Tracks`
+          );
+          return;
+        }
+        const audioTrack = droppedTrackId
+          ? tracks.find((t) => t.id === droppedTrackId && t.kind === 'audio')
+          : tracks.find((t) => t.kind === 'audio');
+        if (!audioTrack) {
+          toast.error('Kein Audio-Track vorhanden — erst einen anlegen.');
+          return;
+        }
+        const mediaId = `library-${sound.id}`;
+        const state = useAppStore.getState();
+        if (!state.mediaActions.getMediaRef(mediaId)) {
+          state.mediaActions.addMediaRef({
+            id: mediaId,
+            kind: 'audio',
+            url: sound.url,
+            filename: sound.label,
+            uploadedAt: new Date().toISOString(),
+            duration: sound.duration,
+            source: 'library',
+            license: sound.license
+          });
+        }
+        const bpm = state.audio.grid.bpm || 120;
+        const lengthBeats = Math.max(0.5, (sound.duration * bpm) / 60);
+        addClip({
+          id: crypto.randomUUID(),
+          trackId: audioTrack.id,
+          kind: 'audio',
+          mediaId,
+          startBeat,
+          lengthBeats,
+          label: sound.label
         });
       }
     } catch (err) {
