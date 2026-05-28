@@ -566,29 +566,44 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
       const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        // CRITICAL: setState updaters MUST be pure. React Strict Mode (dev)
+        // double-invokes them to enforce purity — any side effect inside fires
+        // TWICE. Earlier shape (duplicate/move/toast inside the updater)
+        // produced two copies per shift-drag in dev because of this exact
+        // double-invocation. Snapshot the prev state PURELY here, then run
+        // side effects below ONCE (outside the React-controlled function).
+        type GroupDragState = {
+          mode: GroupDragMode;
+          deltaBeats: number;
+          clipIds: string[];
+        };
+        let snapshot: GroupDragState | null = null;
         setGroupDrag((prev) => {
-          if (!prev) return null;
-          const snapped = snapBeat(prev.deltaBeats, readClipSnap());
-          if (snapped !== 0) {
-            if (prev.mode === 'move') {
-              moveSelectedClips(snapped);
-            } else {
-              const total = prev.clipIds.length;
-              const added = duplicateSelectedClips(snapped);
-              const skipped = total - added;
-              if (added > 0 && skipped === 0) {
-                toast.success(`${added} clips duplicated`);
-              } else if (added > 0 && skipped > 0) {
-                toast.message(
-                  `${added} of ${total} clips duplicated (${skipped} overlap)`
-                );
-              } else if (added === 0) {
-                toast.error('No clips duplicated (all overlap)');
-              }
-            }
-          }
+          snapshot = prev;
           return null;
         });
+        if (!snapshot) return;
+        // TypeScript can't narrow `snapshot` across the setter callback;
+        // assign to a local with the non-null type for the rest of the body.
+        const s: GroupDragState = snapshot;
+        const snapped = snapBeat(s.deltaBeats, readClipSnap());
+        if (snapped === 0) return;
+        if (s.mode === 'move') {
+          moveSelectedClips(snapped);
+        } else {
+          const total = s.clipIds.length;
+          const added = duplicateSelectedClips(snapped);
+          const skipped = total - added;
+          if (added > 0 && skipped === 0) {
+            toast.success(`${added} clips duplicated`);
+          } else if (added > 0 && skipped > 0) {
+            toast.message(
+              `${added} of ${total} clips duplicated (${skipped} overlap)`
+            );
+          } else if (added === 0) {
+            toast.error('No clips duplicated (all overlap)');
+          }
+        }
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);

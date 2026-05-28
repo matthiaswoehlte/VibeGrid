@@ -219,6 +219,19 @@ export function Clip({ clip }: { clip: ClipT }) {
     });
     if (consumed) {
       e.stopPropagation();
+      // CRITICAL: React's stopPropagation only halts React-synthetic
+      // bubbling. @dnd-kit attaches its pointer listener directly on
+      // this div via {...listeners} — that's a NATIVE listener which
+      // synthetic stopPropagation does NOT silence. Without
+      // stopImmediatePropagation on the native event, dnd-kit ALSO
+      // starts a drag in parallel to our group-drag-bus, and on drop
+      // its onDragEnd calls moveClip(original) — so the user sees:
+      //   - original moved to drop position (from dnd-kit's moveClip)
+      //   - new copy at drop position (from group-drag's duplicate)
+      // = two clips at the drop point, which reads as "copied twice".
+      // nativeEvent.stopImmediatePropagation() stops dnd-kit's listener
+      // on the same element. Fix für shift-drag-doubles-the-copy bug.
+      e.nativeEvent.stopImmediatePropagation();
     }
   };
 
