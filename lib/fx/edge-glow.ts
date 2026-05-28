@@ -155,6 +155,10 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
         'u_intensity'
       ],
       uniforms: {
+        // u_resolution shadows the pipeline default (GL canvas dims) on
+        // purpose: source='canvas' uploads rc.ctx.canvas as the texture,
+        // so Sobel's `1.0 / u_resolution` texel offsets must be in main-
+        // canvas pixel space, not in scaled-GL-canvas pixel space.
         u_resolution: [canvas.width, canvas.height] as const,
         u_threshold: params.threshold,
         u_color: color,
