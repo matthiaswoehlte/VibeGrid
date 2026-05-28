@@ -1153,3 +1153,19 @@ Folge-Plan 8g.5 (separates Vorhaben) wird die 8 skip-FX auf das pin-Pattern umst
 Hotfix nach Live-Smoke 2026-05-28: `renderGlFx` bailte auf `!rc.imageBitmap` unabhängig vom `source`-Parameter. Für `source='canvas'` (Edge Glow) ist das falsch — der Shader sampelt `rc.ctx.canvas`, das auch dann gültige Pixel hat wenn `captureVideoFrame` für einen Video-Clip undefined zurückliefert (was häufig passieren kann: displayWidth=0, OffscreenCanvas unavailable, Timing-Race). Sichtbarer Effekt: Edge Glow auf Video-Clips unsichtbar trotz korrektem render(). Fix: Guard nur für `source='bitmap'`.
 
 Plan-8f.3 Code-Quality-Reviewerin hatte diesen Punkt geflagged ("acceptable as layered-fix"). Optional/später wurde zu "irgendwann verfällt das Verfallsdatum" — beim ersten Video-Test geknallt.
+
+## RGBSplit WebGL2 — leicht anderer Look als Canvas-2D-Vorgänger (Plan 11a)
+
+Plan 11a (2026-05-28) migrierte RGBSplit von Canvas-2D auf WebGL2. Der Canvas-2D-Vorgänger zeichnete das Original + zwei tinted Channel-Layer mit `screen`-Composite und `globalAlpha = intensity * env` — Resultat: hellere, additive Aberration mit "gepumpter" Anmutung bei hohen `intensity`-Werten. Der WebGL-Shader macht stattdessen channel-replace per Pixel (`r=sample(+s).r, g=sample(0).g, b=sample(-s).b`), gemixt mit `u_intensity` gegen das Original-Sample. Semantisch sauberere Aberration mit erhaltener Bildhelligkeit, aber **nicht bit-equivalent**.
+
+Bestandsprojekte mit RGBSplit zeigen nach der Migration einen leicht anderen Look — kein UX-Eingriff nötig, dokumentiert. Migration-Trade-off: deterministischer Look + keine per-Clip OffscreenCanvas-Caches + WebGL-Performance (avg < 0.5 ms statt ~3 ms) gegen den additiven "Hellpump"-Charakter des Canvas-2D-Vorgängers.
+
+## Stack-Composition Bitmap-Source-FX — last-writer-wins (Plan 11a)
+
+Vier Image-Modifying-FX nutzen aktuell `source: 'bitmap'` in `renderGlFx`: ColorGradeShift (Plan 8f.1), RetroVHS (Plan 8f.2), Contour GL (Plan 8f.4) und RGBSplit (Plan 11a). Wenn 2+ davon auf demselben Clip aktiv sind, sampeln alle das Original-Bitmap und composen mit `drawImage` auf den Main-Canvas — der letzte Render-Pass überschreibt den vorigen. User sieht NUR den letzten FX in `RENDER_ORDER_TRACK_KIND`.
+
+**Workaround heute:**
+- Nur einen Bitmap-Source-FX pro Clip aktiv lassen
+- ODER explizit Edge Glow (`source: 'canvas'`) als finale Komposition oben auf chained FX setzen
+
+**Saubere Lösung** (eigener Folge-Plan): alle Bitmap-Source-FX schrittweise auf `source: 'canvas'`-Chaining migrieren, analog zu Edge Glow (Plan 8f.3). Render-Order wird dann signifikant: jeder FX sampelt was der Vorgänger hinterlassen hat. Siehe Edge-Glow-Kommentar in `lib/fx/edge-glow.ts` (Variante B-Section) für das ursprüngliche Symptom-Pair (CGS + VHS).
