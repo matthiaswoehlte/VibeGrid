@@ -189,13 +189,35 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     // Plan 8h — cross-track drag (single clips, same-kind only).
     // Use the activator event (pointerdown position) + delta to compute
     // the final pointer position, then find the track element underneath.
-    // This mirrors the elementFromPoint pattern used in onNativeDrop.
+    //
+    // CRITICAL: the dragged clip itself sits at the cursor (dnd-kit's
+    // CSS transform-translate moves it visually, and the element stays
+    // hit-testable). `elementFromPoint` would return the dragged clip,
+    // and `closest('[data-track-id]')` walks the DOM up to the clip's
+    // SOURCE track — making every "cross-track" drop look like a same-
+    // track time-shift. Use `elementsFromPoint` (plural) and skip
+    // anything inside the dragged clip's DOM subtree, so we find the
+    // ACTUAL track row visually under the cursor.
     const activator = e.activatorEvent as PointerEvent | null;
     if (activator) {
       const finalX = activator.clientX + e.delta.x;
       const finalY = activator.clientY + e.delta.y;
-      const el = document.elementFromPoint(finalX, finalY) as HTMLElement | null;
-      const clipArea = el?.closest('[data-track-id]') as HTMLElement | null;
+      const sourceClipEl = document.querySelector(
+        `[data-clip-id="${clip.id}"]`
+      );
+      const stack = document.elementsFromPoint(finalX, finalY);
+      let clipArea: HTMLElement | null = null;
+      for (const el of stack) {
+        // Skip the dragged clip and any of its descendants.
+        if (sourceClipEl && sourceClipEl.contains(el)) continue;
+        const track = (el as HTMLElement).closest(
+          '[data-track-id]'
+        ) as HTMLElement | null;
+        if (track) {
+          clipArea = track;
+          break;
+        }
+      }
       const targetTrackId = clipArea?.getAttribute('data-track-id') ?? null;
 
       if (targetTrackId && targetTrackId !== clip.trackId) {
