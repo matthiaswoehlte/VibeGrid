@@ -5,6 +5,7 @@ interface BeatFlashParams {
   color: string;
   duration: number;
   blendMode: string;
+  beatSync: number;
 }
 
 /**
@@ -58,18 +59,33 @@ export const beatFlashPlugin: FxPlugin<BeatFlashParams> = {
         { value: 'overlay', label: 'Overlay' }
       ],
       default: 'screen'
+    },
+    // TODO(Plan-UX-1): replace beatSync slider (step:1) with kind:'toggle'
+    // when Inspector supports toggle params. Touch-UX is suboptimal with
+    // a 2-stop slider.
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: (): BeatFlashParams => ({
     intensity: 0.8,
     color: '#ffffff',
     duration: 0.1,
-    blendMode: 'screen'
+    blendMode: 'screen',
+    beatSync: 1,
   }),
   async preload() {},
   render(rc, params) {
     if (rc.flowMode) return;
-    const env = Math.max(0, 1 - rc.beatPhase / params.duration);
+    const synced = params.beatSync >= 0.5;
+    const env = synced
+      ? Math.max(0, 1 - rc.beatPhase / params.duration)
+      : 1.0;
     if (env < 0.01) return;
     rc.ctx.save();
     rc.ctx.globalAlpha *= params.intensity * env;

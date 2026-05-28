@@ -6,6 +6,7 @@ interface ZoomPunchParams {
   attack: number;
   decay: number;
   direction: string;
+  beatSync: number;
 }
 
 /**
@@ -65,25 +66,37 @@ export const zoomPunchPlugin: FxPlugin<ZoomPunchParams> = {
         { value: 'out', label: 'Zoom Out' }
       ],
       default: 'in'
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: (): ZoomPunchParams => ({
     strength: 1.12,
     attack: 0.02,
     decay: 0.15,
-    direction: 'in'
+    direction: 'in',
+    beatSync: 1,
   }),
   async preload() {},
   render(rc: RenderContext, params: ZoomPunchParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
     const p = rc.beatPhase;
+    const synced = params.beatSync >= 0.5;
     let scale: number;
     if (p < params.attack) {
       scale = 1 + (params.strength - 1) * (p / params.attack);
     } else {
-      scale =
-        1 + (params.strength - 1) * Math.max(0, 1 - (p - params.attack) / params.decay);
+      const env = synced
+        ? Math.max(0, 1 - (p - params.attack) / params.decay)
+        : 1.0;
+      scale = 1 + (params.strength - 1) * env;
     }
     if (params.direction === 'out') scale = 2 - scale;
     if (Math.abs(scale - 1) < 0.001) return;

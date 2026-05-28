@@ -6,6 +6,7 @@ interface ScreenShakeParams {
   frequency: number;
   decay: number;
   axis: string;
+  beatSync: number;
 }
 
 /**
@@ -63,19 +64,31 @@ export const screenShakePlugin: FxPlugin<ScreenShakeParams> = {
         { value: 'y', label: 'Vertical' }
       ],
       default: 'both'
+    },
+    beatSync: {
+      kind: 'slider',
+      label: 'Beat Sync',
+      min: 0,
+      max: 1,
+      step: 1,
+      default: 1,
     }
   },
   getDefaultParams: (): ScreenShakeParams => ({
     intensity: 0.004,
     frequency: 2,
     decay: 0.4,
-    axis: 'both'
+    axis: 'both',
+    beatSync: 1,
   }),
   async preload() {},
   render(rc: RenderContext, params: ScreenShakeParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const env = Math.max(0, 1 - rc.beatPhase / params.decay);
+    const synced = params.beatSync >= 0.5;
+    const env = synced
+      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      : 1.0;
     if (env < 0.01) return;
 
     const px = rc.width * params.intensity;
