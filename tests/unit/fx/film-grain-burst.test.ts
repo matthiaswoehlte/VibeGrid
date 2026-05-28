@@ -123,4 +123,31 @@ describe('filmGrainBurstPlugin', () => {
     expect(saves).toBe(restores);
     expect(saves).toBe(1);
   });
+
+  // --- beatSync tests (Plan 8g) ---
+
+  it('beatSync=1 decays with beat phase (default behavior)', () => {
+    // beatPhase=0.5 with default decay=0.15: env = 1 - 0.5/0.15 = -2.33 → 0 → no draw.
+    const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
+    filmGrainBurstPlugin.render(rc, { ...filmGrainBurstPlugin.getDefaultParams(), beatSync: 1 });
+    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
+      (c) => c.method === 'drawImage'
+    );
+    expect(draws.length).toBe(0);
+  });
+
+  it('beatSync=0 runs at full intensity (env=1.0) regardless of beatPhase', () => {
+    // beatPhase=0.99 with decay=0.1 would normally yield env=0 → no draw.
+    // With beatSync=0, env=1.0 → drawImage fires (env < 0.02 guard bypassed).
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    filmGrainBurstPlugin.render(rc, {
+      ...filmGrainBurstPlugin.getDefaultParams(),
+      beatSync: 0,
+      decay: 0.1
+    });
+    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
+      (c) => c.method === 'drawImage'
+    );
+    expect(draws.length).toBe(1);
+  });
 });

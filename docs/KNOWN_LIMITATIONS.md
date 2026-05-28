@@ -1120,3 +1120,21 @@ hat den Pfad bereits implementiert und kann als Referenz dienen.
 
 Workaround heute: nur einen der beiden (CGS oder VHS) pro Clip
 einsetzen, Edge Glow kann zusätzlich oben drauf laufen.
+
+---
+
+## Beat Sync per Clip (Plan 8g)
+
+VibeGrid hat zwei Controls für "FX läuft konstant statt beat-synchron":
+
+| Control | Scope | Wirkung |
+|---|---|---|
+| `rc.flowMode` (global toggle) | Ganze Timeline | Schaltet Beat-Sync für ALLE FX gleichzeitig aus |
+| `beatSync` (per Clip, Plan 8g) | Einzelner Clip | Schaltet Sync nur für diesen einen Clip aus |
+
+**Bekannte Limitation:** flowMode-Verhältnis ist je nach FX-Pattern unterschiedlich:
+
+- **skip-FX** (BeatFlash, ZoomPunch, ScreenShake, GlitchSlice, RGBSplit, FilmGrainBurst, LensFlareBurst, ColorGradeShift): beatSync wirkt nur in Beat Mode. In Flow Mode trumpft `rc.flowMode` — der FX skippt weiterhin via early-return. Wer beatSync=0 in Flow Mode nutzen will, müsste Flow Mode ausschalten.
+- **pin-FX** (Edge Glow, RetroVHS): beatSync=0 und Flow Mode konvergieren beide zu env=1.0 → kein Konflikt, beide Wege geben denselben persistenten Look.
+
+Folge-Plan 8g.5 (separates Vorhaben) wird die 8 skip-FX auf das pin-Pattern umstellen, so dass für alle FX gleiches Verhalten gilt.

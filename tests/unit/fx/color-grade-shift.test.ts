@@ -139,4 +139,37 @@ describe('colorGradeShiftPlugin', () => {
       beatSync: 1,
     });
   });
+
+  // --- beatSync tests (Plan 8g) ---
+
+  it('beatSync=1 decays with beat phase (default behavior)', () => {
+    // beatPhase=0.5 with default decay=0.25: env = 1 - 0.5/0.25 = -1 → 0 → skips renderGlFx.
+    const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
+    colorGradeShiftPlugin.render(rc, {
+      saturation: 2,
+      contrast: 1.3,
+      brightness: 1.1,
+      hueShift: 0,
+      decay: 0.25,
+      beatSync: 1,
+    });
+    expect(mockedRenderGlFx).not.toHaveBeenCalled();
+  });
+
+  it('beatSync=0 runs at full intensity (env=1.0) regardless of beatPhase', () => {
+    // beatPhase=0.99 with decay=0.1 would normally yield env=0 → skip.
+    // With beatSync=0, env=1.0 → renderGlFx is called with u_env=1.
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    colorGradeShiftPlugin.render(rc, {
+      saturation: 2,
+      contrast: 1.3,
+      brightness: 1.1,
+      hueShift: 0,
+      decay: 0.1,
+      beatSync: 0,
+    });
+    expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
+    const args = mockedRenderGlFx.mock.calls[0][0];
+    expect(args.uniforms.u_env).toBe(1);
+  });
 });

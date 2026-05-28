@@ -108,4 +108,62 @@ describe('retroVhsPlugin', () => {
       'u_seed'
     ]);
   });
+
+  // --- beatSync tests (Plan 8g, Template B) ---
+
+  it('beatSync=1 decays normally in Beat Mode', () => {
+    // beatPhase=0.99, decay=0.1: env = 1 - 0.99/0.1 = -8.9 → 0 → skips (env < 0.01).
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    retroVhsPlugin.render(rc, {
+      ...retroVhsPlugin.getDefaultParams(),
+      decay: 0.1,
+      beatSync: 1,
+    });
+    expect(mockedRenderGlFx).not.toHaveBeenCalled();
+  });
+
+  it('beatSync=0 runs constant (env=1.0) in Beat Mode regardless of beatPhase', () => {
+    // beatPhase=0.99 with decay=0.1 would normally skip; with beatSync=0, env=1.0 → renders.
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    retroVhsPlugin.render(rc, {
+      ...retroVhsPlugin.getDefaultParams(),
+      decay: 0.1,
+      beatSync: 0,
+    });
+    expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
+    const args = mockedRenderGlFx.mock.calls[0][0];
+    expect(args.uniforms.u_env).toBe(1.0);
+  });
+
+  it('beatSync=0 in Beat Mode produces the same u_env as flowMode=true (both pin env=1.0)', () => {
+    // Both paths set isConstant=true → env=1.0 → u_env should be identical.
+    const params = { ...retroVhsPlugin.getDefaultParams(), beatSync: 0 };
+
+    const rcBeatMode = makeRenderContext({ beatPhase: 0.5, flowMode: false });
+    retroVhsPlugin.render(rcBeatMode, params);
+    const beatModeEnv = mockedRenderGlFx.mock.calls[0][0].uniforms.u_env;
+    mockedRenderGlFx.mockClear();
+
+    retroVhsPlugin.render(
+      makeRenderContext({ beatPhase: 0.5, flowMode: true }),
+      { ...params, beatSync: 1 }
+    );
+    const flowModeEnv = mockedRenderGlFx.mock.calls[0][0].uniforms.u_env;
+
+    expect(beatModeEnv).toBe(flowModeEnv);
+  });
+
+  it('beatSync=0 zeros u_dropout_intensity and u_warp_intensity (like Flow Mode)', () => {
+    // isConstant=true when beatSync=0 → dropout and warp are zeroed just like Flow Mode.
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    retroVhsPlugin.render(rc, {
+      ...retroVhsPlugin.getDefaultParams(),
+      beatSync: 0,
+      dropoutIntensity: 0.8,
+      warpIntensity: 0.01,
+    });
+    const args = mockedRenderGlFx.mock.calls[0][0];
+    expect(args.uniforms.u_dropout_intensity).toBe(0);
+    expect(args.uniforms.u_warp_intensity).toBe(0);
+  });
 });

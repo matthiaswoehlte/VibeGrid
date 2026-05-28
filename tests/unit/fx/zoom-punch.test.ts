@@ -112,4 +112,36 @@ describe('zoomPunchPlugin', () => {
     expect(saves).toBe(restores);
     expect(saves).toBe(1);
   });
+
+  // --- beatSync tests (Plan 8g) ---
+
+  it('beatSync=1 decays with beat phase (default behavior)', () => {
+    // At beatPhase=0.5 well past attack=0.02+decay=0.15, env=0 → no scale draw.
+    const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
+    zoomPunchPlugin.render(rc, { ...zoomPunchPlugin.getDefaultParams(), beatSync: 1 });
+    const scales = (rc.ctx as unknown as CtxCalls).__calls.filter(
+      (c) => c.method === 'scale'
+    );
+    expect(scales.length).toBe(0);
+  });
+
+  it('beatSync=0 runs at full intensity (env=1.0) regardless of beatPhase', () => {
+    // beatPhase=0.99 is well past attack(0.02)+decay(0.15), normally env=0 → no draw.
+    // With beatSync=0, env is pinned to 1.0 → scale > 1 → scale call fires.
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    zoomPunchPlugin.render(rc, {
+      ...zoomPunchPlugin.getDefaultParams(),
+      beatSync: 0,
+      decay: 0.1,
+      strength: 1.2
+    });
+    const scales = (rc.ctx as unknown as CtxCalls).__calls.filter(
+      (c) => c.method === 'scale'
+    );
+    expect(scales.length).toBe(1);
+    // scale = 1 + (1.2 - 1) * 1.0 = 1.2
+    const [sx, sy] = scales[0].args as [number, number];
+    expect(sx).toBeCloseTo(1.2, 3);
+    expect(sy).toBeCloseTo(1.2, 3);
+  });
 });

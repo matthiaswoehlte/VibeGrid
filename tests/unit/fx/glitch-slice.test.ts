@@ -123,4 +123,31 @@ describe('glitchSlicePlugin', () => {
     glitchSlicePlugin.dispose?.();
     expect(_testOnly_glitchOffByClip.size).toBe(0);
   });
+
+  // --- beatSync tests (Plan 8g) ---
+
+  it('beatSync=1 decays with beat phase (default behavior)', () => {
+    // beatPhase=0.5 with default decay=0.08: env = 1 - 0.5/0.08 = -5.25 → 0 → no draw.
+    const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
+    glitchSlicePlugin.render(rc, { ...glitchSlicePlugin.getDefaultParams(), beatSync: 1 });
+    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
+      (c) => c.method === 'drawImage'
+    );
+    expect(draws.length).toBe(0);
+  });
+
+  it('beatSync=0 runs at full intensity (env=1.0) regardless of beatPhase', () => {
+    // beatPhase=0.99 with decay=0.1 would normally skip; beatSync=0 pins env=1.0.
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    glitchSlicePlugin.render(rc, {
+      ...glitchSlicePlugin.getDefaultParams(),
+      beatSync: 0,
+      decay: 0.1
+    });
+    // sliceCount=4 (default) → 4 drawImage calls on main canvas
+    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
+      (c) => c.method === 'drawImage'
+    );
+    expect(draws.length).toBe(4);
+  });
 });

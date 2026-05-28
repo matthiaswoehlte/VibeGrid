@@ -102,4 +102,50 @@ describe('edgeGlowPlugin', () => {
     expect(_hexToRgba01('')).toEqual([1, 1, 1, 1]);
     expect(_hexToRgba01('#abc')).toEqual([1, 1, 1, 1]); // 3-digit not supported
   });
+
+  // --- beatSync tests (Plan 8g, Template B) ---
+
+  it('beatSync=1 decays with beat phase (Beat Mode)', () => {
+    // beatPhase=0.99, decay=0.25: env = 1 - 0.99/0.25 = -2.96 → 0 → skips (env < 0.01).
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    edgeGlowPlugin.render(rc, {
+      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
+    });
+    expect(mockedRenderGlFx).not.toHaveBeenCalled();
+  });
+
+  it('beatSync=0 runs constant (env=1.0) in Beat Mode regardless of beatPhase', () => {
+    // beatPhase=0.99 would normally skip with beatSync=1; with beatSync=0, env=1.0.
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    edgeGlowPlugin.render(rc, {
+      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.1, beatSync: 0,
+    });
+    expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
+    const args = mockedRenderGlFx.mock.calls[0][0];
+    // u_intensity = params.intensity * env = 1.0 * 1.0 = 1.0
+    expect(args.uniforms.u_intensity).toBe(1.0);
+  });
+
+  it('beatSync=0 in Beat Mode produces the same u_intensity as flowMode=true (both pin env=1.0)', () => {
+    // Both paths yield isConstant=true → env=1.0 → u_intensity = intensity * 1.0
+    const params = {
+      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+    };
+
+    const rcBeatMode = makeRenderContext({ beatPhase: 0.5, flowMode: false });
+    edgeGlowPlugin.render(rcBeatMode, params);
+    const beatModeIntensity = mockedRenderGlFx.mock.calls[0][0].uniforms.u_intensity;
+    mockedRenderGlFx.mockClear();
+
+    edgeGlowPlugin.render(
+      makeRenderContext({ beatPhase: 0.5, flowMode: true }),
+      { ...params, beatSync: 1 }
+    );
+    const flowModeIntensity = mockedRenderGlFx.mock.calls[0][0].uniforms.u_intensity;
+
+    expect(beatModeIntensity).toBe(flowModeIntensity);
+  });
 });
