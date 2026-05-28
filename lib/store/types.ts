@@ -62,6 +62,9 @@ export interface UIState {
 export interface TimelineActions {
   addClip(clip: Clip): void;
   moveClip(clipId: string, newStartBeat: number): void;
+  /** Plan 8h — drag-and-drop across tracks of the same kind.
+   *  UI gates by canDropOnTrack; the store operation is unconditional. */
+  moveClipToTrack(clipId: string, newTrackId: string, newStartBeat: number): void;
   resizeClip(clipId: string, newLengthBeats: number): void;
   removeClip(clipId: string): void;
   setClipParams(clipId: string, params: Record<string, unknown>): void;

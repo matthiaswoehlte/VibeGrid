@@ -3,6 +3,7 @@ import {
   OperationError,
   addClip,
   moveClip,
+  moveClipToTrack,
   resizeClip,
   removeClip,
   setClipParams,
@@ -124,6 +125,58 @@ describe('moveClip', () => {
       })
     );
     const s1 = moveClip(s0, 'a', 10);
+    expect(s1.clips.find((c) => c.id === 'b')).toBe(s0.clips.find((c) => c.id === 'b'));
+  });
+});
+
+describe('moveClipToTrack', () => {
+  it('updates trackId and startBeat, returning a new state', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 })]
+      })
+    );
+    const s1 = moveClipToTrack(s0, 'a', 't2', 8);
+    expect(s1.clips[0].trackId).toBe('t2');
+    expect(s1.clips[0].startBeat).toBe(8);
+    // Original clip unchanged
+    expect(s0.clips[0].trackId).toBe('t1');
+    expect(s0.clips[0].startBeat).toBe(0);
+  });
+
+  it('throws CLIP_NOT_FOUND when clipId is unknown', () => {
+    const s0 = freezeState(makeState());
+    expect(() => moveClipToTrack(s0, 'missing', 't2', 0)).toThrow(OperationError);
+    try {
+      moveClipToTrack(s0, 'missing', 't2', 0);
+    } catch (e) {
+      expect((e as OperationError).code).toBe('CLIP_NOT_FOUND');
+    }
+  });
+
+  it('returns a NEW state object and does NOT mutate the input', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [makeClip({ id: 'a', trackId: 't1', kind: 'pulse', startBeat: 2, lengthBeats: 4 })]
+      })
+    );
+    const s1 = moveClipToTrack(s0, 'a', 't3', 6);
+    expect(s1).not.toBe(s0);
+    expect(s1.clips).not.toBe(s0.clips);
+    // s0 is frozen — if the function mutated it, it would have thrown already.
+    expect(s0.clips[0].trackId).toBe('t1');
+  });
+
+  it('preserves other clips unchanged', () => {
+    const s0 = freezeState(
+      makeState({
+        clips: [
+          makeClip({ id: 'a', trackId: 't1', kind: 'contour', startBeat: 0, lengthBeats: 4 }),
+          makeClip({ id: 'b', trackId: 't2', kind: 'pulse', startBeat: 0, lengthBeats: 4 })
+        ]
+      })
+    );
+    const s1 = moveClipToTrack(s0, 'a', 't3', 2);
     expect(s1.clips.find((c) => c.id === 'b')).toBe(s0.clips.find((c) => c.id === 'b'));
   });
 });

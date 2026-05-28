@@ -60,6 +60,7 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
   // independent of inline visibility.
   const selectedClipId = useAppStore((s) => s.ui.selectedClipId);
   const moveClip = useAppStore((s) => s.timelineActions.moveClip);
+  const moveClipToTrack = useAppStore((s) => s.timelineActions.moveClipToTrack);
   const addClip = useAppStore((s) => s.timelineActions.addClip);
   const getMediaRef = useAppStore((s) => s.mediaActions.getMediaRef);
   const selectClips = useAppStore((s) => s.selectClips);
@@ -184,6 +185,33 @@ export function Tracks({ totalBeats }: { totalBeats: number }) {
     // Beat-Snap on move — resolution from the global ClipSnapPicker
     // (localStorage-persisted). 'off' falls through to free-float.
     const target = snapBeat(clip.startBeat + dxBeats, readClipSnap());
+
+    // Plan 8h — cross-track drag (single clips, same-kind only).
+    // Use the activator event (pointerdown position) + delta to compute
+    // the final pointer position, then find the track element underneath.
+    // This mirrors the elementFromPoint pattern used in onNativeDrop.
+    const activator = e.activatorEvent as PointerEvent | null;
+    if (activator) {
+      const finalX = activator.clientX + e.delta.x;
+      const finalY = activator.clientY + e.delta.y;
+      const el = document.elementFromPoint(finalX, finalY) as HTMLElement | null;
+      const clipArea = el?.closest('[data-track-id]') as HTMLElement | null;
+      const targetTrackId = clipArea?.getAttribute('data-track-id') ?? null;
+
+      if (targetTrackId && targetTrackId !== clip.trackId) {
+        // The user dropped on a different track — validate kind compatibility.
+        const targetTrack = tracks.find((t) => t.id === targetTrackId);
+        if (targetTrack && canDropOnTrack(clip.kind, targetTrack.kind as TrackKind)) {
+          moveClipToTrack(clip.id, targetTrackId, target);
+          return;
+        } else {
+          toast.error('Clip cannot move to this track type');
+          return; // clip stays at original position
+        }
+      }
+    }
+
+    // Same track (or no target detected) — existing time-shift behaviour.
     moveClip(clip.id, target);
   };
 

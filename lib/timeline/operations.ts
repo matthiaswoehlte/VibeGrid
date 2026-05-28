@@ -44,6 +44,32 @@ export function moveClip(
 }
 
 /**
+ * Plan 8h — move a clip to a DIFFERENT track of the same kind, updating
+ * both `trackId` and `startBeat` atomically.
+ *
+ * The caller (UI / store action) is responsible for verifying track-kind
+ * compatibility via `canDropOnTrack` before calling this. The operation is
+ * intentionally unconditional so it stays pure and trivially testable.
+ *
+ * @throws {OperationError} code=CLIP_NOT_FOUND when clipId is unknown
+ */
+export function moveClipToTrack(
+  state: TimelineState,
+  clipId: string,
+  newTrackId: string,
+  newStartBeat: number
+): TimelineState {
+  const idx = state.clips.findIndex((c) => c.id === clipId);
+  if (idx < 0) {
+    throw new OperationError('CLIP_NOT_FOUND', `Clip ${clipId} not found`);
+  }
+  const clip = state.clips[idx];
+  const next = state.clips.slice();
+  next[idx] = { ...clip, trackId: newTrackId, startBeat: newStartBeat };
+  return { ...state, clips: next };
+}
+
+/**
  * Resize a clip by changing its `lengthBeats`.
  *
  * @throws {OperationError} code=INVALID_LENGTH when newLengthBeats <= 0

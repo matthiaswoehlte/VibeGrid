@@ -147,6 +147,20 @@ export const createTimelineSlice: StateCreator<
           s.timeline = regenerateBlendsForTrack(intermediate, current.trackId);
         }, { coalesce: true });
       },
+      // Plan 8h — cross-track drag for single clips (same-kind only).
+      // coalesce: true folds rapid drop-then-adjust into one undo step.
+      // Both the source and destination track get blend-regenerated so
+      // __blend params stay consistent on both sides.
+      moveClipToTrack: (clipId, newTrackId, newStartBeat) => {
+        const current = get().timeline.clips.find((c) => c.id === clipId);
+        if (!current) return;
+        get().recordingSet('Move Clip', (s) => {
+          const intermediate = ops.moveClipToTrack(s.timeline, clipId, newTrackId, newStartBeat);
+          // Regenerate blends for both source and destination tracks.
+          const afterSource = regenerateBlendsForTrack(intermediate, current.trackId);
+          s.timeline = regenerateBlendsForTrack(afterSource, newTrackId);
+        }, { coalesce: true });
+      },
       // Plan 10 — coalesce: true (resize drag folds to one undo).
       resizeClip: (clipId, newLengthBeats) => {
         const current = get().timeline.clips.find((c) => c.id === clipId);
