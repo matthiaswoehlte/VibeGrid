@@ -1123,7 +1123,7 @@ einsetzen, Edge Glow kann zusätzlich oben drauf laufen.
 
 ---
 
-## Beat Sync per Clip (Plan 8g)
+## Beat Sync per Clip (Plan 8g + 8g-hotfix)
 
 VibeGrid hat zwei Controls für "FX läuft konstant statt beat-synchron":
 
@@ -1132,9 +1132,24 @@ VibeGrid hat zwei Controls für "FX läuft konstant statt beat-synchron":
 | `rc.flowMode` (global toggle) | Ganze Timeline | Schaltet Beat-Sync für ALLE FX gleichzeitig aus |
 | `beatSync` (per Clip, Plan 8g) | Einzelner Clip | Schaltet Sync nur für diesen einen Clip aus |
 
-**Bekannte Limitation:** flowMode-Verhältnis ist je nach FX-Pattern unterschiedlich:
+**beatSync hat zwei gleichzeitig wirksame Effekte** (Hotfix nach Live-Smoke 2026-05-28):
+
+1. **env-Behandlung im Shader**: beatSync=1 → env decayt pro Beat (Pulse), beatSync=0 → env=1.0 konstant
+2. **Automation-Resolver-Modus**: beatSync<0.5 triggert per-Clip Flow Mode → Kurven werden über `clip.lengthBeats` gestretcht und clip-relativ evaluiert (genau wie der globale Flow Mode, aber nur für diesen Clip)
+
+Konkret bedeutet das: User legt im Automation Editor eine Multi-Point-Kurve über die Clip-Länge an. Bei beatSync=1 evaluiert der Resolver an absoluten Beats — Punkte clip-relativ 0..11 fallen "hinter" den Lookup-Beat eines spät startenden Clips → konstanter Letztwert (Kurve wirkt nicht). Bei beatSync=0 stretcht der Resolver die Kurve über die Clip-Länge → Kurve wirkt wie im Editor sichtbar.
+
+**Bekannte Limitation (8g):** flowMode-Verhältnis ist je nach FX-Pattern unterschiedlich:
 
 - **skip-FX** (BeatFlash, ZoomPunch, ScreenShake, GlitchSlice, RGBSplit, FilmGrainBurst, LensFlareBurst, ColorGradeShift): beatSync wirkt nur in Beat Mode. In Flow Mode trumpft `rc.flowMode` — der FX skippt weiterhin via early-return. Wer beatSync=0 in Flow Mode nutzen will, müsste Flow Mode ausschalten.
 - **pin-FX** (Edge Glow, RetroVHS): beatSync=0 und Flow Mode konvergieren beide zu env=1.0 → kein Konflikt, beide Wege geben denselben persistenten Look.
 
 Folge-Plan 8g.5 (separates Vorhaben) wird die 8 skip-FX auf das pin-Pattern umstellen, so dass für alle FX gleiches Verhalten gilt.
+
+**Bekannte Limitation (Tempo):** Beide Mechanismen (globaler Flow Mode + per-Clip Flow via beatSync<0.5) gehen von konstantem BPM aus. Bei variablem BPM (ritardando/accelerando) wäre eine echte Lösung Time-basierte Automation + Tempo Map. Eigener Folge-Plan, nicht blockierend für aktuelle Use-Cases.
+
+## WebGL `source='canvas'` darf rc.imageBitmap nicht voraussetzen (Plan 8g-hotfix)
+
+Hotfix nach Live-Smoke 2026-05-28: `renderGlFx` bailte auf `!rc.imageBitmap` unabhängig vom `source`-Parameter. Für `source='canvas'` (Edge Glow) ist das falsch — der Shader sampelt `rc.ctx.canvas`, das auch dann gültige Pixel hat wenn `captureVideoFrame` für einen Video-Clip undefined zurückliefert (was häufig passieren kann: displayWidth=0, OffscreenCanvas unavailable, Timing-Race). Sichtbarer Effekt: Edge Glow auf Video-Clips unsichtbar trotz korrektem render(). Fix: Guard nur für `source='bitmap'`.
+
+Plan-8f.3 Code-Quality-Reviewerin hatte diesen Punkt geflagged ("acceptable as layered-fix"). Optional/später wurde zu "irgendwann verfällt das Verfallsdatum" — beim ersten Video-Test geknallt.
