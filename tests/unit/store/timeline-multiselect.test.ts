@@ -174,7 +174,13 @@ describe('Plan 9b — duplicateSelectedClips', () => {
     expect(useAppStore.getState().timeline.clips).toHaveLength(2);
   });
 
-  it('deep-clones AutomationCurves with beat-offset (W5)', () => {
+  it('deep-clones AutomationCurves verbatim (no beat shift — points are clip-relative)', () => {
+    // Curve points are stored CLIP-RELATIVE by the AutomationCurveEditor
+    // (X-axis spans 0..lengthBeats). Duplicating the clip must NOT shift
+    // those beats — otherwise the points fall outside the new clip's
+    // [0..lengthBeats] window and the curve becomes invisible in the
+    // editor + constant in per-clip-flow rendering. Original test asserted
+    // shifting (incorrect) — corrected to verbatim copy with deep-clone.
     const curveClip: Clip = {
       ...makeClip('a', 't1', 0, 4),
       params: {
@@ -195,12 +201,94 @@ describe('Plan 9b — duplicateSelectedClips', () => {
     const dupCurve = (dup.params as Record<string, unknown>).intensity as {
       points: { beat: number; value: number }[];
     };
-    expect(dupCurve.points.map((p) => p.beat)).toEqual([10, 12]);
+    // Beats UNCHANGED (clip-relative semantics preserved).
+    expect(dupCurve.points.map((p) => p.beat)).toEqual([0, 2]);
+    expect(dupCurve.points.map((p) => p.value)).toEqual([0, 1]);
     // Mutation safety: the original's points array must not share refs.
     const origCurve = (curveClip.params as Record<string, unknown>)
       .intensity as { points: { beat: number; value: number }[] };
     expect(origCurve.points[0].beat).toBe(0);
     expect(dupCurve.points).not.toBe(origCurve.points);
+    // Individual point objects also deep-cloned (not shared refs).
+    expect(dupCurve.points[0]).not.toBe(origCurve.points[0]);
+  });
+
+  // True end-to-end test: build the curve via the real action sequence the
+  // UI uses (convertParamToAutomation + addParamPoint), then duplicate, then
+  // verify the new clip's curve passes isAutomationCurve. This is the path
+  // a real user takes; if a real-world bug exists it should show here.
+  it('end-to-end: real action sequence preserves curve through duplicate', async () => {
+    const { isAutomationCurve } = await import('@/lib/automation/resolve');
+    seed([makeClip('a', 't1', 0, 4)]);
+    // User clicks ⚡ on intensity slider while playhead is at beat 0,
+    // current value 0.5 — same as AutomateButton's onClick.
+    useAppStore.getState().timelineActions.convertParamToAutomation(
+      'a', 'intensity', 0, 0.5
+    );
+    // User adds two more points in the automation editor.
+    useAppStore.getState().timelineActions.addParamPoint(
+      'a', 'intensity', { beat: 2, value: 1 }
+    );
+    useAppStore.getState().timelineActions.addParamPoint(
+      'a', 'intensity', { beat: 4, value: 0 }
+    );
+    // Verify original has the real-shape curve.
+    const original = useAppStore
+      .getState()
+      .timeline.clips.find((c) => c.id === 'a')!;
+    const origCurve = (original.params as Record<string, unknown>).intensity;
+    expect(isAutomationCurve(origCurve)).toBe(true);
+
+    // User selects + duplicates (same path as shift-drag).
+    useAppStore.getState().selectClips(['a']);
+    useAppStore.getState().duplicateSelectedClips(10);
+
+    const clips = useAppStore.getState().timeline.clips;
+    const dup = clips.find((c) => c.id !== 'a')!;
+    const dupCurve = (dup.params as Record<string, unknown>).intensity;
+    // CRITICAL: this is what the Inspector checks. If false, the copy
+    // appears static in the UI even though it has a points array.
+    expect(isAutomationCurve(dupCurve)).toBe(true);
+  });
+
+  // Regression test for shift-drag copy bug 2026-05-28:
+  // The W5 test above used a fake curve shape ({ kind: 'auto', points: [...] })
+  // which happens to match the duplicate code's structural detection but is
+  // NOT the real AutomationCurve shape produced by makeCurve(). The REAL
+  // shape includes `mode: 'automation'` and `interpolation: 'linear'`. This
+  // test uses the real shape end-to-end so the regression has a guard.
+  it('preserves the real AutomationCurve shape (mode + interpolation) through duplicate', () => {
+    const realCurveClip: Clip = {
+      ...makeClip('a', 't1', 0, 4),
+      params: {
+        intensity: {
+          mode: 'automation',
+          interpolation: 'linear',
+          points: [
+            { beat: 0, value: 0 },
+            { beat: 2, value: 0.5 },
+            { beat: 4, value: 1 }
+          ]
+        }
+      } as never
+    };
+    seed([realCurveClip]);
+    useAppStore.getState().selectClips(['a']);
+    useAppStore.getState().duplicateSelectedClips(10);
+    const clips = useAppStore.getState().timeline.clips;
+    const dup = clips.find((c) => c.id !== 'a')!;
+    const dupCurve = (dup.params as Record<string, unknown>).intensity as {
+      mode?: string;
+      interpolation?: string;
+      points: { beat: number; value: number }[];
+    };
+    // Identity preserved
+    expect(dupCurve.mode).toBe('automation');
+    expect(dupCurve.interpolation).toBe('linear');
+    // Beats UNSHIFTED (clip-relative semantics — see W5 test above for rationale).
+    expect(dupCurve.points.map((p) => p.beat)).toEqual([0, 2, 4]);
+    // Values preserved
+    expect(dupCurve.points.map((p) => p.value)).toEqual([0, 0.5, 1]);
   });
 });
 

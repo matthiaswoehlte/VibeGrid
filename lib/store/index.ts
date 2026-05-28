@@ -248,15 +248,20 @@ export const useAppStore = create<AppState>()(
                         'points' in (v as object) &&
                         Array.isArray((v as { points?: unknown }).points)
                       ) {
+                        // Curve points are stored CLIP-RELATIVE by the
+                        // AutomationCurveEditor (X-axis spans 0..lengthBeats,
+                        // see AutomationCurveEditor.tsx:80). Shifting them
+                        // by offsetBeats here would push them outside the
+                        // new clip's [0..lengthBeats] window, leaving the
+                        // editor canvas blank and breaking per-clip Flow
+                        // Mode evaluation. Copy verbatim (still a deep
+                        // clone for mutation safety).
                         const curve = v as { points: { beat: number; value: unknown }[] };
                         return [
                           k,
                           {
                             ...curve,
-                            points: curve.points.map((p) => ({
-                              ...p,
-                              beat: p.beat + offsetBeats
-                            }))
+                            points: curve.points.map((p) => ({ ...p }))
                           }
                         ];
                       }
