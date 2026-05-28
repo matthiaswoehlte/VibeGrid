@@ -3,7 +3,7 @@ import type { RenderContext } from '@/lib/renderer/types';
 import { getDeviceCapabilities } from './capabilities';
 import { getGlContext } from './context';
 import { getOrCompileProgram, getLocations } from './shader';
-import { uploadImageBitmap } from './texture';
+import { uploadTextureSource } from './texture';
 import { getQuadBuffer } from './quad';
 
 /**
@@ -33,6 +33,17 @@ export interface RenderGlFxArgs {
   fragSrc: string;
   uniforms: Uniforms;
   uniformNames: UniformNames;
+  /** Plan 8f.3 — Texture-Quelle:
+   *  - `'bitmap'` (Default): `rc.imageBitmap`, `u_contain` aus containRect.
+   *    Back-compat, was alle vor-8f.3-FX nutzen (CGS, RetroVHS).
+   *  - `'canvas'`: `rc.ctx.canvas`, `u_contain = (0,0,1,1)` Identity.
+   *    Sampelt den bereits composed Frame — gedacht für Post-Effekte wie
+   *    Edge Glow, die AUF die vorigen FX chained werden sollen.
+   *
+   *  Wichtig: 'canvas' lädt die KOMPLETTE Main-Canvas als Texture. Bei
+   *  hoher DPR kann das die Texture-Upload-Cost erhöhen (1600×900 vs.
+   *  bitmap's 100×100 in Tests). In Production sind beide ~ähnlich groß. */
+  source?: 'bitmap' | 'canvas';
 }
 
 export function renderGlFx(args: RenderGlFxArgs): void {
@@ -88,18 +99,26 @@ export function renderGlFx(args: RenderGlFxArgs): void {
   );
 
   // Standard-Uniforms.
-  uploadImageBitmap(gl, rc.imageBitmap);
+  const sourceKind = args.source ?? 'bitmap';
+  if (sourceKind === 'canvas') {
+    const c = rc.ctx.canvas;
+    uploadTextureSource(gl, c as unknown as TexImageSource, c.width, c.height);
+  } else {
+    uploadTextureSource(gl, rc.imageBitmap, rc.imageBitmap.width, rc.imageBitmap.height);
+  }
   const uImage = locs.uniforms.get('u_image');
   if (uImage) gl.uniform1i(uImage, 0);
   const uContain = locs.uniforms.get('u_contain');
   if (uContain) {
-    gl.uniform4f(
-      uContain,
-      sx / rc.width,
-      sy / rc.height,
-      sw / rc.width,
-      sh / rc.height
-    );
+    if (sourceKind === 'canvas') {
+      // Identity: shader samples the full canvas (no letterbox remap).
+      gl.uniform4f(uContain, 0, 0, 1, 1);
+    } else {
+      gl.uniform4f(
+        uContain,
+        sx / rc.width, sy / rc.height, sw / rc.width, sh / rc.height
+      );
+    }
   }
   const uRes = locs.uniforms.get('u_resolution');
   if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
