@@ -120,6 +120,7 @@ tests/            unit/, integration/, e2e/
 | 8e | FX-Pack (9 neue Beat-Sync-Effekte) | ✅ Done |
 | 8f | WebGL2 Foundation + ColorGradeShift + RetroVHS | ✅ Done |
 | 8f.3 | Edge Glow (GPU-native FX + chain-composition) | ✅ Done |
+| 8g | Beat Sync Toggle (per-clip beatSync auf 10 FX + per-clip Flow Mode) | ✅ Done |
 | 9a | Preset-Pack System (7 kuratierte Packs) | ✅ Done |
 | 9b | Timeline Multi-Select + Group-Ops | ✅ Done |
 | 10 | Undo / Redo (history-stack + recordingSet + ESLint guardrails) | ✅ Done |
