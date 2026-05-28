@@ -119,10 +119,10 @@ tests/            unit/, integration/, e2e/
 | 8d | Timeline-Integration + Beat-Snap | ✅ Done |
 | 8e | FX-Pack (9 neue Beat-Sync-Effekte) | ✅ Done |
 | 8f | WebGL2 Foundation + ColorGradeShift + RetroVHS | ✅ Done |
+| 8f.3 | Edge Glow (GPU-native FX + chain-composition) | ✅ Done |
 | 9a | Preset-Pack System (7 kuratierte Packs) | ✅ Done |
 | 9b | Timeline Multi-Select + Group-Ops | ✅ Done |
 | 10 | Undo / Redo (history-stack + recordingSet + ESLint guardrails) | ✅ Done |
-| 8f.3 | Edge Glow (GPU-native FX + chain-composition) | ✅ Done |
 
 **Rule:** Never start Plan N+1 before Plan N passes all verification gates.
 
