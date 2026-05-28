@@ -1,32 +1,31 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { rgbSplitPlugin, _testOnly_rgbOffByClip } from '@/lib/fx/rgb-split';
-import { makeRenderContext, makeMockCtx } from './_helpers';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { makeRenderContext } from '../renderer/_helpers';
 
-interface CtxCalls {
-  __calls: Array<{ method: string; args: unknown[] }>;
-}
+vi.mock('@/lib/renderer/webgl/pipeline', () => ({
+  renderGlFx: vi.fn()
+}));
 
-// Stub OffscreenCanvas for jsdom — each instance returns a fresh recorded ctx.
-class StubOffscreen {
-  width: number;
-  height: number;
-  private _ctx: ReturnType<typeof makeMockCtx> | null = null;
-  constructor(w: number, h: number) {
-    this.width = w;
-    this.height = h;
-  }
-  getContext(): CanvasRenderingContext2D {
-    if (!this._ctx) this._ctx = makeMockCtx();
-    return this._ctx as unknown as CanvasRenderingContext2D;
-  }
-}
-// @ts-expect-error — installing stub for jsdom
-globalThis.OffscreenCanvas = StubOffscreen;
+import { rgbSplitPlugin } from '@/lib/fx/rgb-split';
+import { renderGlFx } from '@/lib/renderer/webgl/pipeline';
 
-describe('rgbSplitPlugin', () => {
+const mockedRenderGlFx = vi.mocked(renderGlFx);
+
+const baseParams = {
+  offset: 0.004,
+  decay: 0.15,
+  intensity: 0.6,
+  beatSync: 1
+};
+
+describe('rgbSplitPlugin (WebGL2, Plan 11a)', () => {
   beforeEach(() => {
-    _testOnly_rgbOffByClip.clear();
+    mockedRenderGlFx.mockReset();
   });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // --- plugin shape (kept verbatim from pre-migration test) ---
 
   it('has the expected plugin shape', () => {
     expect(rgbSplitPlugin.id).toBe('rgb-split');
@@ -35,109 +34,100 @@ describe('rgbSplitPlugin', () => {
     expect(rgbSplitPlugin.paramSchema.offset.kind).toBe('slider');
   });
 
-  it('flowMode → no draw on main canvas', () => {
+  it('default params match the schema', () => {
+    expect(rgbSplitPlugin.getDefaultParams()).toEqual(baseParams);
+  });
+
+  // --- migration regression: no Canvas-2D fallback, only renderGlFx ---
+
+  it('on beat (env > 0.01) → calls renderGlFx exactly once (no Canvas-2D fallback)', () => {
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    rgbSplitPlugin.render(rc, baseParams);
+    expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
+  });
+
+  it('flowMode=true → skips renderGlFx (no beat-pulse in Flow Mode)', () => {
     const rc = makeRenderContext({ beatPhase: 0, flowMode: true });
-    rgbSplitPlugin.render(rc, rgbSplitPlugin.getDefaultParams());
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    expect(draws.length).toBe(0);
+    rgbSplitPlugin.render(rc, baseParams);
+    expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
 
-  it('beatPhase=0 → draws bitmap + 2 channel offscreens on main canvas (3 drawImage calls)', () => {
-    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
-    rgbSplitPlugin.render(rc, rgbSplitPlugin.getDefaultParams());
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    // 1: original bitmap, 2: red offscreen, 3: blue offscreen
-    expect(draws.length).toBe(3);
-  });
-
-  it('env=0 (beatPhase well past decay) → no draws', () => {
-    const rc = makeRenderContext({ beatPhase: 1.0, flowMode: false });
-    rgbSplitPlugin.render(rc, { ...rgbSplitPlugin.getDefaultParams(), decay: 0.1 });
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    expect(draws.length).toBe(0);
-  });
-
-  it('save/restore discipline — final composite is wrapped', () => {
-    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
-    rgbSplitPlugin.render(rc, rgbSplitPlugin.getDefaultParams());
-    const calls = (rc.ctx as unknown as CtxCalls).__calls;
-    const saves = calls.filter((c) => c.method === 'save').length;
-    const restores = calls.filter((c) => c.method === 'restore').length;
-    expect(saves).toBe(restores);
-    expect(saves).toBeGreaterThan(0);
-  });
-
-  it('no imageBitmap → early return (Kategorie-A guard)', () => {
-    const rc = makeRenderContext({ beatPhase: 0, flowMode: false, imageBitmap: undefined });
-    rgbSplitPlugin.render(rc, rgbSplitPlugin.getDefaultParams());
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    expect(draws.length).toBe(0);
-  });
-
-  it('caches offscreens per clipId across two renders', () => {
-    const rc1 = makeRenderContext({ beatPhase: 0, flowMode: false, clipId: 'clip-A' });
-    rgbSplitPlugin.render(rc1, rgbSplitPlugin.getDefaultParams());
-    expect(_testOnly_rgbOffByClip.size).toBe(1);
-    expect(_testOnly_rgbOffByClip.has('clip-A')).toBe(true);
-
-    const rc2 = makeRenderContext({ beatPhase: 0, flowMode: false, clipId: 'clip-A' });
-    rgbSplitPlugin.render(rc2, rgbSplitPlugin.getDefaultParams());
-    // Still 1 — same clipId reused the cached offscreens.
-    expect(_testOnly_rgbOffByClip.size).toBe(1);
-  });
-
-  it('dispose() clears the per-clip cache', () => {
-    const rc = makeRenderContext({ beatPhase: 0, flowMode: false, clipId: 'clip-X' });
-    rgbSplitPlugin.render(rc, rgbSplitPlugin.getDefaultParams());
-    expect(_testOnly_rgbOffByClip.size).toBeGreaterThan(0);
-    rgbSplitPlugin.dispose?.();
-    expect(_testOnly_rgbOffByClip.size).toBe(0);
-  });
-
-  it('offset=0 → channel shift is zero (no visible split)', () => {
-    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
-    rgbSplitPlugin.render(rc, { ...rgbSplitPlugin.getDefaultParams(), offset: 0 });
-    // Still draws (offset=0 just means both channels are co-located) but
-    // the visual result is the original — caller-visible state is the
-    // same number of drawImage calls (3).
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    expect(draws.length).toBe(3);
-  });
-
-  // --- beatSync tests (Plan 8g) ---
-
-  it('beatSync=1 decays with beat phase (default behavior)', () => {
-    // beatPhase=0.5 with default decay=0.15: env = 1 - 0.5/0.15 = -2.33 → 0 → no draw.
-    const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    rgbSplitPlugin.render(rc, { ...rgbSplitPlugin.getDefaultParams(), beatSync: 1 });
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    expect(draws.length).toBe(0);
-  });
-
-  it('beatSync=0 runs at full intensity (env=1.0) regardless of beatPhase', () => {
-    // beatPhase=0.99 with decay=0.1 would normally skip; beatSync=0 pins env=1.0.
+  it('env < 0.01 (beatPhase past decay) → skips renderGlFx', () => {
+    // beatPhase=0.99, decay=0.15 → env = 1 - 0.99/0.15 = -5.6 → clamped to 0.
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
-    rgbSplitPlugin.render(rc, {
-      ...rgbSplitPlugin.getDefaultParams(),
-      beatSync: 0,
-      decay: 0.1
+    rgbSplitPlugin.render(rc, baseParams);
+    expect(mockedRenderGlFx).not.toHaveBeenCalled();
+  });
+
+  it('no imageBitmap → early return (Kategorie-A guard preserved)', () => {
+    const rc = makeRenderContext({
+      beatPhase: 0,
+      flowMode: false,
+      imageBitmap: undefined
     });
-    // Original bitmap + 2 channel offscreens → 3 drawImage calls on main canvas.
-    const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
-      (c) => c.method === 'drawImage'
-    );
-    expect(draws.length).toBe(3);
+    rgbSplitPlugin.render(rc, baseParams);
+    expect(mockedRenderGlFx).not.toHaveBeenCalled();
+  });
+
+  it('has no dispose() — migration removed per-clip state', () => {
+    expect(rgbSplitPlugin.dispose).toBeUndefined();
+  });
+
+  // --- uniform forwarding ---
+
+  it('forwards exactly the 3 FX uniforms (u_shift, u_env, u_intensity)', () => {
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    rgbSplitPlugin.render(rc, baseParams);
+    const args = mockedRenderGlFx.mock.calls[0][0];
+    expect(args.uniformNames).toEqual(['u_shift', 'u_env', 'u_intensity']);
+  });
+
+  it('u_shift = params.offset (UV-direct, no pixel→UV conversion)', () => {
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    rgbSplitPlugin.render(rc, { ...baseParams, offset: 0.012 });
+    const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
+    expect(u.u_shift).toBe(0.012);
+  });
+
+  it('u_intensity = params.intensity (behavior-drift guard: param survives migration)', () => {
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    rgbSplitPlugin.render(rc, { ...baseParams, intensity: 0.42 });
+    const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
+    expect(u.u_intensity).toBeCloseTo(0.42, 5);
+  });
+
+  it('default source resolves to bitmap (omitting `source` in args)', () => {
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    rgbSplitPlugin.render(rc, baseParams);
+    const args = mockedRenderGlFx.mock.calls[0][0];
+    // RGBSplit sampelt das Original-Bitmap. We deliberately don't pass
+    // `source` — relying on the pipeline default of 'bitmap'.
+    expect(args.source).toBeUndefined();
+  });
+
+  // --- env / beatSync semantics (Plan 8g) ---
+
+  it('beatSync=1, beatPhase=0 → u_env = 1.0', () => {
+    const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
+    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: 1 });
+    const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
+    expect(u.u_env).toBeCloseTo(1.0, 5);
+  });
+
+  it('beatSync=1 decays with beat phase (env = 1 - beatPhase/decay, clamped ≥ 0)', () => {
+    // beatPhase=0.075, decay=0.15 → env = 1 - 0.5 = 0.5
+    const rc = makeRenderContext({ beatPhase: 0.075, flowMode: false });
+    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: 1, decay: 0.15 });
+    const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
+    expect(u.u_env as number).toBeCloseTo(0.5, 5);
+  });
+
+  it('beatSync=0 pins u_env=1.0 regardless of beatPhase (Flow-Mode-like)', () => {
+    // Without beatSync=0 this would be env ≈ 0 and skipped entirely.
+    const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
+    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: 0, decay: 0.1 });
+    expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
+    const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
+    expect(u.u_env).toBe(1.0);
   });
 });

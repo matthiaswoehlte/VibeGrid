@@ -1,5 +1,9 @@
 import type { FxPlugin, RenderContext } from '@/lib/renderer/types';
-import { containRect } from '@/lib/renderer/loop';
+import { renderGlFx } from '@/lib/renderer/webgl/pipeline';
+import {
+  RGB_SPLIT_FRAG_SRC,
+  RGB_SPLIT_UNIFORM_NAMES
+} from '@/lib/renderer/webgl/programs/rgb-split';
 
 interface RGBSplitParams {
   offset: number;
@@ -9,31 +13,29 @@ interface RGBSplitParams {
 }
 
 /**
- * Plan 8e — chromatic aberration burst on every beat. The bitmap is
- * drawn once at center, then a red-tinted copy is offset to +X and a
- * blue-tinted copy to -X. The R and B copies are produced on per-clip
- * offscreens via a multiply with `rgba(255,0,0)` / `rgba(0,0,255)` to
- * isolate the channel, then `screen`-composited onto the main canvas.
+ * Plan 11a — RGBSplit als WebGL2-Fragment-Shader.
  *
- * Why offscreens (and not multiply-on-main-canvas): the multiply would
- * also multiply against the already-drawn original, zeroing two channels
- * everywhere. Channel isolation only works on a clean offscreen. The
- * intermediate canvases are cached per `clipId` so the per-frame cost
- * stays at 2 × (clearRect + drawImage + multiply-fillRect).
+ * Migriert von der Canvas-2D-Implementierung (Plan 8e) auf
+ * `renderGlFx` (Plan 8f.1+). Der Shader macht channel-replace
+ * per Fragment statt zwei tinted Offscreens mit screen-Composite —
+ * sauberer, deterministischer Look, kein per-Clip State.
  *
- * Performance trade-off vs. ImageData: this is a composite-tint
- * approximation, not pixel-perfect channel isolation. Bright pixels may
- * leak a tinge into adjacent channels because Canvas2D's `multiply`
- * operates on premultiplied alpha. Documented in KNOWN_LIMITATIONS.
+ * **Behavior-Drift** (siehe KNOWN_LIMITATIONS.md): die alte Canvas-2D-
+ * Variante war additiv-aufhellend, `u_intensity` ist jetzt ein linearer
+ * Mix zwischen Original und Aberration. Param-Range identisch (0..1),
+ * Pixel-Werte aber nicht bit-equivalent.
  *
- * Category A (image-modifying) — re-draws `rc.imageBitmap` via
- * `containRect()`; loop.ts guards on `rc.imageBitmap` presence.
+ * `source: 'bitmap'` (Default in `renderGlFx`) — sampelt das Original-
+ * Bitmap, nicht den bereits composed Canvas. Damit chaint RGBSplit
+ * NICHT auf vorige FX (gemeinsam mit CGS / VHS / Contour GL ist es
+ * last-writer-wins, siehe KNOWN_LIMITATIONS-Eintrag).
+ *
+ * Plan 8g beatSync-Toggle: `beatSync >= 0.5` → Beat-Decay-Envelope,
+ * `beatSync < 0.5` → konstant `env = 1.0`. Verhalten bleibt identisch
+ * zum Canvas-2D-Vorgänger; nur der Renderer wechselt.
+ *
+ * Category A (image-modifying) — guarded auf `rc.imageBitmap`.
  */
-const rgbOffByClip = new Map<
-  string,
-  { r: OffscreenCanvas; b: OffscreenCanvas; w: number; h: number }
->();
-
 export const rgbSplitPlugin: FxPlugin<RGBSplitParams> = {
   id: 'rgb-split',
   name: 'RGB Split',
@@ -72,82 +74,41 @@ export const rgbSplitPlugin: FxPlugin<RGBSplitParams> = {
       min: 0,
       max: 1,
       step: 1,
-      default: 1,
+      default: 1
     }
   },
   getDefaultParams: (): RGBSplitParams => ({
     offset: 0.004,
     decay: 0.15,
     intensity: 0.6,
-    beatSync: 1,
+    beatSync: 1
   }),
   async preload() {},
   render(rc: RenderContext, params: RGBSplitParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
+
+    // Plan 8g beatSync — Verhalten 1:1 erhalten gegenüber Canvas-2D-Vorgänger.
     const synced = params.beatSync >= 0.5;
     const env = synced
       ? Math.max(0, 1 - rc.beatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
-    if (typeof OffscreenCanvas === 'undefined') return;
 
-    const { sx, sy, sw, sh } = containRect(rc);
-    const ox = rc.width * params.offset * env;
-
-    // Lazy-init / resize the two channel offscreens.
-    let pair = rgbOffByClip.get(rc.clipId);
-    if (!pair || pair.w !== rc.width || pair.h !== rc.height) {
-      pair = {
-        r: new OffscreenCanvas(rc.width, rc.height),
-        b: new OffscreenCanvas(rc.width, rc.height),
-        w: rc.width,
-        h: rc.height
-      };
-      rgbOffByClip.set(rc.clipId, pair);
-    }
-
-    // Main canvas: draw original first so the channel layers screen-add
-    // brightness onto the existing image (image was already painted by
-    // the main renderer pass, but ZoomPulse-style re-draw guarantees
-    // aspect-fit consistency and a clean base for compositing).
-    rc.ctx.drawImage(rc.imageBitmap, sx, sy, sw, sh);
-
-    // Red channel: bitmap shifted +ox, multiply by rgba(255,0,0).
-    const rCtx = pair.r.getContext('2d');
-    if (rCtx) {
-      rCtx.clearRect(0, 0, rc.width, rc.height);
-      rCtx.drawImage(rc.imageBitmap, sx + ox, sy, sw, sh);
-      rCtx.globalCompositeOperation = 'multiply';
-      rCtx.fillStyle = 'rgba(255,0,0,1)';
-      rCtx.fillRect(0, 0, rc.width, rc.height);
-      rCtx.globalCompositeOperation = 'source-over';
-    }
-
-    // Blue channel: bitmap shifted -ox, multiply by rgba(0,0,255).
-    const bCtx = pair.b.getContext('2d');
-    if (bCtx) {
-      bCtx.clearRect(0, 0, rc.width, rc.height);
-      bCtx.drawImage(rc.imageBitmap, sx - ox, sy, sw, sh);
-      bCtx.globalCompositeOperation = 'multiply';
-      bCtx.fillStyle = 'rgba(0,0,255,1)';
-      bCtx.fillRect(0, 0, rc.width, rc.height);
-      bCtx.globalCompositeOperation = 'source-over';
-    }
-
-    // Composite both channels onto the main canvas with `screen` so the
-    // red and blue offsets brighten the original.
-    rc.ctx.save();
-    rc.ctx.globalCompositeOperation = 'screen';
-    rc.ctx.globalAlpha *= params.intensity * env;
-    rc.ctx.drawImage(pair.r, 0, 0);
-    rc.ctx.drawImage(pair.b, 0, 0);
-    rc.ctx.restore();
-  },
-  dispose() {
-    rgbOffByClip.clear();
+    // params.offset ist bereits eine fraction-of-width (Schema 0..0.05),
+    // also eine UV-Differenz. Keine Pixel→UV-Konvertierung nötig; der
+    // Shader multipliziert intern mit u_env.
+    renderGlFx({
+      rc,
+      fragSrc: RGB_SPLIT_FRAG_SRC,
+      uniforms: {
+        u_shift: params.offset,
+        u_env: env,
+        u_intensity: params.intensity
+      },
+      uniformNames: RGB_SPLIT_UNIFORM_NAMES
+      // source default = 'bitmap' — RGBSplit sampelt rc.imageBitmap.
+    });
   }
+  // Kein dispose() — kein per-clip State mehr nach der Migration.
 };
-
-/** Test-only — inspect the per-clip offscreen cache. */
-export const _testOnly_rgbOffByClip = rgbOffByClip;
