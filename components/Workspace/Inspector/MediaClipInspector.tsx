@@ -46,6 +46,16 @@ export function MediaClipInspector({ clip }: { clip: Clip }) {
         </div>
       </header>
       <div className="px-3 space-y-2">
+        {mediaRef?.source === 'library' && (
+          <div className="text-xs text-[var(--text-dim)]">
+            Sound Library: {mediaRef.filename}
+            {mediaRef.license && (
+              <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                © {mediaRef.license}
+              </div>
+            )}
+          </div>
+        )}
         {clip.kind === 'audio' && <VolumeSection clip={clip} />}
         {clip.kind === 'video' && <VideoAudioToggle clip={clip} />}
         {hasAutomation && (
