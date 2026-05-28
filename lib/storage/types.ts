@@ -15,6 +15,20 @@ export interface MediaRef {
    *  thumbnail capture fails (CORS, decode error) — library tile
    *  falls back to a generic ▶ icon. */
   thumbnailUrl?: string;
+  /**
+   * Plan 8.7 — provenance of the MediaRef. `'upload'` (default for
+   * existing refs) means the user uploaded the file via the Mediathek;
+   * `'library'` means it was pulled in from the curated Sound Library.
+   * The Inspector renders a small "Sound Library: …" label when this
+   * is `'library'`. Back-compat: `undefined` is treated as `'upload'`.
+   */
+  source?: 'upload' | 'library';
+  /**
+   * Plan 8.7 — optional license / attribution string carried over from
+   * the Sound Library manifest. Shown one-liner in the Inspector when
+   * `source === 'library'` and a value is present.
+   */
+  license?: string;
 }
 
 export interface StorageAdapter {
