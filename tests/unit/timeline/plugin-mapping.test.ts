@@ -9,12 +9,14 @@ import {
 } from '@/lib/timeline/plugin-mapping';
 
 describe('plugin-mapping — FX kind constants & helpers', () => {
-  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8f.2: 19 kinds)', () => {
+  it('TRACK_FX_KINDS contains every lowercase FX kind (Plan 8f.3: 20 kinds)', () => {
     expect([...TRACK_FX_KINDS].sort()).toEqual([
       'beat-flash',
       'color-grade-shift',
       'contour',
       'dissolve',
+      // Plan 8f.3 — Edge Glow.
+      'edge-glow',
       'film-grain-burst',
       'glitch-slice',
       'lens-flare-burst',

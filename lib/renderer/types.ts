@@ -51,7 +51,9 @@ export type FxKind =
   // Plan 8f.1 — WebGL2 FX (first of the foundation).
   | 'ColorGradeShift'
   // Plan 8f.2 — second WebGL2 FX.
-  | 'RetroVHS';
+  | 'RetroVHS'
+  // Plan 8f.3 — third WebGL2 FX (post-composition Edge Glow).
+  | 'EdgeGlow';
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;

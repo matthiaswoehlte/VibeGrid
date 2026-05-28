@@ -116,7 +116,9 @@ export function activeFxClipsByKind(
     // Plan 8f.1 — WebGL2 FX.
     'color-grade-shift': [],
     // Plan 8f.2 — second WebGL2 FX.
-    'retro-vhs': []
+    'retro-vhs': [],
+    // Plan 8f.3 — third WebGL2 FX.
+    'edge-glow': []
   };
   for (const c of state.clips) {
     // Skip media-bearing clips — they're handled outside this selector.
