@@ -5,6 +5,7 @@ import { EDGE_GLOW_FRAG_SRC } from '@/lib/renderer/webgl/programs/edge-glow';
 interface EdgeGlowParams {
   threshold: number;
   color: string;
+  colorEnd: string;
   glowAmount: number;
   bgOpacity: number;
   intensity: number;
@@ -76,6 +77,11 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
       label: 'Edge color',
       default: '#00e5ff'
     },
+    colorEnd: {
+      kind: 'color',
+      label: 'Edge color (end)',
+      default: '#00e5ff'
+    },
     glowAmount: {
       kind: 'slider',
       label: 'Glow',
@@ -121,6 +127,7 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
   getDefaultParams: () => ({
     threshold: 0.10,
     color: '#00e5ff',
+    colorEnd: '#00e5ff',
     glowAmount: 0.5,
     bgOpacity: 0.3,
     intensity: 1.0,
@@ -152,7 +159,27 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
       : Math.max(0, 1 - rc.beatPhase / params.decay);
     if (!isConstant && env < 0.01) return;
 
-    const color = _hexToRgba01(params.color);
+    // Linear color interpolation across the clip duration. When
+    // colorEnd === color (default), this is a no-op (t-mix yields the
+    // same color regardless of progress) — back-compat with pre-color-
+    // gradient Edge Glow clips. clipProgress is time-based (not beat-
+    // based), so it's independent of the automation-resolver mode
+    // (per-clip Flow Mode) and behaves identically under variable BPM.
+    const cStart = _hexToRgba01(params.color);
+    const cEnd = _hexToRgba01(params.colorEnd);
+    const t =
+      rc.clipDurationSec > 0
+        ? Math.max(
+            0,
+            Math.min(1, (rc.time - rc.clipStartSec) / rc.clipDurationSec)
+          )
+        : 0;
+    const color = [
+      cStart[0] + (cEnd[0] - cStart[0]) * t,
+      cStart[1] + (cEnd[1] - cStart[1]) * t,
+      cStart[2] + (cEnd[2] - cStart[2]) * t,
+      cStart[3] + (cEnd[3] - cStart[3]) * t
+    ] as const;
     const canvas = rc.ctx.canvas;
 
     renderGlFx({

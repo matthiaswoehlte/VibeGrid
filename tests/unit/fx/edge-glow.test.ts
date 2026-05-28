@@ -22,6 +22,7 @@ describe('edgeGlowPlugin', () => {
     expect(edgeGlowPlugin.getDefaultParams()).toEqual({
       threshold: 0.10,
       color: '#00e5ff',
+      colorEnd: '#00e5ff',
       glowAmount: 0.5,
       bgOpacity: 0.3,
       intensity: 1.0,
@@ -38,7 +39,7 @@ describe('edgeGlowPlugin', () => {
   it('skips renderGlFx when env < 0.01 (Beat Mode, past decay)', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
-      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
       bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
@@ -47,7 +48,7 @@ describe('edgeGlowPlugin', () => {
   it('runs in Flow Mode even at beatPhase=0.99 (env pinned to 1)', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: true });
     edgeGlowPlugin.render(rc, {
-      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
       bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
@@ -58,7 +59,7 @@ describe('edgeGlowPlugin', () => {
   it("uses source: 'canvas' so it samples composed frame", () => {
     const rc = makeRenderContext({ beatPhase: 0 });
     edgeGlowPlugin.render(rc, {
-      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
       bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx.mock.calls[0][0].source).toBe('canvas');
@@ -67,7 +68,7 @@ describe('edgeGlowPlugin', () => {
   it('passes all 6 uniforms + u_resolution from canvas dimensions', () => {
     const rc = makeRenderContext({ beatPhase: 0 });
     edgeGlowPlugin.render(rc, {
-      threshold: 0.15, color: '#ff8800', glowAmount: 0.8,
+      threshold: 0.15, color: '#ff8800', colorEnd: '#ff8800', glowAmount: 0.8,
       bgOpacity: 0.5, intensity: 0.9, decay: 0.3, beatSync: 1,
     });
     const args = mockedRenderGlFx.mock.calls[0][0];
@@ -109,7 +110,7 @@ describe('edgeGlowPlugin', () => {
     // beatPhase=0.99, decay=0.25: env = 1 - 0.99/0.25 = -2.96 → 0 → skips (env < 0.01).
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
-      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
       bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
@@ -119,7 +120,7 @@ describe('edgeGlowPlugin', () => {
     // beatPhase=0.99 would normally skip with beatSync=1; with beatSync=0, env=1.0.
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
-      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
       bgOpacity: 0.3, intensity: 1.0, decay: 0.1, beatSync: 0,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
@@ -131,7 +132,7 @@ describe('edgeGlowPlugin', () => {
   it('beatSync=0 in Beat Mode produces the same u_intensity as flowMode=true (both pin env=1.0)', () => {
     // Both paths yield isConstant=true → env=1.0 → u_intensity = intensity * 1.0
     const params = {
-      threshold: 0.1, color: '#00e5ff', glowAmount: 0.5,
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
       bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
     };
 
@@ -147,5 +148,86 @@ describe('edgeGlowPlugin', () => {
     const flowModeIntensity = mockedRenderGlFx.mock.calls[0][0].uniforms.u_intensity;
 
     expect(beatModeIntensity).toBe(flowModeIntensity);
+  });
+
+  // --- color-gradient tests (start → end lerp over clip duration) ---
+
+  it('colorEnd === color (default) → output color constant across clip duration', () => {
+    const params = {
+      threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+    };
+    // clipStartSec=0, clipDurationSec=4 from makeRenderContext defaults.
+    for (const t of [0, 1, 2, 3, 4]) {
+      mockedRenderGlFx.mockClear();
+      const rc = makeRenderContext({ time: t, beatPhase: 0, flowMode: false });
+      edgeGlowPlugin.render(rc, params);
+      const col = mockedRenderGlFx.mock.calls[0][0].uniforms.u_color as readonly number[];
+      // #00e5ff = (0, 0xe5/255, 1, 1)
+      expect(col[0]).toBeCloseTo(0, 5);
+      expect(col[1]).toBeCloseTo(0xe5 / 255, 5);
+      expect(col[2]).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('colorEnd differs at clip START (rc.time === clipStartSec) → output is start color', () => {
+    const params = {
+      threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+    };
+    const rc = makeRenderContext({ time: 0, beatPhase: 0, flowMode: false });
+    // clipStartSec=0 default → t=0 → output is pure start color (#ff0000)
+    edgeGlowPlugin.render(rc, params);
+    const col = mockedRenderGlFx.mock.calls[0][0].uniforms.u_color as readonly number[];
+    expect(col[0]).toBeCloseTo(1, 5);
+    expect(col[1]).toBeCloseTo(0, 5);
+    expect(col[2]).toBeCloseTo(0, 5);
+  });
+
+  it('colorEnd differs at clip END (rc.time === clipStartSec + clipDurationSec) → output is end color', () => {
+    const params = {
+      threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+    };
+    // clipDurationSec=4 default; rc.time=4 → t=1 → output is pure end color (#00ff00)
+    const rc = makeRenderContext({ time: 4, beatPhase: 0, flowMode: false });
+    edgeGlowPlugin.render(rc, params);
+    const col = mockedRenderGlFx.mock.calls[0][0].uniforms.u_color as readonly number[];
+    expect(col[0]).toBeCloseTo(0, 5);
+    expect(col[1]).toBeCloseTo(1, 5);
+    expect(col[2]).toBeCloseTo(0, 5);
+  });
+
+  it('colorEnd differs at clip MIDPOINT → output is 50/50 linear mix', () => {
+    const params = {
+      threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+    };
+    // rc.time=2, clipDurationSec=4 → t=0.5 → output = mix(red, green, 0.5) = (0.5, 0.5, 0)
+    const rc = makeRenderContext({ time: 2, beatPhase: 0, flowMode: false });
+    edgeGlowPlugin.render(rc, params);
+    const col = mockedRenderGlFx.mock.calls[0][0].uniforms.u_color as readonly number[];
+    expect(col[0]).toBeCloseTo(0.5, 5);
+    expect(col[1]).toBeCloseTo(0.5, 5);
+    expect(col[2]).toBeCloseTo(0, 5);
+  });
+
+  it('clipDurationSec=0 (degenerate) → t=0 → output is start color (no NaN)', () => {
+    const params = {
+      threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+    };
+    const rc = makeRenderContext({
+      time: 5,
+      beatPhase: 0,
+      flowMode: false,
+      clipStartSec: 0,
+      clipDurationSec: 0  // edge case — t-divisor guards against NaN
+    });
+    edgeGlowPlugin.render(rc, params);
+    const col = mockedRenderGlFx.mock.calls[0][0].uniforms.u_color as readonly number[];
+    expect(col[0]).toBeCloseTo(1, 5);
+    expect(col[1]).toBeCloseTo(0, 5);
+    expect(col[2]).toBeCloseTo(0, 5);
   });
 });
