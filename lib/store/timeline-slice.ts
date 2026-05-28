@@ -38,8 +38,9 @@ function defaultLabelFor(kind: TrackKind, existing: Track[]): string {
 /** Plan 5.9c — frozen copy of the v4-era 10-track default set. The
  *  v4 → v5 migration appends these to old snapshots that pre-date
  *  later FX additions (Plan 5.8a's text/dissolve/sunray, Plan 5.9a's
- *  video). After 5.9c `initialTimelineState.tracks` shrinks to 4
- *  lanes; without this frozen reference the migration would have
+ *  video). After 5.9c `initialTimelineState.tracks` was reshaped
+ *  (5.9c: 4 lanes; later: 5 lanes incl. sync-audio / main-video
+ *  singletons); without this frozen reference the migration would have
  *  nothing meaningful to append and v4 users would lose their FX
  *  lanes on rehydrate.
  *
@@ -69,18 +70,28 @@ export const INITIAL_TRACKS_V5: ReadonlyArray<LegacyV5Track> = Object.freeze([
   { id: 'track-video', kind: 'video', name: 'Video', muted: false, order: 9 }
 ]);
 
-// Default tracks — one per TrackKind. Plan 5.9c collapsed eight
-// per-FX-plugin lanes into one generic `'fx'` lane; users can add
-// more FX lanes via "+ Track hinzufügen" if they want visual grouping
-// or separate mute scopes. Plan 5.9d unlocks Multi-Audio — calling
-// `addTrack('audio')` repeatedly produces "Audio 2", "Audio 3", …
-// Array index drives render order.
+// Default tracks for a fresh project. Two singleton "master" lanes
+// (Sync Audio for the BPM grid, Main Video for the composed visual
+// output) live at the top so users that work *without* the SceneFlow
+// AI pipeline — i.e. dropping their own song + visuals — still have
+// the right scaffolding to score footage. One Image lane plus two FX
+// lanes complete the default rig.
+//
+// `video` and `audio` are NOT in the default set anymore — users add
+// them on demand via "+ Track hinzufügen" when they need extra footage
+// or audio sources beyond the Sync-Audio master. The singleton picker
+// in AddTrackButton auto-hides Main Video / Sync Audio while they're
+// present, so accidentally deleting them is recoverable.
+//
+// Array index drives render order (top entry renders first / sits at
+// the top of the timeline UI).
 export const initialTimelineState: TimelineState = {
   tracks: [
-    { id: 'track-image', kind: 'image', name: 'Image', muted: false },
-    { id: 'track-video', kind: 'video', name: 'Video', muted: false },
-    { id: 'track-audio', kind: 'audio', name: 'Audio', muted: false },
-    { id: 'track-fx-1', kind: 'fx',    name: 'FX',    muted: false }
+    { id: 'track-sync-audio', kind: 'sync-audio', name: 'Sync Audio', muted: false },
+    { id: 'track-main-video', kind: 'main-video', name: 'Main Video', muted: false },
+    { id: 'track-image',      kind: 'image',      name: 'Image',      muted: false },
+    { id: 'track-fx-1',       kind: 'fx',         name: 'FX',         muted: false },
+    { id: 'track-fx-2',       kind: 'fx',         name: 'FX 2',       muted: false }
   ],
   clips: [],
   playhead: { beats: 0, playing: false },

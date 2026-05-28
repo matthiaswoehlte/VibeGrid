@@ -20,13 +20,14 @@ describe('Store Actions — addTrack (Plan 5.9a / 5.9c)', () => {
     expect(tracks.length).toBe(before + 1);
     const newTrack = tracks[tracks.length - 1];
     expect(newTrack.kind).toBe('fx');
-    // initialTimelineState already has one FX lane named "FX" → suffix kicks in.
-    expect(newTrack.name).toBe('FX 2');
+    // initialTimelineState already has two FX lanes named "FX" / "FX 2"
+    // → suffix kicks in at FX 3.
+    expect(newTrack.name).toBe('FX 3');
     expect(newTrack.id.length).toBeGreaterThan(0);
     expect(newTrack.muted).toBe(false);
   });
 
-  it('repeated addTrack("fx") yields FX 2 / FX 3 / FX 4', () => {
+  it('repeated addTrack("fx") yields FX 3 / FX 4 / FX 5 on top of the two default FX lanes', () => {
     const { addTrack } = useAppStore.getState().timelineActions;
     addTrack('fx');
     addTrack('fx');
@@ -35,7 +36,7 @@ describe('Store Actions — addTrack (Plan 5.9a / 5.9c)', () => {
       .getState()
       .timeline.tracks.filter((t) => t.kind === 'fx')
       .map((t) => t.name);
-    expect(fxNames).toEqual(['FX', 'FX 2', 'FX 3', 'FX 4']);
+    expect(fxNames).toEqual(['FX', 'FX 2', 'FX 3', 'FX 4', 'FX 5']);
   });
 
   it('uses the explicit label when one is provided', () => {

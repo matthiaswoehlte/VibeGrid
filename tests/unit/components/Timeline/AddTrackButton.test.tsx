@@ -73,8 +73,23 @@ describe('AddTrackButton — Plan 5.9c/5.9d picker', () => {
   });
 
   // Plan 8d — singleton enforcement for the two SceneFlow track kinds.
+  //
+  // Since both singletons are seeded into the default rig, the bare
+  // `initialTimelineState` already has Main Video + Sync Audio present,
+  // so the picker hides both by default. The "exposes both" case below
+  // strips the singletons first to test the re-add path (user deleted
+  // one or both by accident, then re-opens the picker to restore them).
   describe('Plan 8d — main-video + sync-audio singletons', () => {
-    it('exposes Main Video + Sync Audio options when neither track exists', () => {
+    it('exposes Main Video + Sync Audio options when neither track exists (e.g. after deletion)', () => {
+      useAppStore.setState((s) => ({
+        timeline: {
+          ...s.timeline,
+          tracks: s.timeline.tracks.filter(
+            (t) => t.kind !== 'main-video' && t.kind !== 'sync-audio'
+          ),
+          clips: []
+        }
+      }));
       render(<AddTrackButton />);
       fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
       expect(
@@ -85,14 +100,14 @@ describe('AddTrackButton — Plan 5.9c/5.9d picker', () => {
       ).toBeInTheDocument();
     });
 
-    it('hides Main Video option once a main-video track exists', () => {
+    it('hides Main Video option once a main-video track exists (default state)', () => {
+      // Default rig already has Main Video → option is hidden, Sync
+      // Audio is also present so it's hidden too. Drop sync-audio to
+      // isolate the Main-Video-singleton assertion.
       useAppStore.setState((s) => ({
         timeline: {
           ...s.timeline,
-          tracks: [
-            ...s.timeline.tracks,
-            { id: 't-main', kind: 'main-video', name: 'Main Video', muted: false }
-          ],
+          tracks: s.timeline.tracks.filter((t) => t.kind !== 'sync-audio'),
           clips: []
         }
       }));
@@ -101,20 +116,17 @@ describe('AddTrackButton — Plan 5.9c/5.9d picker', () => {
       expect(
         screen.queryByRole('button', { name: 'Main Video' })
       ).not.toBeInTheDocument();
-      // Sync Audio is still available
+      // Sync Audio is now missing so it should be available to add back.
       expect(
         screen.getByRole('button', { name: 'Sync Audio' })
       ).toBeInTheDocument();
     });
 
-    it('hides Sync Audio option once a sync-audio track exists', () => {
+    it('hides Sync Audio option once a sync-audio track exists (default state)', () => {
       useAppStore.setState((s) => ({
         timeline: {
           ...s.timeline,
-          tracks: [
-            ...s.timeline.tracks,
-            { id: 't-sync', kind: 'sync-audio', name: 'Sync Audio', muted: false }
-          ],
+          tracks: s.timeline.tracks.filter((t) => t.kind !== 'main-video'),
           clips: []
         }
       }));
@@ -128,18 +140,9 @@ describe('AddTrackButton — Plan 5.9c/5.9d picker', () => {
       ).toBeInTheDocument();
     });
 
-    it('hides the SceneFlow section entirely when both singletons exist', () => {
-      useAppStore.setState((s) => ({
-        timeline: {
-          ...s.timeline,
-          tracks: [
-            ...s.timeline.tracks,
-            { id: 't-main', kind: 'main-video', name: 'Main Video', muted: false },
-            { id: 't-sync', kind: 'sync-audio', name: 'Sync Audio', muted: false }
-          ],
-          clips: []
-        }
-      }));
+    it('hides the SceneFlow section entirely when both singletons exist (default state)', () => {
+      // Default `initialTimelineState` already contains both — no
+      // additional setup needed.
       render(<AddTrackButton />);
       fireEvent.click(screen.getByRole('button', { name: /track hinzufügen/i }));
       expect(

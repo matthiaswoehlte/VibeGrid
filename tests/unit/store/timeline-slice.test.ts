@@ -11,10 +11,20 @@ describe('timeline store slice', () => {
     expect(useAppStore.getState().timeline).toEqual(initialTimelineState);
   });
 
-  it('initialTimelineState has exactly 4 lanes: image, video, audio, fx', () => {
+  it('initialTimelineState has 5 lanes: sync-audio, main-video, image, fx, fx', () => {
     expect(initialTimelineState.tracks.map((t) => t.kind)).toEqual([
-      'image', 'video', 'audio', 'fx'
+      'sync-audio', 'main-video', 'image', 'fx', 'fx'
     ]);
+  });
+
+  it('default Sync-Audio and Main-Video tracks are present (so non-AI users have the scoring rig pre-built)', () => {
+    expect(initialTimelineState.tracks.find((t) => t.kind === 'sync-audio')).toBeTruthy();
+    expect(initialTimelineState.tracks.find((t) => t.kind === 'main-video')).toBeTruthy();
+  });
+
+  it('default FX lanes are named "FX" and "FX 2"', () => {
+    const fxNames = initialTimelineState.tracks.filter((t) => t.kind === 'fx').map((t) => t.name);
+    expect(fxNames).toEqual(['FX', 'FX 2']);
   });
 
   it('addClip mutates the store via the pure operation', () => {
