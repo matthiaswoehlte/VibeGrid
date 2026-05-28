@@ -530,15 +530,33 @@ export function createRenderer(deps: RendererDeps): Renderer {
         ctx!.save();
         ctx!.globalAlpha *= clipAlpha;
       }
-      // Flow Mode passes a clip-relative beat so the resolver can stretch
-      // the curve over `clip.lengthBeats`. Beat Mode keeps the absolute
-      // beats it has always passed — preserves the existing semantics
-      // (and any existing alignment users authored against the grid).
-      const paramBeat = flowMode ? beats - clip.startBeat : beats;
+      // Per-Clip Flow Mode: when an FX exposes `beatSync` (Plan 8g) and
+      // the user has it set < 0.5 (= sync off), this ONE clip's
+      // automation gets the Flow-Mode treatment — curve stretched over
+      // `clip.lengthBeats`, evaluation clip-relative. Effect: user can
+      // author dramatic multi-point curves in the editor (which uses
+      // clip-relative beats on its X-axis) and they Just Work for that
+      // FX, without affecting the rest of the timeline.
+      //
+      // beatSync as an automation curve itself can't be resolved here
+      // (chicken-and-egg with the resolution mode we're computing).
+      // typeof-number check makes static beatSync the only path into
+      // per-clip flow — a curve on beatSync falls back to Beat-Mode
+      // resolution. Users who want per-clip-flow keep beatSync static.
+      const rawBeatSync = rawParams.beatSync;
+      const perClipFlow =
+        typeof rawBeatSync === 'number' && rawBeatSync < 0.5;
+      const automationFlow = flowMode || perClipFlow;
+      const paramBeat = automationFlow ? beats - clip.startBeat : beats;
       try {
         plugin.render(
           rc,
-          resolveClipParams(rawParams, paramBeat, clip.lengthBeats, flowMode)
+          resolveClipParams(
+            rawParams,
+            paramBeat,
+            clip.lengthBeats,
+            automationFlow
+          )
         );
       } catch (err) {
         // A plugin throwing inside RAF would tear down the whole render loop
