@@ -32,8 +32,14 @@ export function ProjectListDrawer({ open, onClose }: ProjectListDrawerProps) {
   async function load(id: string): Promise<void> {
     try {
       const rec = await apiLoadProject(id);
-      applySerializedProject({ store_version: rec.store_version, state: rec.state });
+      // ORDER MATTERS: setProject FIRST so the autosave subscriber that
+      // fires inside applySerializedProject sees the new projectId — not
+      // the previous one. (useAutoSave also re-reads at fire-time as a
+      // belt; this is the suspenders.) Reversing this order silently
+      // PATCHed the previously-loaded project with the freshly-loaded
+      // one's content 30 s later (Mai 2026 incident).
       useCurrentProject.getState().setProject(rec.id, rec.name);
+      applySerializedProject({ store_version: rec.store_version, state: rec.state });
       toast.success('Projekt geladen');
       onClose();
     } catch (e) {

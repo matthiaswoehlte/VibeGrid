@@ -15,11 +15,14 @@ export function NewProjectButton() {
     ) {
       return;
     }
-    // Plan 7 — full reset that also detaches the current-project pointer,
-    // so the next Save creates a brand-new VG_projects row instead of
-    // overwriting the previous project. AutoSave is also gated on
-    // projectId, so it stays quiet until the user explicitly saves.
-    //
+    // ORDER MATTERS: detach the project pointer BEFORE resetting state,
+    // so the autosave subscriber that fires inside `recordingSet` sees
+    // `projectId === null` and skips. Without this ordering the autosave
+    // captured the OLD projectId paired with the freshly-emptied
+    // initialState and 30 s later silently overwrote the previous
+    // project in the DB (Mai 2026 incident).
+    useCurrentProject.getState().setProject(null);
+
     // Plan 10 — skip:true because a destructive "New Project" wipe MUST
     // NOT be undoable (architect L3: project-boundary operations clear
     // the stack). clearHistory() then nukes any pre-reset history that
@@ -43,7 +46,6 @@ export function NewProjectButton() {
       { skip: true }
     );
     useAppStore.getState().clearHistory();
-    useCurrentProject.getState().setProject(null);
   };
   return (
     <Button variant="ghost" size="sm" onClick={onClick} title="Neues leeres Projekt anlegen">
