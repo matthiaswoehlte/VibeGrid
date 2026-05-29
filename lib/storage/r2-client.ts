@@ -1,5 +1,9 @@
 import 'server-only';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  PutObjectCommand,
+  S3Client
+} from '@aws-sdk/client-s3';
 import { getR2Config } from './env';
 
 let client: S3Client | null = null;
@@ -21,18 +25,42 @@ function getS3Client(): S3Client {
   return client;
 }
 
+export interface PutOptions {
+  /**
+   * Plan 8.7b — optional `Cache-Control` header on the uploaded object.
+   * Used by the admin sound-upload flow to set
+   * `public, max-age=31536000, immutable` on the MP3 (one-year, content-
+   * addressed by id) and `public, max-age=3600` on the manifest.
+   */
+  cacheControl?: string;
+}
+
 export async function putToR2(
   key: string,
   body: Uint8Array,
-  contentType: string
+  contentType: string,
+  opts?: PutOptions
 ): Promise<void> {
   const cfg = getR2Config();
   const cmd = new PutObjectCommand({
     Bucket: cfg.bucket,
     Key: key,
     Body: body,
-    ContentType: contentType
+    ContentType: contentType,
+    ...(opts?.cacheControl ? { CacheControl: opts.cacheControl } : {})
   });
+  await getS3Client().send(cmd);
+}
+
+/**
+ * Plan 8.7b — sibling of `putToR2`. Used by the admin sound-delete
+ * flow to remove the MP3 after the manifest has been rewritten
+ * (manifest-first ordering — orphan MP3 is preferable to a ghost entry
+ * the user would see as a 404).
+ */
+export async function deleteFromR2(key: string): Promise<void> {
+  const cfg = getR2Config();
+  const cmd = new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key });
   await getS3Client().send(cmd);
 }
 
