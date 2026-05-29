@@ -19,6 +19,15 @@ function formatDurationSec(s: number): string {
 
 interface SoundsAdminClientProps {
   initialManifest: SoundManifest;
+  /**
+   * R2 public-CDN base URL, passed down by the page server-component
+   * (which reads `R2_PUBLIC_URL` via `getR2Config()`). Used to build
+   * `<audio src>` URLs from the admin manifest's relative `sound.url`
+   * paths — the admin path serves the raw manifest (no URL rewrite,
+   * unlike the user BFF) so the client has to compose absolute URLs
+   * itself.
+   */
+  r2PublicUrl: string;
 }
 
 /**
@@ -28,7 +37,10 @@ interface SoundsAdminClientProps {
  * `R2_PUBLIC_URL` — admin needs it client-side for `<audio>` previews,
  * exposing the public CDN host is intentional).
  */
-export function SoundsAdminClient({ initialManifest }: SoundsAdminClientProps) {
+export function SoundsAdminClient({
+  initialManifest,
+  r2PublicUrl
+}: SoundsAdminClientProps) {
   const [manifest, setManifest] = useState<SoundManifest>(initialManifest);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{
@@ -54,7 +66,7 @@ export function SoundsAdminClient({ initialManifest }: SoundsAdminClientProps) {
     };
   }, []);
 
-  const r2PublicUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? '';
+  // r2PublicUrl comes from the page server-component (see prop docs above).
 
   function togglePreview(entryId: string, url: string) {
     let el = audioRef.current;
