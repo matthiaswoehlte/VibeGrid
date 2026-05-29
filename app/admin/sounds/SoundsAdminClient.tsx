@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type {
   SoundManifest,
@@ -38,8 +38,51 @@ export function SoundsAdminClient({ initialManifest }: SoundsAdminClientProps) {
   const [deleteTarget, setDeleteTarget] = useState<{
     entry: SoundEntry;
   } | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Single-flight preview player — at most one sound plays at a time.
+  // The current entry id drives the play/stop button state on rows.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) {
+        el.pause();
+        el.src = '';
+      }
+    };
+  }, []);
 
   const r2PublicUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? '';
+
+  function togglePreview(entryId: string, url: string) {
+    let el = audioRef.current;
+    if (!el) {
+      el = new Audio();
+      el.crossOrigin = 'anonymous';
+      el.addEventListener('ended', () => setPlayingId(null));
+      el.addEventListener('error', () => setPlayingId(null));
+      audioRef.current = el;
+    }
+    if (playingId === entryId) {
+      el.pause();
+      el.currentTime = 0;
+      setPlayingId(null);
+      return;
+    }
+    el.src = url;
+    el.currentTime = 0;
+    void el
+      .play()
+      .then(() => setPlayingId(entryId))
+      .catch(() => setPlayingId(null));
+  }
+
+  const visibleCategories = useMemo(() => {
+    if (categoryFilter === 'all') return manifest.categories;
+    return manifest.categories.filter((c) => c.id === categoryFilter);
+  }, [manifest.categories, categoryFilter]);
 
   async function refreshManifest(): Promise<void> {
     const res = await fetch('/api/admin/sounds/manifest', { cache: 'no-store' });
@@ -97,18 +140,35 @@ export function SoundsAdminClient({ initialManifest }: SoundsAdminClientProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-[var(--text-dim)]">
           Version {manifest.version} · {manifest.categories.length} Kategorien ·{' '}
           {manifest.categories.reduce((n, c) => n + c.sounds.length, 0)} Sounds
         </p>
-        <button
-          type="button"
-          onClick={() => setUploadOpen(true)}
-          className="text-xs px-3 py-1.5 rounded bg-[var(--a1)] text-white"
-        >
-          + Sound hochladen
-        </button>
+        <div className="flex items-center gap-2">
+          {manifest.categories.length > 0 && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-7 px-2 rounded bg-[var(--surface-2)] text-xs text-[var(--text)] focus:outline-none focus:bg-[var(--surface-3)]"
+              aria-label="Kategorie filtern"
+            >
+              <option value="all">Alle Kategorien</option>
+              {manifest.categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} ({c.sounds.length})
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={() => setUploadOpen(true)}
+            className="text-xs px-3 py-1.5 rounded bg-[var(--a1)] text-white"
+          >
+            + Sound hochladen
+          </button>
+        </div>
       </div>
 
       {manifest.categories.length === 0 && (
@@ -119,7 +179,7 @@ export function SoundsAdminClient({ initialManifest }: SoundsAdminClientProps) {
       )}
 
       <div className="space-y-4">
-        {manifest.categories.map((cat) => (
+        {visibleCategories.map((cat) => (
           <CategorySection
             key={cat.id}
             category={cat}
@@ -127,6 +187,8 @@ export function SoundsAdminClient({ initialManifest }: SoundsAdminClientProps) {
             onEdit={(entry) => setEditTarget({ entry, categoryId: cat.id })}
             onDelete={(entry) => setDeleteTarget({ entry })}
             previewUrl={previewUrl}
+            playingId={playingId}
+            onTogglePreview={togglePreview}
           />
         ))}
       </div>
@@ -163,6 +225,8 @@ interface CategorySectionProps {
   onEdit(entry: SoundEntry): void;
   onDelete(entry: SoundEntry): void;
   previewUrl(entry: SoundEntry): string;
+  playingId: string | null;
+  onTogglePreview(entryId: string, url: string): void;
 }
 
 function CategorySection({
@@ -170,7 +234,9 @@ function CategorySection({
   onCategoryRename,
   onEdit,
   onDelete,
-  previewUrl
+  previewUrl,
+  playingId,
+  onTogglePreview
 }: CategorySectionProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(category.label);
@@ -229,6 +295,8 @@ function CategorySection({
             key={entry.id}
             entry={entry}
             previewUrl={previewUrl(entry)}
+            playing={playingId === entry.id}
+            onTogglePreview={onTogglePreview}
             onEdit={() => onEdit(entry)}
             onDelete={() => onDelete(entry)}
           />
@@ -241,32 +309,45 @@ function CategorySection({
 interface SoundRowProps {
   entry: SoundEntry;
   previewUrl: string;
+  playing: boolean;
+  onTogglePreview(entryId: string, url: string): void;
   onEdit(): void;
   onDelete(): void;
 }
 
-function SoundRow({ entry, previewUrl, onEdit, onDelete }: SoundRowProps) {
+function SoundRow({
+  entry,
+  previewUrl,
+  playing,
+  onTogglePreview,
+  onEdit,
+  onDelete
+}: SoundRowProps) {
   return (
     <li className="flex items-center gap-2 px-2 py-1.5 rounded bg-[var(--surface-2)] text-xs">
-      <span aria-hidden>🔊</span>
+      <button
+        type="button"
+        onClick={() => previewUrl && onTogglePreview(entry.id, previewUrl)}
+        disabled={!previewUrl}
+        className={`w-7 h-7 flex items-center justify-center rounded ${
+          playing
+            ? 'bg-[var(--a1)] text-white'
+            : 'bg-[var(--surface-3)] hover:bg-[var(--a1)]/40 text-[var(--text)]'
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+        aria-label={playing ? `Preview stoppen ${entry.label}` : `Preview abspielen ${entry.label}`}
+        title={playing ? 'Stop' : 'Preview'}
+      >
+        {playing ? '■' : '▶'}
+      </button>
       <span className="flex-1 truncate text-[var(--text)]" title={entry.label}>
         {entry.label}
       </span>
       <span className="font-mono text-[10px] text-[var(--text-muted)] tabular-nums">
         {formatDurationSec(entry.duration)}
       </span>
-      <span className="font-mono text-[10px] text-[var(--text-muted)] truncate max-w-[200px]">
+      <span className="font-mono text-[10px] text-[var(--text-muted)] truncate max-w-[200px]" title={entry.url}>
         {entry.url}
       </span>
-      {previewUrl && (
-        <audio
-          src={previewUrl}
-          controls
-          preload="none"
-          className="h-6 w-32"
-          aria-label={`Preview ${entry.label}`}
-        />
-      )}
       <button
         type="button"
         onClick={onEdit}
