@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const adminOk = vi.fn();
 const adminFail = vi.fn();
-const putToR2Mock = vi.fn(async () => undefined);
+const putToR2Mock = vi.fn(async (..._args: unknown[]) => undefined);
 const revalidatePathMock = vi.fn();
 
 vi.mock('@/lib/auth/admin-guard', () => ({
@@ -115,7 +115,7 @@ describe('PUT /api/admin/sounds/manifest', () => {
     expect(body.version).toBe(6);
 
     expect(putToR2Mock).toHaveBeenCalledTimes(1);
-    const [key, bytes, contentType, opts] = putToR2Mock.mock.calls[0] as [
+    const [key, bytes, contentType, opts] = putToR2Mock.mock.calls[0] as unknown as [
       string,
       Uint8Array,
       string,

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const putToR2Mock = vi.fn(async () => undefined);
-const deleteFromR2Mock = vi.fn(async () => undefined);
+const putToR2Mock = vi.fn(async (..._args: unknown[]) => undefined);
+const deleteFromR2Mock = vi.fn(async (..._args: unknown[]) => undefined);
 const revalidatePathMock = vi.fn();
 const callOrder: string[] = [];
 

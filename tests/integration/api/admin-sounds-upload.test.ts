@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const putToR2Mock = vi.fn(async () => undefined);
+const putToR2Mock = vi.fn(async (..._args: unknown[]) => undefined);
 const revalidatePathMock = vi.fn();
 
 vi.mock('@/lib/auth/admin-guard', () => ({

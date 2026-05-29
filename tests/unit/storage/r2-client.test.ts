@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Capture the latest send-payload via a module-level holder so tests
 // can assert on bucket / key / command shape.
-const sendMock = vi.fn(async () => undefined);
+const sendMock = vi.fn(async (_cmd?: unknown) => undefined);
 const lastCommand = { value: null as unknown };
 
 vi.mock('@aws-sdk/client-s3', () => {
