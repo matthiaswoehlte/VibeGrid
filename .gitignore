@@ -72,3 +72,7 @@ Thumbs.db
 
 # Large local demo recordings — keep on disk for reference, never commit
 docs/Tests/Demoszene/Recording*.mp4
+
+# Local Sound Library MP3 source files (~100 MB) — uploaded to R2 by
+# tools/upload-vibegrid-mp3s.mjs, never committed.
+/tools/VibeGrid_MP3/
