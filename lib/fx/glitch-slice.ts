@@ -1,6 +1,9 @@
 import type { FxPlugin, RenderContext } from '@/lib/renderer/types';
-import { containRect } from '@/lib/renderer/loop';
-import { mulberry32 } from '@/lib/utils/prng';
+import { renderGlFx } from '@/lib/renderer/webgl/pipeline';
+import {
+  GLITCH_SLICE_FRAG_SRC,
+  GLITCH_SLICE_UNIFORM_NAMES
+} from '@/lib/renderer/webgl/programs/glitch-slice';
 
 interface GlitchSliceParams {
   sliceCount: number;
@@ -12,25 +15,35 @@ interface GlitchSliceParams {
 }
 
 /**
- * Plan 8e — datamosh-style slice shift on every beat. The bitmap is
- * first painted onto a per-clip offscreen at canvas-aligned coords
- * (via `containRect`), then sliced into `sliceCount` horizontal or
- * vertical strips, each pseudo-randomly displaced along the
- * perpendicular axis. The PRNG is reseeded each beat to
- * `seed + beatIndex` — same seed in the same project produces the
- * same slice pattern on every viewer; different beats produce
- * different patterns.
+ * Plan 11b — GlitchSlice als WebGL2-Fragment-Shader.
  *
- * Why the offscreen pre-render: slicing directly from `rc.imageBitmap`
- * mixes bitmap-intrinsic coords (e.g. 4000×3000) with canvas coords
- * (1920×1080) in `drawImage`'s source rect, which produces incorrect
- * slice geometry. The offscreen normalises everything to canvas-space.
+ * Migriert von der Canvas-2D-Implementierung (Plan 8e) auf
+ * `renderGlFx` (Plan 8f.1+). Der Shader macht slice-shift per Fragment
+ * statt eines Pre-Render-Offscreens mit einer Schleife von `drawImage`-
+ * Aufrufen — kein per-Clip State, kein OffscreenCanvas-Cache, keine
+ * `mulberry32`-CPU-PRNG.
  *
- * Category A (image-modifying). Per-clip offscreens cached, cleared on
- * dispose. Same KNOWN_LIMITATIONS clip-remove caveat as FilmGrain.
+ * **Behavior-Drift** (siehe KNOWN_LIMITATIONS.md, Architekt-A Variante b):
+ * 1. GLSL `fract(sin)`-Hash statt `mulberry32` — andere Slice-Versatz-
+ *    Verteilung bei gleichem `seed`-Param.
+ * 2. `fract()`-UV-Wrap statt Pixel-Clipping — Wrap-Around-Glitch statt
+ *    Black-Band-Glitch. Texture ist bitmap-sized (kein Letterbox-Bereich
+ *    in der Texture), Wrap sampelt immer echtes Bitmap-Content.
+ * 3. Cosmetic: `sin()` verliert bei sehr großem `u_seed` (>10k) Entropie.
+ *
+ * `source: 'bitmap'` (Default in `renderGlFx`) — sampelt das Original-
+ * Bitmap, nicht den bereits composed Canvas. Damit ist GlitchSlice
+ * gemeinsam mit RGBSplit (Plan 11a), ColorGradeShift, RetroVHS und
+ * ContourGL last-writer-wins beim Stacking auf demselben Clip
+ * (KNOWN_LIMITATIONS-Eintrag).
+ *
+ * Plan 9c-Erbe bleibt erhalten:
+ *  - `supportsSubdivision: true`
+ *  - `params.beatSync: boolean` (kind:'toggle')
+ *  - env basiert auf `rc.subdividedBeatPhase`
+ *
+ * Category A (image-modifying) — guarded auf `rc.imageBitmap`.
  */
-const glitchOffByClip = new Map<string, OffscreenCanvas>();
-
 export const glitchSlicePlugin: FxPlugin<GlitchSliceParams> = {
   id: 'glitch-slice',
   name: 'Glitch Slice',
@@ -89,54 +102,36 @@ export const glitchSlicePlugin: FxPlugin<GlitchSliceParams> = {
     decay: 0.08,
     seed: 42,
     axis: 'h',
-    beatSync: true,
+    beatSync: true
   }),
   async preload() {},
   render(rc: RenderContext, params: GlitchSliceParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const synced = params.beatSync;
-    const env = synced
+
+    // Plan 9c — beatSync truthy + env auf subdividedBeatPhase.
+    const env = params.beatSync
       ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
-    if (typeof OffscreenCanvas === 'undefined') return;
 
-    // Pre-render bitmap with contain-math onto a canvas-sized offscreen so
-    // subsequent slicing works in pure canvas coordinates.
-    let off = glitchOffByClip.get(rc.clipId);
-    if (!off || off.width !== rc.width || off.height !== rc.height) {
-      off = new OffscreenCanvas(rc.width, rc.height);
-      glitchOffByClip.set(rc.clipId, off);
-    }
-    const oCtx = off.getContext('2d');
-    if (!oCtx) return;
-    oCtx.clearRect(0, 0, rc.width, rc.height);
-    const { sx, sy, sw, sh } = containRect(rc);
-    oCtx.drawImage(rc.imageBitmap, sx, sy, sw, sh);
-
-    const rand = mulberry32(params.seed + rc.beatIndex);
-    const { width: w, height: h } = rc;
-    const isH = params.axis === 'h';
-    const sliceCount = Math.max(1, Math.round(params.sliceCount));
-    const sliceSize = (isH ? h : w) / sliceCount;
-    const maxPx = w * params.maxOffset * env;
-
-    for (let i = 0; i < sliceCount; i++) {
-      const offsetPx = (rand() - 0.5) * 2 * maxPx;
-      if (isH) {
-        const y0 = i * sliceSize;
-        rc.ctx.drawImage(off, 0, y0, w, sliceSize, offsetPx, y0, w, sliceSize);
-      } else {
-        const x0 = i * sliceSize;
-        rc.ctx.drawImage(off, x0, 0, sliceSize, h, x0, offsetPx, sliceSize, h);
-      }
-    }
-  },
-  dispose() {
-    glitchOffByClip.clear();
+    renderGlFx({
+      rc,
+      fragSrc: GLITCH_SLICE_FRAG_SRC,
+      uniforms: {
+        u_sliceCount: Math.round(params.sliceCount),
+        u_maxOffset: params.maxOffset,
+        u_env: env,
+        // Architekt-C: seed-Komposition identisch zum mulberry32-Input
+        // des Canvas-2D-Vorgängers — deterministisch reproduzierbar
+        // zwischen zwei Renders desselben Projekts.
+        u_seed: params.seed + rc.beatIndex,
+        // Architekt-B: float-Uniform statt Doppel-Shader.
+        u_axis: params.axis === 'v' ? 1.0 : 0.0
+      },
+      uniformNames: GLITCH_SLICE_UNIFORM_NAMES
+      // source default = 'bitmap' — GlitchSlice sampelt rc.imageBitmap.
+    });
   }
+  // Kein dispose() — kein per-clip State mehr nach der Migration.
 };
-
-/** Test-only — inspect the per-clip offscreen cache. */
-export const _testOnly_glitchOffByClip = glitchOffByClip;
