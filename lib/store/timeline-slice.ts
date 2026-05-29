@@ -295,6 +295,19 @@ export const createTimelineSlice: StateCreator<
           };
         }, { coalesce: true });
       },
+      // Plan 9c — structural field on Clip (top-level, sibling of
+      // `trigger`), not a plugin param. No coalesce: each button-click
+      // is its own undo step (Architekt-D16).
+      setClipTriggerSubdivision: (clipId, subdivision) => {
+        get().recordingSet('Trigger Subdivision', (s) => {
+          s.timeline = {
+            ...s.timeline,
+            clips: s.timeline.clips.map((c) =>
+              c.id === clipId ? { ...c, triggerSubdivision: subdivision } : c
+            )
+          };
+        });
+      },
       convertParamToAutomation: (clipId, key, beat, initialValue) => {
         get().recordingSet('Enable Automation', (s) => {
           s.timeline = {

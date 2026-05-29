@@ -1,4 +1,9 @@
-import type { TimelineState, Clip, TrackKind } from '@/lib/timeline/types';
+import type {
+  TimelineState,
+  Clip,
+  TrackKind,
+  TriggerSubdivision
+} from '@/lib/timeline/types';
 import type { BeatGrid } from '@/lib/audio/types';
 import type { MediaRef } from '@/lib/storage/types';
 import type { AutomationPoint, Interpolation } from '@/lib/automation/types';
@@ -87,6 +92,14 @@ export interface TimelineActions {
   /** Plan 5.9a — inline label edit. */
   setTrackLabel(trackId: string, label: string): void;
   setClipParam(clipId: string, key: string, value: unknown): void;
+  /** Plan 9c — set the top-level `clip.triggerSubdivision` field. Not
+   *  routed through `setClipParam` because subdivision is structural
+   *  (lives next to `trigger`), not a plugin-param in `clip.params`.
+   *  Button-Click only, so default coalesce policy is fine. */
+  setClipTriggerSubdivision(
+    clipId: string,
+    subdivision: TriggerSubdivision
+  ): void;
   convertParamToAutomation(clipId: string, key: string, beat: number, initialValue?: unknown): void;
   convertParamToStatic(clipId: string, key: string): void;
   addParamPoint(clipId: string, key: string, point: AutomationPoint<unknown>): void;

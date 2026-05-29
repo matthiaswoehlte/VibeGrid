@@ -32,6 +32,28 @@ export type { TrackFxKind } from './plugin-mapping';
 /** Trigger cadence for FX. Defined here (not in renderer) because clips own a trigger. */
 export type TriggerMode = 'half-bar' | 'beat' | 'bar' | 'two-bar';
 
+/** Plan 9c — Trigger-Subdivision. `1×` = 1 envelope pro Beat (Standard),
+ *  `4×` = 4 envelopes pro Beat (= 16stel in 4/4), `16×` = sehr feine
+ *  Stutter-Subdivision. Pure phase multiplier; orthogonal zu `trigger`.
+ *
+ *  Note (2026-05-29): `32×` was cut from the picker to stay within the
+ *  Apple App Store / Google Play health guidelines on strobe content
+ *  (>3 Hz flashing can trigger photosensitive seizures). At a typical
+ *  120 BPM, `32×` = 64 envelopes/sec — clearly over the limit. `16×`
+ *  at 120 BPM is 32 envelopes/sec; still loud but already in territory
+ *  where individual FX gate themselves (env<0.01 skip) so the visible
+ *  rate is lower than the math says. */
+export type TriggerSubdivision =
+  | '1×' | '2×' | '4×' | '8×' | '16×';
+
+export const TRIGGER_SUBDIVISIONS: readonly TriggerSubdivision[] = [
+  '1×', '2×', '4×', '8×', '16×'
+] as const;
+
+export const SUBDIVISION_MULTIPLIERS: Record<TriggerSubdivision, number> = {
+  '1×': 1, '2×': 2, '4×': 4, '8×': 8, '16×': 16
+};
+
 export type SnapMode = 'beat' | 'half' | 'quarter' | 'off';
 
 export interface Track {
@@ -64,6 +86,10 @@ export interface Clip {
   fxId?: string;
   params?: Record<string, unknown>;
   trigger?: TriggerMode;
+  /** Plan 9c — phase multiplier for FX envelope. `undefined` ≡ `'1×'`
+   *  (identical to pre-9c behavior). Only respected by plugins that
+   *  set `supportsSubdivision: true`. */
+  triggerSubdivision?: TriggerSubdivision;
   label: string;
 }
 
