@@ -28,7 +28,8 @@ function makeState(partial: Partial<AppState> = {}): AppState {
 describe('serializeProject', () => {
   it('returns store_version + state', () => {
     const out = serializeProject(makeState());
-    expect(out.store_version).toBe(6);
+    // Plan 9c — STORE_VERSION bumped to 7 (beatSync number → boolean).
+    expect(out.store_version).toBe(7);
     expect(out.state.timeline).toBeDefined();
     expect(out.state.audio).toBeDefined();
   });

@@ -17,7 +17,7 @@ export interface PersistedShape {
 
 /** Current zustand store version. Bump in lockstep with the `migrate`
  *  chain in `lib/store/index.ts`. */
-export const STORE_VERSION = 6 as const;
+export const STORE_VERSION = 7 as const;
 
 /**
  * Strip transient fields and force `playhead.playing` to false. The

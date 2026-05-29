@@ -78,6 +78,7 @@ describe('toPersistedShape', () => {
     // Pinning: if we ever bump the zustand persist version, STORE_VERSION
     // must move with it — otherwise old DB snapshots won't run through
     // the migration chain.
-    expect(STORE_VERSION).toBe(6);
+    // Plan 9c — bumped to 7 (beatSync number → boolean on FX clips).
+    expect(STORE_VERSION).toBe(7);
   });
 });

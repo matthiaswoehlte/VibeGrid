@@ -27,7 +27,9 @@ import { makeHistoryActions } from './history-actions';
 /** Plan 5.9c — exported so tests can exercise it without standing up
  *  the full persisted store. */
 export function migrate(persistedState: unknown, version: number): unknown {
-  const s = persistedState as { timeline?: { tracks?: Track[] } } | null;
+  const s = persistedState as {
+    timeline?: { tracks?: Track[]; clips?: Array<Record<string, unknown>> };
+  } | null;
   if (!s?.timeline) return s;
 
   // v4 → v5: legacy order-sort + append missing default tracks.
@@ -54,6 +56,30 @@ export function migrate(persistedState: unknown, version: number): unknown {
     s.timeline.tracks = (s.timeline.tracks ?? []).map((t) =>
       fxSet.has(t.kind) ? { ...t, kind: 'fx' as Track['kind'] } : t
     );
+  }
+
+  // v6 → v7: Plan 9c — `params.beatSync` changes from `number` (0/1)
+  // to `boolean`. Only FX clips own the `beatSync` param; non-FX clips
+  // (audio/video/image) keep their params untouched. clip.kind is the
+  // diskriminator (VibeGrid has no clip.type field, and FX-clips carry
+  // a lowercase FX-kind from TRACK_FX_KINDS — track-level kind would
+  // already be `'fx'` after v6, but clip kind is the source of truth).
+  if (version < 7) {
+    const fxKindSet = new Set<string>(TRACK_FX_KINDS);
+    const existingClips = Array.isArray(s.timeline.clips) ? s.timeline.clips : [];
+    s.timeline.clips = existingClips.map((clip) => {
+      const kind = clip.kind as unknown;
+      if (typeof kind !== 'string' || !fxKindSet.has(kind)) return clip;
+      const params = clip.params as Record<string, unknown> | undefined;
+      if (!params || params.beatSync === undefined) return clip;
+      const raw = params.beatSync;
+      const newBeatSync =
+        typeof raw === 'boolean' ? raw : Number(raw) >= 0.5;
+      return {
+        ...clip,
+        params: { ...params, beatSync: newBeatSync }
+      };
+    });
   }
 
   return s;
@@ -334,6 +360,10 @@ export const useAppStore = create<AppState>()(
       //          retain their user-set `name` and `id`. Clips are
       //          untouched — `clip.kind` still carries the specific
       //          lowercase FX-kind for the renderer's plugin dispatch.
+      // v6 → v7: Plan 9c — `params.beatSync` flips from `number` (0/1)
+      //          to `boolean`. Only FX clips whose params actually
+      //          contain `beatSync` are touched; everything else
+      //          passes through verbatim.
       migrate: (persistedState, version) => migrate(persistedState, version),
 
       // Deep-merge `ui` so the persisted partial (`{ zoom }` only) doesn't
