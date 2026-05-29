@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { SoundEntry } from '@/lib/sounds/types';
+import { soundDisplayLabel } from '@/lib/sounds/display';
 
 function formatDurationSec(s: number): string {
   if (s < 10) return `${s.toFixed(1)}s`;
@@ -67,6 +68,13 @@ export function SoundLibraryItem({ sound, onAdd }: SoundLibraryItemProps) {
     e.dataTransfer.effectAllowed = 'copy';
   }
 
+  // Visual label strips noisy `VG_<CATEGORY> - ` prefixes so two entries
+  // in the same category remain distinguishable inside the narrow
+  // LeftPanel column. The original `sound.label` survives in the title
+  // tooltip + the drag payload + the clip / MediaRef the parent creates,
+  // so the timeline still shows the full filename.
+  const displayLabel = soundDisplayLabel(sound.label);
+
   return (
     <li
       draggable
@@ -76,7 +84,7 @@ export function SoundLibraryItem({ sound, onAdd }: SoundLibraryItemProps) {
     >
       <span className="text-[var(--text-dim)]" aria-hidden>🔊</span>
       <span className="flex-1 truncate text-[var(--text)]" title={sound.label}>
-        {sound.label}
+        {displayLabel}
       </span>
       <span className="font-mono text-[10px] text-[var(--text-muted)] tabular-nums">
         {formatDurationSec(sound.duration)}
