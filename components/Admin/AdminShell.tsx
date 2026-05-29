@@ -11,9 +11,13 @@ import type { Route } from 'next';
  */
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const links: Array<{ href: '/admin' | '/admin/users'; label: string }> = [
+  const links: Array<{
+    href: '/admin' | '/admin/users' | '/admin/sounds';
+    label: string;
+  }> = [
     { href: '/admin', label: 'Dashboard' },
-    { href: '/admin/users', label: 'User' }
+    { href: '/admin/users', label: 'User' },
+    { href: '/admin/sounds', label: 'Sound Library' }
   ];
 
   return (
