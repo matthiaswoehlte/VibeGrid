@@ -8,12 +8,15 @@ import { CharacterForm } from './CharacterForm';
 import type { CharacterRecord } from '@/lib/sceneflow/types';
 
 export function CharacterManager({
-  open,
   onClose
 }: {
-  open: boolean;
   onClose(): void;
 }) {
+  // The parent (SceneFlowShell) conditionally mounts this component so
+  // that closing the modal fully unmounts it. Local state (editing,
+  // creating) therefore resets every time the user reopens — without
+  // this, an interrupted edit would leave the form pre-selected on the
+  // next open instead of showing the list.
   const { characters, loading, refresh } = useSceneFlowCharacters();
   const [editing, setEditing] = useState<CharacterRecord | null>(null);
   const [creating, setCreating] = useState(false);
@@ -29,7 +32,6 @@ export function CharacterManager({
     refresh().catch(() => {});
   }
 
-  if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/50 z-50" onPointerDown={onClose}>
       <div

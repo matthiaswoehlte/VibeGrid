@@ -43,10 +43,9 @@ export function SceneFlowShell() {
           />
         )}
       </div>
-      <CharacterManager
-        open={charactersOpen}
-        onClose={() => setCharactersOpen(false)}
-      />
+      {charactersOpen && (
+        <CharacterManager onClose={() => setCharactersOpen(false)} />
+      )}
     </div>
   );
 }
