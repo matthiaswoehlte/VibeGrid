@@ -6,8 +6,12 @@ import { PreloadIndicator } from './PreloadIndicator';
 import { AutomateButton } from './AutomateButton';
 import { TransitionSection } from './TransitionSection';
 import { MediaClipInspector } from './MediaClipInspector';
+import { SubdivisionPicker } from './SubdivisionPicker';
+import { ToggleParam } from './ToggleParam';
 import { isAutomationCurve } from '@/lib/automation/resolve';
 import { isReservedParamKey } from '@/lib/timeline/overlap';
+import { formatParamValue } from '@/lib/fx/format-param-value';
+import type { ParamType } from '@/lib/renderer/types';
 
 export function Inspector() {
   const selectedClipId = useAppStore((s) => s.ui.selectedClipId);
@@ -15,6 +19,9 @@ export function Inspector() {
     selectedClipId ? s.timeline.clips.find((c) => c.id === selectedClipId) : undefined
   );
   const setClipParam = useAppStore((s) => s.timelineActions.setClipParam);
+  const setClipTriggerSubdivision = useAppStore(
+    (s) => s.timelineActions.setClipTriggerSubdivision
+  );
 
   if (!clip) {
     return <div className="p-3 text-xs text-[var(--text-dim)]">Wähle einen Clip oder Effekt aus.</div>;
@@ -63,6 +70,14 @@ export function Inspector() {
         </div>
       )}
       <div className="px-3 space-y-2">
+        {/* Plan 9c — Trigger-Subdivision picker. Plugin-opt-in via
+            `supportsSubdivision`; otherwise the row is omitted entirely. */}
+        {plugin.supportsSubdivision && (
+          <SubdivisionPicker
+            value={clip.triggerSubdivision ?? '1×'}
+            onChange={(s) => setClipTriggerSubdivision(clip.id, s)}
+          />
+        )}
         {Object.entries(plugin.paramSchema).map(([key, schema]) => {
           // Plan 5.8b — visibleWhen filter. Returning null drops the
           // whole <label> block, which means the param input AND its
@@ -72,6 +87,26 @@ export function Inspector() {
           // the row back with all prior state.
           if (schema.visibleWhen && !schema.visibleWhen(params)) return null;
           const raw = (params as Record<string, unknown>)[key];
+
+          // Plan 9c — generic `kind: 'toggle'` dispatch. No automation,
+          // no value-display row — just the Off/On group inline.
+          // `beatSync` carries user-facing labels that match the actual
+          // behaviour: value=false → constant env=1.0 ("Always On"),
+          // value=true → decay envelope per beat ("Beat Pulse").
+          if (schema.kind === 'toggle') {
+            const isBeatSync = key === 'beatSync';
+            return (
+              <ToggleParam
+                key={key}
+                label={schema.label}
+                value={Boolean(raw)}
+                onChange={(v) => setClipParam(clip.id, key, v)}
+                offLabel={isBeatSync ? 'Always On' : undefined}
+                onLabel={isBeatSync ? 'Beat Pulse' : undefined}
+              />
+            );
+          }
+
           const automated = isAutomationCurve(raw);
           const display = automated ? raw.points[0]?.value : raw;
           const showAutomate = schema.kind === 'slider';
@@ -89,8 +124,11 @@ export function Inspector() {
                     />
                   )}
                 </span>
-                {automated && (
-                  <span className="text-[10px] uppercase text-[var(--a2)]">automated</span>
+                {/* Plan 9c — slider value or "auto" indicator. Right-
+                    aligned w-10 tabular-nums so the column doesn't
+                    jitter mid-drag. */}
+                {schema.kind === 'slider' && (
+                  <ValueDisplay raw={raw} schema={schema} />
                 )}
               </div>
               <ParamControl
@@ -112,6 +150,30 @@ export function Inspector() {
       </div>
       <TransitionSection clipId={clip.id} />
     </div>
+  );
+}
+
+type SliderSchema = Extract<ParamType, { kind: 'slider' }> & { label: string };
+
+function ValueDisplay({
+  raw,
+  schema
+}: {
+  raw: unknown;
+  schema: SliderSchema;
+}) {
+  if (isAutomationCurve(raw)) {
+    return (
+      <span className="text-[10px] uppercase w-10 text-right text-[var(--text-muted)] tabular-nums">
+        auto
+      </span>
+    );
+  }
+  if (typeof raw !== 'number') return null;
+  return (
+    <span className="text-xs w-10 text-right text-[var(--text-dim)] tabular-nums">
+      {formatParamValue(raw, schema)}
+    </span>
   );
 }
 
