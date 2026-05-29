@@ -133,11 +133,65 @@ prefix, re-verify with:
 curl -I -H "Origin: $APP_ORIGIN" $R2_PUBLIC_URL/library/manifest.json
 ```
 
+## Admin (Plan 8.7b)
+
+Browser-only admin section under `/admin/sounds` (mounted in the
+`/admin` shell from Plan 8.6) for MP3 upload, manifest edits, and
+sound delete. Four API routes — all `runtime = 'nodejs'`, all guarded
+with `requireAdminApi`, all writing routes end with
+`revalidatePath('/api/sounds/manifest')` so the user BFF cache flushes:
+
+```
+GET    /api/admin/sounds/manifest         ← raw read (relative URLs)
+PUT    /api/admin/sounds/manifest         ← full manifest write (edit / category rename)
+POST   /api/admin/sounds/upload           ← atomic MP3 PUT + manifest merge
+DELETE /api/admin/sounds/[id]             ← manifest-first delete + R2 DeleteObject
+```
+
+**Upload is atomic** within one request: MP3 to
+`library/sfx/<category>/<slug>-<uuid8>.mp3` (1-year-immutable cache
+control), then manifest read → merge → write back. The
+`<slug>-<uuid8>` id guarantees uploads with identical labels can never
+collide on the R2 key.
+
+**Delete is manifest-first** (W6): the without-entry manifest is
+written BEFORE the R2 `DeleteObject` runs. If the R2 delete fails, the
+endpoint still returns 200 and logs a warning — an orphan MP3 in R2
+is preferable to a ghost manifest entry the user would see as 404.
+
+**AudioContext singleton** (W12): the UploadModal measures source-file
+duration via a module-level `AudioContext` that is reused across
+uploads and only recreated when its `state === 'closed'`. Prevents the
+Safari/iOS ~6-context cap from biting during a multi-sound upload
+session.
+
+**MIME check is server-side** (W10): `file.type !== 'audio/mpeg'` →
+400 even when the client validation has been bypassed.
+
+**`category.id` is immutable** (W11): the UploadModal edit-mode flow
+lets admins rename a category's `label` and move entries between
+categories, but the `id` (R2 directory key) is never edited — that
+would require an R2 move/rename, out of v0.1 scope.
+
+**Browser-only** (D16): no Capacitor target for the admin section.
+
+### Failure-mode table
+
+| Action | Step that can fail | Outcome | User impact |
+|---|---|---|---|
+| Upload | R2 MP3 PUT | 502, no manifest change | none, retry-safe |
+| Upload | Manifest write | 502 + `orphanKey` in body | none (entry not yet visible); manual R2 cleanup |
+| Delete | Manifest write | 502, R2 untouched | none, retry-safe |
+| Delete | R2 DeleteObject | 200 + warn-log | none (manifest already excludes); orphan stays in R2 |
+| Edit / Rename | Manifest write | 502, R2 untouched | none, retry-safe |
+
+Concurrent-write race: Last-Writer-Wins (see
+`docs/KNOWN_LIMITATIONS.md` → "Sound Library Admin — Concurrent
+Writes …"). Acceptable for v0.1 single-admin operation; ETag/`If-Match`
+is the follow-up.
+
 ## Out of scope
 
-- **Admin upload UI**: Plan 8.7b — adds a Sound Library section to
-  `/admin` (Plan 8.6) for MP3 upload, manifest regeneration, category
-  CRUD, license capture.
 - **BPM-aware length snap**: a follow-up plan can compute clip
   `lengthBeats` so the sound ends on a beat boundary.
 - **User-uploaded categories**: out of v0.1; the library is curator-
@@ -145,3 +199,10 @@ curl -I -H "Origin: $APP_ORIGIN" $R2_PUBLIC_URL/library/manifest.json
 - **Pagination**: only relevant when the manifest grows past ~100
   sounds.
 - **ETag / 304**: see performance note above.
+- **MP3 file replacement in edit-mode** (Plan 8.7b explicit out): edit
+  changes manifest metadata only; uploading a new MP3 requires a new
+  entry (which produces a new id + R2 key).
+- **Bulk upload**: single-MP3-per-request only.
+- **Drag-drop reordering within a category**: out of scope.
+- **Optimistic concurrency (ETag / If-Match)**: out of v0.1; see
+  Last-Writer-Wins note above.

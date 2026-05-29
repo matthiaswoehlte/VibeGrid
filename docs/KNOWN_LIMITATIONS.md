@@ -1169,3 +1169,13 @@ Vier Image-Modifying-FX nutzen aktuell `source: 'bitmap'` in `renderGlFx`: Color
 - ODER explizit Edge Glow (`source: 'canvas'`) als finale Komposition oben auf chained FX setzen
 
 **Saubere Lösung** (eigener Folge-Plan): alle Bitmap-Source-FX schrittweise auf `source: 'canvas'`-Chaining migrieren, analog zu Edge Glow (Plan 8f.3). Render-Order wird dann signifikant: jeder FX sampelt was der Vorgänger hinterlassen hat. Siehe Edge-Glow-Kommentar in `lib/fx/edge-glow.ts` (Variante B-Section) für das ursprüngliche Symptom-Pair (CGS + VHS).
+
+## Sound Library Admin — Concurrent Writes sind Last-Writer-Wins (Plan 8.7b)
+
+Plan 8.7b kennt keine Optimistic-Concurrency auf der Manifest-PUT-Route. Wenn zwei Admin-Sessions gleichzeitig schreiben (z. B. ein Edit und ein Upload parallel), liest jede `version: N` aus R2, schreibt `version: N+1` zurück, und der zweite Write überschreibt den ersten still — eine der beiden Änderungen geht verloren. Bewusst akzeptierte Restrisikenklasse für v0.1 mit einem aktiven Admin. Saubere Lösung wäre ein `If-Match`-Header mit ETag-Vergleich; eigener Folge-Plan sobald Multi-Admin-Bedarf entsteht.
+
+## Sound Library Admin — Orphan-MP3 bei Partial-Fail (Plan 8.7b)
+
+Der atomare `POST /api/admin/sounds/upload` macht MP3-PUT und Manifest-PUT sequentiell. Bei Manifest-PUT-Fail nach erfolgreichem MP3-PUT bleibt die MP3 in R2 als Orphan (nicht im Manifest referenziert, kein UX-Schaden) — Storage-Müll, kein Sicherheits- oder Datenintegritätsproblem. Manueller R2-Cleanup oder ein Sweeper-Job (eigener Folge-Plan) räumt das auf. Die Response enthält im Fehlerfall den `orphanKey` im Body, damit der Admin ihn händisch nachräumen kann.
+
+Reverse-Fall — `DELETE /api/admin/sounds/[id]`: Manifest-First-Order (Plan 8.7b W6) sorgt dafür, dass der Manifest-Update gelingt, der R2-Delete aber fehlschlagen kann → Orphan-MP3 in R2, identisch zum Upload-Fall. Kein Ghost-Entry im Manifest, der User ein 404 produzieren würde — das ist die explizite Trade-off-Wahl.
