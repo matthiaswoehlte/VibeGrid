@@ -164,7 +164,9 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
       uniforms: {
         u_env: env,
         u_beat_phase: rc.subdividedBeatPhase,
-        u_beat_index: rc.beatIndex,
+        // Plan 9c.1 — Dropout-Pattern per Subdivision, nicht per Beat.
+        // Bei sub=1× identisch zu rc.beatIndex (subdivisionIndex === beatIndex).
+        u_beat_index: rc.subdivisionIndex,
         u_scanline_opacity: params.scanlineOpacity,
         u_scanline_spacing: params.scanlineSpacing,
         u_color_fringe: params.colorFringe,

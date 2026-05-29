@@ -31,7 +31,10 @@ export const pulsePlugin: FxPlugin<PulseParams> = {
     // Flow Mode kills the beat flash entirely — Pulse has no continuous
     // animation, so flowMode + no beat trigger == nothing to paint.
     if (rc.flowMode) return;
-    if (!rc.isOnBeat) return;
+    // Plan 9c.1 — gate on subdivision boundary instead of beat boundary
+    // so sub=N× fires N sharp flashes per beat. Bei sub=1× identisches
+    // Verhalten zum pre-9c.1 Pulse (isOnSubdivision === isOnBeat).
+    if (!rc.isOnSubdivision) return;
     const decay = Math.max(0, 1 - rc.subdividedBeatPhase * 4);
     rc.ctx.save();
     // *= so the outer crossfade alpha set by the renderer composes correctly.
