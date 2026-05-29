@@ -2,6 +2,7 @@ import { isClient } from '@/lib/utils/is-client';
 import { beatPhase } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeClipOnTrack, getActiveFxClips } from '@/lib/timeline/selectors';
+import { SUBDIVISION_MULTIPLIERS } from '@/lib/timeline/types';
 import { qualityManager } from '@/lib/renderer/webgl/quality';
 import { resolveClipParams, resolveParam } from '@/lib/automation/resolve';
 import type { StaticOrAuto } from '@/lib/automation/types';
@@ -499,6 +500,14 @@ export function createRenderer(deps: RendererDeps): Renderer {
         (clip.startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
       const clipDurationSec = (clip.lengthBeats * 60) / grid.bpm;
 
+      // Plan 9c — subdivision phase. `% 1` keeps the result in [0,1)
+      // for any positive multiplier; the wrap point of beatPhase=1
+      // already coincides with the next subdivision boundary, so no
+      // edge-case math needed.
+      const subdivision = clip.triggerSubdivision ?? '1×';
+      const multiplier = SUBDIVISION_MULTIPLIERS[subdivision];
+      const subdividedBeatPhase = (phase.phase * multiplier) % 1;
+
       const rc: RenderContext = {
         ctx: ctx!,
         width: w,
@@ -508,6 +517,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
         beatIndex: phase.beatIndex,
         isOnBeat: shouldFire,
         trigger: clip.trigger ?? plugin.defaultTrigger,
+        subdividedBeatPhase,
+        subdivision,
         clipId: clip.id,
         clipStartSec,
         clipDurationSec,
@@ -531,21 +542,20 @@ export function createRenderer(deps: RendererDeps): Renderer {
         ctx!.globalAlpha *= clipAlpha;
       }
       // Per-Clip Flow Mode: when an FX exposes `beatSync` (Plan 8g) and
-      // the user has it set < 0.5 (= sync off), this ONE clip's
-      // automation gets the Flow-Mode treatment — curve stretched over
-      // `clip.lengthBeats`, evaluation clip-relative. Effect: user can
-      // author dramatic multi-point curves in the editor (which uses
-      // clip-relative beats on its X-axis) and they Just Work for that
-      // FX, without affecting the rest of the timeline.
+      // the user has toggled it OFF, this ONE clip's automation gets
+      // the Flow-Mode treatment — curve stretched over `clip.lengthBeats`,
+      // evaluation clip-relative. Effect: user can author dramatic
+      // multi-point curves in the editor (which uses clip-relative beats
+      // on its X-axis) and they Just Work for that FX, without affecting
+      // the rest of the timeline.
       //
-      // beatSync as an automation curve itself can't be resolved here
-      // (chicken-and-egg with the resolution mode we're computing).
-      // typeof-number check makes static beatSync the only path into
-      // per-clip flow — a curve on beatSync falls back to Beat-Mode
-      // resolution. Users who want per-clip-flow keep beatSync static.
+      // Plan 9c: `beatSync` is now `kind: 'toggle'` (boolean). Pre-v7
+      // snapshots are migrated number→boolean by `migrateV6toV7` so
+      // typeof here is always `boolean` for any FX that declares
+      // `beatSync` in its schema. The strict `=== false` keeps undefined
+      // out of per-clip-flow (FX without a beatSync param).
       const rawBeatSync = rawParams.beatSync;
-      const perClipFlow =
-        typeof rawBeatSync === 'number' && rawBeatSync < 0.5;
+      const perClipFlow = rawBeatSync === false;
       const automationFlow = flowMode || perClipFlow;
       const paramBeat = automationFlow ? beats - clip.startBeat : beats;
       try {

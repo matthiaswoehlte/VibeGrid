@@ -1,6 +1,6 @@
-import type { TriggerMode } from '@/lib/timeline/types';
+import type { TriggerMode, TriggerSubdivision } from '@/lib/timeline/types';
 
-export type { TriggerMode };
+export type { TriggerMode, TriggerSubdivision };
 
 export type ParamType =
   | { kind: 'slider'; min: number; max: number; step: number; default: number; unit?: string }
@@ -66,6 +66,16 @@ export interface RenderContext {
   beatIndex: number;
   isOnBeat: boolean;
   trigger: TriggerMode;
+  /** Plan 9c — subdivision-multiplizierte Phase: 0–1 *innerhalb* der
+   *  Subdivision. Plugins mit `supportsSubdivision: true` sollten
+   *  `subdividedBeatPhase` statt `beatPhase` für envelope-shape nutzen.
+   *  Für Plugins ohne supportsSubdivision: gleicher Wert wie `beatPhase`
+   *  (Loop berechnet immer, Plugin liest nur wenn applicable). */
+  subdividedBeatPhase: number;
+  /** Plan 9c — aktive Subdivision aus `clip.triggerSubdivision ?? '1×'`.
+   *  Primär für Tests + Debug-Tools; Plugins greifen typischerweise nur
+   *  auf `subdividedBeatPhase` zu. */
+  subdivision: TriggerSubdivision;
   /** Identity of the clip currently being rendered. Plugins that hold
    *  per-clip mutable state (e.g. Particles' spawn pool) key off this. */
   clipId: string;
@@ -104,6 +114,12 @@ export interface FxPlugin<Params = Record<string, unknown>> {
   readonly kind: FxKind;
   readonly defaultTrigger: TriggerMode;
   readonly paramSchema: ParamSchema;
+  /** Plan 9c — plugin opts into Trigger-Subdivision. When true:
+   *   - Inspector zeigt `SubdivisionPicker` für FX-Clips dieses Plugins
+   *   - `render()` sollte `rc.subdividedBeatPhase` statt `rc.beatPhase`
+   *     für envelope-shape nutzen
+   *  Default `false` → Picker unsichtbar, FX läuft wie pre-9c. */
+  readonly supportsSubdivision?: boolean;
   preloadState: PreloadState;
   getDefaultParams(): Params;
   preload(imageBitmap: ImageBitmap, signal: AbortSignal): Promise<void>;

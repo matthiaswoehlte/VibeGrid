@@ -70,15 +70,20 @@ export function makeMockImageBitmap(width = 100, height = 100): ImageBitmap {
 }
 
 export function makeRenderContext(overrides: Partial<RenderContext> = {}): RenderContext {
+  const beatPhase = overrides.beatPhase ?? 0;
   return {
     ctx: makeMockCtx(),
     width: 800,
     height: 450,
     time: 0,
-    beatPhase: 0,
+    beatPhase,
     beatIndex: 0,
     isOnBeat: false,
     trigger: 'beat',
+    // Default subdivision='1×' → subdividedBeatPhase mirrors beatPhase.
+    // Tests that exercise subdivision behavior override both.
+    subdividedBeatPhase: beatPhase,
+    subdivision: '1×',
     clipId: 'test-clip',
     clipStartSec: 0,
     clipDurationSec: 4,
