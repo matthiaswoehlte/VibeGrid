@@ -10,7 +10,7 @@ interface EdgeGlowParams {
   bgOpacity: number;
   intensity: number;
   decay: number;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -62,6 +62,7 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
   name: 'Edge Glow',
   kind: 'EdgeGlow',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'loading',
   paramSchema: {
     threshold: {
@@ -115,14 +116,7 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
       default: 0.25,
       unit: 'beats'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: () => ({
     threshold: 0.10,
@@ -132,7 +126,7 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
     bgOpacity: 0.3,
     intensity: 1.0,
     decay: 0.25,
-    beatSync: 1,
+    beatSync: true,
   }),
 
   async preload() {
@@ -152,11 +146,11 @@ export const edgeGlowPlugin: FxPlugin<EdgeGlowParams> = {
     // fälschlicherweise skippen.
     if (!rc.ctx?.canvas) return;
 
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const isConstant = rc.flowMode || !synced;
     const env = isConstant
       ? 1.0
-      : Math.max(0, 1 - rc.beatPhase / params.decay);
+      : Math.max(0, 1 - rc.subdividedBeatPhase / params.decay);
     if (!isConstant && env < 0.01) return;
 
     // Linear color interpolation across the clip duration. When

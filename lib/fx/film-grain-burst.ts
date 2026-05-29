@@ -5,7 +5,7 @@ interface FilmGrainBurstParams {
   decay: number;
   grainSize: number;
   colorMode: string;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -31,6 +31,7 @@ export const filmGrainBurstPlugin: FxPlugin<FilmGrainBurstParams> = {
   name: 'Film Grain',
   kind: 'FilmGrainBurst',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'ready',
   paramSchema: {
     intensity: {
@@ -69,28 +70,21 @@ export const filmGrainBurstPlugin: FxPlugin<FilmGrainBurstParams> = {
       ],
       default: 'white'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: (): FilmGrainBurstParams => ({
     intensity: 0.4,
     decay: 0.15,
     grainSize: 1,
     colorMode: 'white',
-    beatSync: 1,
+    beatSync: true,
   }),
   async preload() {},
   render(rc: RenderContext, params: FilmGrainBurstParams) {
     if (rc.flowMode) return;
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const env = synced
-      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.02) return;
     if (typeof OffscreenCanvas === 'undefined') return;

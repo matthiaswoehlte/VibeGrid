@@ -86,7 +86,7 @@ describe('beatFlashPlugin', () => {
     // At beatPhase=0.5 with default duration=0.1, env = 1 - 0.5/0.1 = -4 → 0,
     // so fillRect should not be called.
     const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    beatFlashPlugin.render(rc, { ...beatFlashPlugin.getDefaultParams(), beatSync: 1 });
+    beatFlashPlugin.render(rc, { ...beatFlashPlugin.getDefaultParams(), beatSync: true });
     const fills = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'fillRect'
     );
@@ -97,7 +97,7 @@ describe('beatFlashPlugin', () => {
     // beatPhase=0.99 with duration=0.1 would normally yield env≈0 and skip.
     // With beatSync=0, env is pinned to 1.0 → fillRect fires.
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
-    beatFlashPlugin.render(rc, { ...beatFlashPlugin.getDefaultParams(), beatSync: 0, duration: 0.1 });
+    beatFlashPlugin.render(rc, { ...beatFlashPlugin.getDefaultParams(), beatSync: false, duration: 0.1 });
     const fills = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'fillRect'
     );

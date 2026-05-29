@@ -9,7 +9,7 @@ interface LensFlareBurstParams {
   centerX: number;
   centerY: number;
   decay: number;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -26,6 +26,7 @@ export const lensFlareBurstPlugin: FxPlugin<LensFlareBurstParams> = {
   name: 'Lens Flare',
   kind: 'LensFlareBurst',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'ready',
   paramSchema: {
     color: { kind: 'color', label: 'Color', default: '#ffffff' },
@@ -78,14 +79,7 @@ export const lensFlareBurstPlugin: FxPlugin<LensFlareBurstParams> = {
       default: 0.2,
       unit: 'beats'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: (): LensFlareBurstParams => ({
     color: '#ffffff',
@@ -95,14 +89,14 @@ export const lensFlareBurstPlugin: FxPlugin<LensFlareBurstParams> = {
     centerX: 0.5,
     centerY: 0.5,
     decay: 0.2,
-    beatSync: 1,
+    beatSync: true,
   }),
   async preload() {},
   render(rc: RenderContext, params: LensFlareBurstParams) {
     if (rc.flowMode) return;
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const env = synced
-      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
     const { width: w, height: h } = rc;

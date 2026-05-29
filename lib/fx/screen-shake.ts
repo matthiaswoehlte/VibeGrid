@@ -6,7 +6,7 @@ interface ScreenShakeParams {
   frequency: number;
   decay: number;
   axis: string;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -28,6 +28,7 @@ export const screenShakePlugin: FxPlugin<ScreenShakeParams> = {
   name: 'Screen Shake',
   kind: 'ScreenShake',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'ready',
   paramSchema: {
     intensity: {
@@ -65,34 +66,27 @@ export const screenShakePlugin: FxPlugin<ScreenShakeParams> = {
       ],
       default: 'both'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: (): ScreenShakeParams => ({
     intensity: 0.004,
     frequency: 2,
     decay: 0.4,
     axis: 'both',
-    beatSync: 1,
+    beatSync: true,
   }),
   async preload() {},
   render(rc: RenderContext, params: ScreenShakeParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const env = synced
-      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
 
     const px = rc.width * params.intensity;
-    const t = rc.beatPhase * params.frequency * Math.PI * 2;
+    const t = rc.subdividedBeatPhase * params.frequency * Math.PI * 2;
     const dx = params.axis !== 'y' ? Math.sin(t) * px * env : 0;
     const dy = params.axis !== 'x' ? Math.cos(t * 1.3) * px * env : 0;
 

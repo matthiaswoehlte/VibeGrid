@@ -98,7 +98,7 @@ describe('lensFlareBurstPlugin', () => {
   it('beatSync=1 decays with beat phase (default behavior)', () => {
     // beatPhase=0.5 with default decay=0.2: env = 1 - 0.5/0.2 = -1.5 → 0 → no draw.
     const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    lensFlareBurstPlugin.render(rc, { ...lensFlareBurstPlugin.getDefaultParams(), beatSync: 1 });
+    lensFlareBurstPlugin.render(rc, { ...lensFlareBurstPlugin.getDefaultParams(), beatSync: true });
     const strokes = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'stroke'
     );
@@ -111,7 +111,7 @@ describe('lensFlareBurstPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     lensFlareBurstPlugin.render(rc, {
       ...lensFlareBurstPlugin.getDefaultParams(),
-      beatSync: 0,
+      beatSync: false,
       decay: 0.1,
       rayCount: 8
     });

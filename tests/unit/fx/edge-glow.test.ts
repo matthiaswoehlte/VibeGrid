@@ -27,7 +27,7 @@ describe('edgeGlowPlugin', () => {
       bgOpacity: 0.3,
       intensity: 1.0,
       decay: 0.25,
-      beatSync: 1,
+      beatSync: true,
     });
   });
 
@@ -40,7 +40,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: true,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -49,7 +49,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: true });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: true,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const args = mockedRenderGlFx.mock.calls[0][0];
@@ -60,7 +60,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0 });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: true,
     });
     expect(mockedRenderGlFx.mock.calls[0][0].source).toBe('canvas');
   });
@@ -69,7 +69,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0 });
     edgeGlowPlugin.render(rc, {
       threshold: 0.15, color: '#ff8800', colorEnd: '#ff8800', glowAmount: 0.8,
-      bgOpacity: 0.5, intensity: 0.9, decay: 0.3, beatSync: 1,
+      bgOpacity: 0.5, intensity: 0.9, decay: 0.3, beatSync: true,
     });
     const args = mockedRenderGlFx.mock.calls[0][0];
     expect(args.uniformNames).toEqual([
@@ -111,7 +111,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 1,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: true,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -121,7 +121,7 @@ describe('edgeGlowPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     edgeGlowPlugin.render(rc, {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.1, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.1, beatSync: false,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const args = mockedRenderGlFx.mock.calls[0][0];
@@ -133,7 +133,7 @@ describe('edgeGlowPlugin', () => {
     // Both paths yield isConstant=true → env=1.0 → u_intensity = intensity * 1.0
     const params = {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: false,
     };
 
     const rcBeatMode = makeRenderContext({ beatPhase: 0.5, flowMode: false });
@@ -143,7 +143,7 @@ describe('edgeGlowPlugin', () => {
 
     edgeGlowPlugin.render(
       makeRenderContext({ beatPhase: 0.5, flowMode: true }),
-      { ...params, beatSync: 1 }
+      { ...params, beatSync: true }
     );
     const flowModeIntensity = mockedRenderGlFx.mock.calls[0][0].uniforms.u_intensity;
 
@@ -155,7 +155,7 @@ describe('edgeGlowPlugin', () => {
   it('colorEnd === color (default) → output color constant across clip duration', () => {
     const params = {
       threshold: 0.1, color: '#00e5ff', colorEnd: '#00e5ff', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: false,
     };
     // clipStartSec=0, clipDurationSec=4 from makeRenderContext defaults.
     for (const t of [0, 1, 2, 3, 4]) {
@@ -173,7 +173,7 @@ describe('edgeGlowPlugin', () => {
   it('colorEnd differs at clip START (rc.time === clipStartSec) → output is start color', () => {
     const params = {
       threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: false,
     };
     const rc = makeRenderContext({ time: 0, beatPhase: 0, flowMode: false });
     // clipStartSec=0 default → t=0 → output is pure start color (#ff0000)
@@ -187,7 +187,7 @@ describe('edgeGlowPlugin', () => {
   it('colorEnd differs at clip END (rc.time === clipStartSec + clipDurationSec) → output is end color', () => {
     const params = {
       threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: false,
     };
     // clipDurationSec=4 default; rc.time=4 → t=1 → output is pure end color (#00ff00)
     const rc = makeRenderContext({ time: 4, beatPhase: 0, flowMode: false });
@@ -201,7 +201,7 @@ describe('edgeGlowPlugin', () => {
   it('colorEnd differs at clip MIDPOINT → output is 50/50 linear mix', () => {
     const params = {
       threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: false,
     };
     // rc.time=2, clipDurationSec=4 → t=0.5 → output = mix(red, green, 0.5) = (0.5, 0.5, 0)
     const rc = makeRenderContext({ time: 2, beatPhase: 0, flowMode: false });
@@ -215,7 +215,7 @@ describe('edgeGlowPlugin', () => {
   it('clipDurationSec=0 (degenerate) → t=0 → output is start color (no NaN)', () => {
     const params = {
       threshold: 0.1, color: '#ff0000', colorEnd: '#00ff00', glowAmount: 0.5,
-      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: 0,
+      bgOpacity: 0.3, intensity: 1.0, decay: 0.25, beatSync: false,
     };
     const rc = makeRenderContext({
       time: 5,

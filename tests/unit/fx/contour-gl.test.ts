@@ -19,7 +19,7 @@ const baseParams = {
   sweepSpeed: 1,
   intensity: 1.0,
   decay: 0.25,
-  beatSync: 1,
+  beatSync: true,
 };
 
 describe('contourGlPlugin', () => {
@@ -69,7 +69,7 @@ describe('contourGlPlugin', () => {
 
   it('beatSync=0 pins env=1.0 in Beat Mode regardless of beatPhase', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
-    contourGlPlugin.render(rc, { ...baseParams, beatSync: 0 });
+    contourGlPlugin.render(rc, { ...baseParams, beatSync: false });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     expect(mockedRenderGlFx.mock.calls[0][0].uniforms.u_intensity).toBe(1.0);
   });

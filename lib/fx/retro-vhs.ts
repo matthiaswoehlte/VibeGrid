@@ -11,7 +11,7 @@ interface RetroVhsParams {
   warpIntensity: number;
   decay: number;
   seed: number;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -40,6 +40,7 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
   name: 'Retro VHS',
   kind: 'RetroVHS',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'loading',
   paramSchema: {
     scanlineOpacity: {
@@ -107,14 +108,7 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
       step: 1,
       default: 7
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: () => ({
     scanlineOpacity: 0.25,
@@ -125,7 +119,7 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
     warpIntensity: 0.004,
     decay: 0.3,
     seed: 7,
-    beatSync: 1,
+    beatSync: true,
   }),
 
   async preload() {
@@ -141,12 +135,12 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
   render(rc, params) {
     if (!rc.imageBitmap) return;
 
-    // Flow Mode or beatSync=0: persistente Layer bleiben aktiv, dropout/warp aus.
-    const synced = params.beatSync >= 0.5;
+    // Flow Mode or beatSync=false: persistente Layer bleiben aktiv, dropout/warp aus.
+    const synced = params.beatSync;
     const isConstant = rc.flowMode || !synced;
     const env = isConstant
       ? 1.0
-      : Math.max(0, 1 - rc.beatPhase / params.decay);
+      : Math.max(0, 1 - rc.subdividedBeatPhase / params.decay);
     // Beat Mode: skip the WebGL call when the envelope has fully
     // decayed (saves a per-frame texSubImage2D + drawArrays). In
     // isConstant mode env is pinned at 1.0, so the check is bypassed.
@@ -169,7 +163,7 @@ export const retroVhsPlugin: FxPlugin<RetroVhsParams> = {
       ],
       uniforms: {
         u_env: env,
-        u_beat_phase: rc.beatPhase,
+        u_beat_phase: rc.subdividedBeatPhase,
         u_beat_index: rc.beatIndex,
         u_scanline_opacity: params.scanlineOpacity,
         u_scanline_spacing: params.scanlineSpacing,

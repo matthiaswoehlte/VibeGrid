@@ -8,7 +8,7 @@ interface GlitchSliceParams {
   decay: number;
   seed: number;
   axis: string;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -36,6 +36,7 @@ export const glitchSlicePlugin: FxPlugin<GlitchSliceParams> = {
   name: 'Glitch Slice',
   kind: 'GlitchSlice',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'ready',
   paramSchema: {
     sliceCount: {
@@ -80,14 +81,7 @@ export const glitchSlicePlugin: FxPlugin<GlitchSliceParams> = {
       ],
       default: 'h'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: (): GlitchSliceParams => ({
     sliceCount: 4,
@@ -95,15 +89,15 @@ export const glitchSlicePlugin: FxPlugin<GlitchSliceParams> = {
     decay: 0.08,
     seed: 42,
     axis: 'h',
-    beatSync: 1,
+    beatSync: true,
   }),
   async preload() {},
   render(rc: RenderContext, params: GlitchSliceParams) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const env = synced
-      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
     if (typeof OffscreenCanvas === 'undefined') return;

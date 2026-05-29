@@ -107,7 +107,7 @@ describe('screenShakePlugin', () => {
   it('beatSync=1 decays with beat phase (default behavior)', () => {
     // beatPhase=0.5 with default decay=0.4: env = 1 - 0.5/0.4 = -0.25 → 0, no draw.
     const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    screenShakePlugin.render(rc, { ...screenShakePlugin.getDefaultParams(), beatSync: 1 });
+    screenShakePlugin.render(rc, { ...screenShakePlugin.getDefaultParams(), beatSync: true });
     const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'drawImage'
     );
@@ -120,7 +120,7 @@ describe('screenShakePlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     screenShakePlugin.render(rc, {
       ...screenShakePlugin.getDefaultParams(),
-      beatSync: 0,
+      beatSync: false,
       decay: 0.1
     });
     const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(

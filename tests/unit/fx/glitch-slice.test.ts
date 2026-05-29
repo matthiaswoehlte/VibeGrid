@@ -129,7 +129,7 @@ describe('glitchSlicePlugin', () => {
   it('beatSync=1 decays with beat phase (default behavior)', () => {
     // beatPhase=0.5 with default decay=0.08: env = 1 - 0.5/0.08 = -5.25 → 0 → no draw.
     const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    glitchSlicePlugin.render(rc, { ...glitchSlicePlugin.getDefaultParams(), beatSync: 1 });
+    glitchSlicePlugin.render(rc, { ...glitchSlicePlugin.getDefaultParams(), beatSync: true });
     const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'drawImage'
     );
@@ -141,7 +141,7 @@ describe('glitchSlicePlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     glitchSlicePlugin.render(rc, {
       ...glitchSlicePlugin.getDefaultParams(),
-      beatSync: 0,
+      beatSync: false,
       decay: 0.1
     });
     // sliceCount=4 (default) → 4 drawImage calls on main canvas

@@ -183,7 +183,7 @@ describe('renderer — automation curve in clip.params', () => {
           lengthBeats: 10,   // 0..10 clip-relative
           label: 'P',
           params: {
-            beatSync: 0,     // < 0.5 → per-clip flow on
+            beatSync: false,     // < 0.5 → per-clip flow on
             intensity: {
               mode: 'automation',
               points: [
@@ -230,7 +230,7 @@ describe('renderer — automation curve in clip.params', () => {
           lengthBeats: 10,
           label: 'P',
           params: {
-            beatSync: 1,
+            beatSync: true,
             intensity: {
               mode: 'automation',
               points: [

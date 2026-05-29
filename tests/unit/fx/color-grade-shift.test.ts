@@ -26,7 +26,7 @@ describe('colorGradeShiftPlugin', () => {
       brightness: 1.1,
       hueShift: 0,
       decay: 0.25, // env = 1 - 0.99/0.25 = -2.96 → clamped to 0
-      beatSync: 1,
+      beatSync: true,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -39,7 +39,7 @@ describe('colorGradeShiftPlugin', () => {
       brightness: 1.1,
       hueShift: 0,
       decay: 0.25,
-      beatSync: 1,
+      beatSync: true,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -52,7 +52,7 @@ describe('colorGradeShiftPlugin', () => {
       brightness: 1.2,
       hueShift: 90,
       decay: 0.3,
-      beatSync: 1,
+      beatSync: true,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const args = mockedRenderGlFx.mock.calls[0][0];
@@ -136,7 +136,7 @@ describe('colorGradeShiftPlugin', () => {
       brightness: 1.1,
       hueShift: 0,
       decay: 0.25,
-      beatSync: 1,
+      beatSync: true,
     });
   });
 
@@ -151,7 +151,7 @@ describe('colorGradeShiftPlugin', () => {
       brightness: 1.1,
       hueShift: 0,
       decay: 0.25,
-      beatSync: 1,
+      beatSync: true,
     });
     expect(mockedRenderGlFx).not.toHaveBeenCalled();
   });
@@ -166,7 +166,7 @@ describe('colorGradeShiftPlugin', () => {
       brightness: 1.1,
       hueShift: 0,
       decay: 0.1,
-      beatSync: 0,
+      beatSync: false,
     });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const args = mockedRenderGlFx.mock.calls[0][0];

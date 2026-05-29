@@ -118,7 +118,7 @@ describe('zoomPunchPlugin', () => {
   it('beatSync=1 decays with beat phase (default behavior)', () => {
     // At beatPhase=0.5 well past attack=0.02+decay=0.15, env=0 → no scale draw.
     const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    zoomPunchPlugin.render(rc, { ...zoomPunchPlugin.getDefaultParams(), beatSync: 1 });
+    zoomPunchPlugin.render(rc, { ...zoomPunchPlugin.getDefaultParams(), beatSync: true });
     const scales = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'scale'
     );
@@ -131,7 +131,7 @@ describe('zoomPunchPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     zoomPunchPlugin.render(rc, {
       ...zoomPunchPlugin.getDefaultParams(),
-      beatSync: 0,
+      beatSync: false,
       decay: 0.1,
       strength: 1.2
     });

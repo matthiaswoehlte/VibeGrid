@@ -8,7 +8,7 @@ interface ColorGradeShiftParams {
   brightness: number;
   hueShift: number;
   decay: number;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -35,6 +35,7 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
   name: 'Color Grade',
   kind: 'ColorGradeShift',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'loading',
   paramSchema: {
     saturation: {
@@ -79,14 +80,7 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
       default: 0.25,
       unit: 'beats'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1,
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: () => ({
     saturation: 2.0,
@@ -94,7 +88,7 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
     brightness: 1.1,
     hueShift: 0,
     decay: 0.25,
-    beatSync: 1,
+    beatSync: true,
   }),
 
   async preload() {
@@ -110,9 +104,9 @@ export const colorGradeShiftPlugin: FxPlugin<ColorGradeShiftParams> = {
   render(rc, params) {
     if (!rc.imageBitmap) return;
     if (rc.flowMode) return;
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const env = synced
-      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
 

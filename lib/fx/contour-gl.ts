@@ -23,7 +23,7 @@ interface ContourGlParams {
   sweepSpeed: number;
   intensity: number;
   decay: number;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /** Direction → float code for u_sweep_dir. 0 means "no sweep gating". */
@@ -79,6 +79,7 @@ export const contourGlPlugin: FxPlugin<ContourGlParams> = {
   name: 'Contour GL',
   kind: 'ContourGL',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'loading',
   paramSchema: {
     color: {
@@ -156,14 +157,7 @@ export const contourGlPlugin: FxPlugin<ContourGlParams> = {
       default: 0.25,
       unit: 'beats'
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: () => ({
     color: '#a86bff',
@@ -174,7 +168,7 @@ export const contourGlPlugin: FxPlugin<ContourGlParams> = {
     sweepSpeed: 1,
     intensity: 1.0,
     decay: 0.25,
-    beatSync: 1
+    beatSync: true
   }),
 
   async preload() {
@@ -192,11 +186,11 @@ export const contourGlPlugin: FxPlugin<ContourGlParams> = {
     // (not on imageBitmap, which is irrelevant for canvas-mode shaders).
     if (!rc.ctx?.canvas) return;
 
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const isConstant = rc.flowMode || !synced;
     const env = isConstant
       ? 1.0
-      : Math.max(0, 1 - rc.beatPhase / params.decay);
+      : Math.max(0, 1 - rc.subdividedBeatPhase / params.decay);
     if (!isConstant && env < 0.01) return;
 
     // Sweep phase — identical math to lib/fx/contour/index.ts so that

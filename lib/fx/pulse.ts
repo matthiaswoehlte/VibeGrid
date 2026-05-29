@@ -10,6 +10,7 @@ export const pulsePlugin: FxPlugin<PulseParams> = {
   name: 'Pulse',
   kind: 'Pulse',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'ready',
   paramSchema: {
     color: { kind: 'color', default: '#ffffff', label: 'Glow color' },
@@ -31,7 +32,7 @@ export const pulsePlugin: FxPlugin<PulseParams> = {
     // animation, so flowMode + no beat trigger == nothing to paint.
     if (rc.flowMode) return;
     if (!rc.isOnBeat) return;
-    const decay = Math.max(0, 1 - rc.beatPhase * 4);
+    const decay = Math.max(0, 1 - rc.subdividedBeatPhase * 4);
     rc.ctx.save();
     // *= so the outer crossfade alpha set by the renderer composes correctly.
     rc.ctx.globalAlpha *= decay * params.intensity;

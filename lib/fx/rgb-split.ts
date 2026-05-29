@@ -9,7 +9,7 @@ interface RGBSplitParams {
   offset: number;
   decay: number;
   intensity: number;
-  beatSync: number;
+  beatSync: boolean;
 }
 
 /**
@@ -41,6 +41,7 @@ export const rgbSplitPlugin: FxPlugin<RGBSplitParams> = {
   name: 'RGB Split',
   kind: 'RGBSplit',
   defaultTrigger: 'beat',
+  supportsSubdivision: true,
   preloadState: 'ready',
   paramSchema: {
     offset: {
@@ -68,20 +69,13 @@ export const rgbSplitPlugin: FxPlugin<RGBSplitParams> = {
       step: 0.01,
       default: 0.6
     },
-    beatSync: {
-      kind: 'slider',
-      label: 'Beat Sync',
-      min: 0,
-      max: 1,
-      step: 1,
-      default: 1
-    }
+    beatSync: { kind: 'toggle', label: 'Beat Sync', default: true }
   },
   getDefaultParams: (): RGBSplitParams => ({
     offset: 0.004,
     decay: 0.15,
     intensity: 0.6,
-    beatSync: 1
+    beatSync: true
   }),
   async preload() {},
   render(rc: RenderContext, params: RGBSplitParams) {
@@ -89,9 +83,9 @@ export const rgbSplitPlugin: FxPlugin<RGBSplitParams> = {
     if (rc.flowMode) return;
 
     // Plan 8g beatSync — Verhalten 1:1 erhalten gegenüber Canvas-2D-Vorgänger.
-    const synced = params.beatSync >= 0.5;
+    const synced = params.beatSync;
     const env = synced
-      ? Math.max(0, 1 - rc.beatPhase / params.decay)
+      ? Math.max(0, 1 - rc.subdividedBeatPhase / params.decay)
       : 1.0;
     if (env < 0.01) return;
 

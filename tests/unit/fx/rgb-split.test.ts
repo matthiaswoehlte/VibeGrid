@@ -14,7 +14,7 @@ const baseParams = {
   offset: 0.004,
   decay: 0.15,
   intensity: 0.6,
-  beatSync: 1
+  beatSync: true
 };
 
 describe('rgbSplitPlugin (WebGL2, Plan 11a)', () => {
@@ -109,7 +109,7 @@ describe('rgbSplitPlugin (WebGL2, Plan 11a)', () => {
 
   it('beatSync=1, beatPhase=0 → u_env = 1.0', () => {
     const rc = makeRenderContext({ beatPhase: 0, flowMode: false });
-    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: 1 });
+    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: true });
     const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
     expect(u.u_env).toBeCloseTo(1.0, 5);
   });
@@ -117,7 +117,7 @@ describe('rgbSplitPlugin (WebGL2, Plan 11a)', () => {
   it('beatSync=1 decays with beat phase (env = 1 - beatPhase/decay, clamped ≥ 0)', () => {
     // beatPhase=0.075, decay=0.15 → env = 1 - 0.5 = 0.5
     const rc = makeRenderContext({ beatPhase: 0.075, flowMode: false });
-    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: 1, decay: 0.15 });
+    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: true, decay: 0.15 });
     const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
     expect(u.u_env as number).toBeCloseTo(0.5, 5);
   });
@@ -125,7 +125,7 @@ describe('rgbSplitPlugin (WebGL2, Plan 11a)', () => {
   it('beatSync=0 pins u_env=1.0 regardless of beatPhase (Flow-Mode-like)', () => {
     // Without beatSync=0 this would be env ≈ 0 and skipped entirely.
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
-    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: 0, decay: 0.1 });
+    rgbSplitPlugin.render(rc, { ...baseParams, beatSync: false, decay: 0.1 });
     expect(mockedRenderGlFx).toHaveBeenCalledTimes(1);
     const u = mockedRenderGlFx.mock.calls[0][0].uniforms;
     expect(u.u_env).toBe(1.0);

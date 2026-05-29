@@ -129,7 +129,7 @@ describe('filmGrainBurstPlugin', () => {
   it('beatSync=1 decays with beat phase (default behavior)', () => {
     // beatPhase=0.5 with default decay=0.15: env = 1 - 0.5/0.15 = -2.33 → 0 → no draw.
     const rc = makeRenderContext({ beatPhase: 0.5, flowMode: false });
-    filmGrainBurstPlugin.render(rc, { ...filmGrainBurstPlugin.getDefaultParams(), beatSync: 1 });
+    filmGrainBurstPlugin.render(rc, { ...filmGrainBurstPlugin.getDefaultParams(), beatSync: true });
     const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
       (c) => c.method === 'drawImage'
     );
@@ -142,7 +142,7 @@ describe('filmGrainBurstPlugin', () => {
     const rc = makeRenderContext({ beatPhase: 0.99, flowMode: false });
     filmGrainBurstPlugin.render(rc, {
       ...filmGrainBurstPlugin.getDefaultParams(),
-      beatSync: 0,
+      beatSync: false,
       decay: 0.1
     });
     const draws = (rc.ctx as unknown as CtxCalls).__calls.filter(
