@@ -89,4 +89,31 @@ describe('UserMenu', () => {
     expect(useUserSession.getState().status).toBe('idle');
     expect(useUserSession.getState().email).toBeNull();
   });
+
+  // Regression — Mai 2026: navigation /admin → / re-mounted the studio
+  // layout which set status='loading'. The old guard showed a pulse
+  // placeholder for any non-ready status, so the avatar briefly turned
+  // into a skeleton on every such navigation. Fix: keep the avatar as
+  // long as we have an email, regardless of status.
+  it('keeps the avatar visible when status flips to loading on top of a known email (re-mount)', () => {
+    useUserSession
+      .getState()
+      .setSession({ email: 'demo-admin@example.com', role: 'user', banned: false });
+    useUserSession.getState().setLoading();
+    const { container } = render(<UserMenu />);
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: /Konto/ }).textContent?.trim()
+    ).toBe('M');
+  });
+
+  it('keeps the avatar visible if the re-fetch errors after a known email', () => {
+    useUserSession
+      .getState()
+      .setSession({ email: 'demo-admin@example.com', role: 'user', banned: false });
+    useUserSession.getState().setError();
+    const { container } = render(<UserMenu />);
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByRole('button', { name: /Konto/ })).toBeInTheDocument();
+  });
 });

@@ -56,22 +56,24 @@ export function UserMenu() {
     router.push('/login');
   }
 
-  // Render nothing until the session fetch has resolved (or errored).
-  // The studio layout's UserSessionLoader fires within the first paint;
-  // for the brief 'idle' / 'loading' window we'd rather show a tiny
-  // skeleton circle than flash the menu in/out.
-  if (status === 'idle' || status === 'loading') {
-    return (
-      <div
-        className="w-8 h-8 rounded-full bg-[var(--surface-2)] animate-pulse"
-        aria-hidden
-      />
-    );
-  }
+  // Last-known-good rule: render the avatar as long as we have an
+  // email, regardless of `status`. The studio layout's
+  // UserSessionLoader flips `status` back to 'loading' on every
+  // re-mount (e.g. navigating /admin → /); without this guard the
+  // avatar would briefly turn into a pulse skeleton on every such
+  // navigation. Only when we've NEVER hydrated (status idle/loading
+  // and email still null) do we render the placeholder. After logout
+  // `reset()` clears `email`, so the menu cleanly disappears.
   if (!email) {
-    // No session — UserMenu cannot render. Caller can show a login link
-    // in this slot if desired; for the studio TopBar a logged-out user
-    // never reaches this view (middleware redirects to /login).
+    if (status === 'idle' || status === 'loading') {
+      return (
+        <div
+          className="w-8 h-8 rounded-full bg-[var(--surface-2)] animate-pulse"
+          aria-hidden
+        />
+      );
+    }
+    // status 'ready' | 'error' with no email = logged out.
     return null;
   }
 
