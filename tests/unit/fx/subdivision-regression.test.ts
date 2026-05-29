@@ -235,19 +235,7 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
     expect(atFour).toBe(0);
   });
 
-  it('GlitchSlice: 4× past `decay` → no drawImage', () => {
-    const { atOne, atFour } = renderTwice(
-      glitchSlicePlugin,
-      {
-        ...glitchSlicePlugin.getDefaultParams(),
-        decay: 0.1,
-        beatSync: true
-      },
-      countOf('drawImage')
-    );
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
-  });
+  // GlitchSlice moved to the WebGL group below (Plan 11b).
 });
 
 describe('Plan 9c — WebGL subdivision envelope shape regression', () => {
@@ -283,6 +271,16 @@ describe('Plan 9c — WebGL subdivision envelope shape regression', () => {
   it('RGBSplit: 4× past `decay` skips renderGlFx', () => {
     const { atOne, atFour } = callRenderGlFxTwice(rgbSplitPlugin, {
       ...rgbSplitPlugin.getDefaultParams(),
+      decay: 0.1,
+      beatSync: true
+    });
+    expect(atOne).toBeGreaterThan(0);
+    expect(atFour).toBe(0);
+  });
+
+  it('GlitchSlice: 4× past `decay` skips renderGlFx (Plan 11b)', () => {
+    const { atOne, atFour } = callRenderGlFxTwice(glitchSlicePlugin, {
+      ...glitchSlicePlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
