@@ -1160,9 +1160,21 @@ Plan 11a (2026-05-28) migrierte RGBSplit von Canvas-2D auf WebGL2. Der Canvas-2D
 
 Bestandsprojekte mit RGBSplit zeigen nach der Migration einen leicht anderen Look — kein UX-Eingriff nötig, dokumentiert. Migration-Trade-off: deterministischer Look + keine per-Clip OffscreenCanvas-Caches + WebGL-Performance (avg < 0.5 ms statt ~3 ms) gegen den additiven "Hellpump"-Charakter des Canvas-2D-Vorgängers.
 
+## GlitchSlice WebGL2 — anderes Look-Profil als Canvas-2D-Vorgänger (Plan 11b)
+
+Plan 11b (2026-05-29) migrierte GlitchSlice von Canvas-2D auf WebGL2. Drei bewusst akzeptierte Verhaltens-Drifts (Architekt-Entscheidung Variante b):
+
+1. **Hash-Verteilung:** Canvas-2D nutzte mulberry32 (deterministic integer PRNG, `lib/utils/prng.ts`). Shader nutzt GLSL-Standard `fract(sin(n) * 43758.5453123)`. Bei gleichem `seed`-Param und gleichem `rc.beatIndex` produzieren beide deterministisch denselben Output je Render — aber die **Slice-Versatz-Verteilung** ist anders. Bestandsprojekte mit fixiertem `seed=42` sehen nach Migration eine andere Glitch-Choreographie. Reproduzierbarkeit zwischen alten und neuen Renders ist gebrochen, neue Renders untereinander aber stabil.
+
+2. **Wrap-Around statt Clipping:** Canvas-2D-`drawImage` mit X-/Y-Versatz clippte Pixel die über die Canvas-Kante rutschten (sichtbare schwarze/transparente Bänder am Rand). Shader nutzt `fract()` für UV-Wrapping in der bitmap-sized Texture — Pixel kommen am anderen Rand der Bitmap wieder rein. Optischer Charakter ändert sich von „Black-Band-Glitch" zum „Wrap-Glitch". Texture ist bitmap-sized im `source='bitmap'`-Mode (siehe `lib/renderer/webgl/texture.ts:43-46` + `lib/renderer/webgl/pipeline.ts:111-113`), `fract()` wrappt deshalb immer auf echtes Bitmap-Content, keine theoretischen Letterbox-Sampling-Bugs.
+
+3. **Cosmetic — sin-Entropie bei sehr großen `u_seed`:** Über lange Sessions wächst `rc.beatIndex` unbeschränkt. Ab `u_seed ≈ 10000` verliert `sin()` in float32 etwas Entropie — benachbarte `sliceIdx`-Werte können visuell-korrelierte Outputs liefern (subtile Pattern-Bildung statt klean random). Ist Teil des Glitch-Charmes, für viele User vermutlich unsichtbar. Falls je problematisch: integer-arithmetic PCG-Hash im Shader portieren — separater Plan.
+
+User die bit-identische Reproduktion alter GlitchSlice-Renders brauchen: Re-Render unter pre-11b-Stand. Für Vorwärts-Workflow (neue Story-Boards, Preset-Authoring nach Migration) ist der neue Look die referenzwertige Variante. Keine Schema-Migration nötig — `params.seed` und alle anderen Params sind weiterhin kompatibel.
+
 ## Stack-Composition Bitmap-Source-FX — last-writer-wins (Plan 11a)
 
-Vier Image-Modifying-FX nutzen aktuell `source: 'bitmap'` in `renderGlFx`: ColorGradeShift (Plan 8f.1), RetroVHS (Plan 8f.2), Contour GL (Plan 8f.4) und RGBSplit (Plan 11a). Wenn 2+ davon auf demselben Clip aktiv sind, sampeln alle das Original-Bitmap und composen mit `drawImage` auf den Main-Canvas — der letzte Render-Pass überschreibt den vorigen. User sieht NUR den letzten FX in `RENDER_ORDER_TRACK_KIND`.
+Fünf Image-Modifying-FX nutzen aktuell `source: 'bitmap'` in `renderGlFx`: ColorGradeShift (Plan 8f.1), RetroVHS (Plan 8f.2), Contour GL (Plan 8f.4), RGBSplit (Plan 11a) und GlitchSlice (Plan 11b). Wenn 2+ davon auf demselben Clip aktiv sind, sampeln alle das Original-Bitmap und composen mit `drawImage` auf den Main-Canvas — der letzte Render-Pass überschreibt den vorigen. User sieht NUR den letzten FX in `RENDER_ORDER_TRACK_KIND`.
 
 **Workaround heute:**
 - Nur einen Bitmap-Source-FX pro Clip aktiv lassen
