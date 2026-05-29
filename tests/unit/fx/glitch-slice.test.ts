@@ -150,22 +150,38 @@ describe('glitchSlicePlugin (WebGL2, Plan 11b)', () => {
     expect(mockedRenderGlFx.mock.calls[0][0].uniforms.u_env).toBe(1.0);
   });
 
-  // --- Architekt-C: u_seed composition ---
+  // --- Plan 9c.1: u_seed composition uses subdivisionIndex ---
 
-  it('u_seed = params.seed + rc.beatIndex (Architekt-C, matches mulberry32 input)', () => {
-    const rc1 = makeRenderContext({ beatPhase: 0, beatIndex: 0, flowMode: false });
+  it('u_seed = params.seed + rc.subdivisionIndex (new pattern per subdivision)', () => {
+    // At sub=1× subdivisionIndex === beatIndex (back-compat with the
+    // mulberry32 input of the Canvas-2D predecessor); at sub=N× it
+    // advances N× per beat so each subdivision gets a fresh pattern
+    // instead of repeating the beat-pattern N times.
+    const rc1 = makeRenderContext({ subdivisionIndex: 0, flowMode: false });
     glitchSlicePlugin.render(rc1, { ...baseParams, seed: 42 });
     expect(mockedRenderGlFx.mock.calls[0][0].uniforms.u_seed).toBe(42);
 
     mockedRenderGlFx.mockReset();
-    const rc2 = makeRenderContext({ beatPhase: 0, beatIndex: 1, flowMode: false });
+    const rc2 = makeRenderContext({ subdivisionIndex: 1, flowMode: false });
     glitchSlicePlugin.render(rc2, { ...baseParams, seed: 42 });
     expect(mockedRenderGlFx.mock.calls[0][0].uniforms.u_seed).toBe(43);
 
     mockedRenderGlFx.mockReset();
-    const rc3 = makeRenderContext({ beatPhase: 0, beatIndex: 5, flowMode: false });
+    const rc3 = makeRenderContext({ subdivisionIndex: 5, flowMode: false });
     glitchSlicePlugin.render(rc3, { ...baseParams, seed: 100 });
     expect(mockedRenderGlFx.mock.calls[0][0].uniforms.u_seed).toBe(105);
+
+    // At sub=8× with beatIndex=2, subdivisionIndex spans 16..23 across
+    // the beat — verify the plugin reads the subdivision counter, not
+    // the beat counter.
+    mockedRenderGlFx.mockReset();
+    const rc4 = makeRenderContext({
+      beatIndex: 2,
+      subdivisionIndex: 19,
+      flowMode: false
+    });
+    glitchSlicePlugin.render(rc4, { ...baseParams, seed: 100 });
+    expect(mockedRenderGlFx.mock.calls[0][0].uniforms.u_seed).toBe(119);
   });
 
   // --- Architekt-B: u_axis ---

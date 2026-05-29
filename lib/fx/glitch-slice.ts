@@ -122,10 +122,14 @@ export const glitchSlicePlugin: FxPlugin<GlitchSliceParams> = {
         u_sliceCount: Math.round(params.sliceCount),
         u_maxOffset: params.maxOffset,
         u_env: env,
-        // Architekt-C: seed-Komposition identisch zum mulberry32-Input
-        // des Canvas-2D-Vorgängers — deterministisch reproduzierbar
-        // zwischen zwei Renders desselben Projekts.
-        u_seed: params.seed + rc.beatIndex,
+        // Plan 9c.1 — seed advances per SUBDIVISION, not per beat. Bei
+        // sub=1× ist `subdivisionIndex === beatIndex`, also Verhalten
+        // identisch zum pre-9c.1 Canvas-2D-Vorgänger (mulberry32-
+        // determinism preserved). Bei sub=N× bekommt jede Subdivision
+        // ein neues Slice-Pattern statt das Beat-Pattern N× zu
+        // wiederholen — sonst würde der User „1 Glitch flackert" sehen
+        // statt „N verschiedene Glitches pro Beat".
+        u_seed: params.seed + rc.subdivisionIndex,
         // Architekt-B: float-Uniform statt Doppel-Shader.
         u_axis: params.axis === 'v' ? 1.0 : 0.0
       },
