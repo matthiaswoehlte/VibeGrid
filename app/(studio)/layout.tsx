@@ -1,6 +1,7 @@
 import { Toaster } from 'sonner';
 import { AutoSaveMount } from '@/components/AutoSaveMount';
 import { SoundManifestLoader } from '@/components/SoundManifestLoader';
+import { UserSessionLoader } from '@/components/UserSessionLoader';
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,6 +9,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
       {children}
       <AutoSaveMount />
       <SoundManifestLoader />
+      <UserSessionLoader />
       <Toaster
         position="bottom-right"
         theme="dark"
