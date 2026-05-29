@@ -25,12 +25,18 @@ export function SoundLibrary() {
   const bpm = useAppStore((s) => s.audio.grid.bpm);
 
   const [query, setQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
-  const filtered = useMemo(() => filterCategories(manifest?.categories ?? [], query), [
-    manifest,
-    query
-  ]);
+  const filtered = useMemo(
+    () =>
+      filterCategories(
+        manifest?.categories ?? [],
+        query,
+        categoryFilter
+      ),
+    [manifest, query, categoryFilter]
+  );
 
   function toggleCategory(id: string) {
     setCollapsed((prev) => {
@@ -78,6 +84,8 @@ export function SoundLibrary() {
     toast.success(`${sound.label} hinzugefügt`);
   }
 
+  const allCategories = manifest?.categories ?? [];
+
   return (
     <div className="space-y-2">
       <input
@@ -87,6 +95,24 @@ export function SoundLibrary() {
         placeholder="Suche…"
         className="w-full h-7 px-2 rounded bg-[var(--surface-2)] text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:bg-[var(--surface-3)]"
       />
+
+      {allCategories.length > 0 && (
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="w-full h-7 px-2 rounded bg-[var(--surface-2)] text-xs text-[var(--text)] focus:outline-none focus:bg-[var(--surface-3)]"
+          aria-label="Kategorie filtern"
+        >
+          <option value="all">Alle Kategorien ({
+            allCategories.reduce((n, c) => n + c.sounds.length, 0)
+          })</option>
+          {allCategories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label} ({c.sounds.length})
+            </option>
+          ))}
+        </select>
+      )}
 
       {isLoading && (
         <div className="text-xs text-[var(--text-dim)] px-2 py-3">Lade Sound Library…</div>
@@ -136,11 +162,16 @@ export function SoundLibrary() {
 
 function filterCategories(
   cats: SoundCategory[],
-  query: string
+  query: string,
+  categoryFilter: string
 ): SoundCategory[] {
+  const scoped =
+    categoryFilter === 'all'
+      ? cats
+      : cats.filter((c) => c.id === categoryFilter);
   const q = query.trim().toLowerCase();
-  if (!q) return cats;
-  return cats
+  if (!q) return scoped;
+  return scoped
     .map((cat) => ({
       ...cat,
       sounds: cat.sounds.filter((s) => matchesQuery(s, q))
