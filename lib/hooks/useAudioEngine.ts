@@ -108,40 +108,58 @@ export function useAudioEngine(): UseAudioEngine {
     return unsub;
   }, [engine]);
 
-  // Auto-load the most recently added audio MediaRef into the engine.
-  // v0.1: kept for the engine's `cachedDecodedBuffer` API surface
-  // (used by detectBPM and other diagnostic paths). After Plan 5.9d
-  // shipped Multi-Audio, the `<audio>` element created by engine.load
-  // is MUTED — playback comes exclusively from the per-clip
-  // reconciler (`loadClip` / `playClip`) below. Without this mute,
-  // Transport.play() (which calls engine.play() → audioEl.play())
-  // would play the autoloaded soundtrack in parallel to the per-clip
-  // path → audible double-volume.
+  // Auto-load the SYNC audio MediaRef into the engine.
+  //
+  // The `<audio>` element wired up by `engine.load` is the *time-source*
+  // for the playhead — its `timeupdate` event drives `engine.currentTime`,
+  // which drives the visual playhead AND the renderer's `getCurrentTime`.
+  // After Plan 5.9d (Multi-Audio) it's also kept MUTED, because the
+  // audible audio comes from the per-clip reconciler below.
+  //
+  // CRITICAL — only sync audio belongs here. The original implementation
+  // picked "the most recently added audio MediaRef" which worked while a
+  // project's only audio MediaRef WAS the sync song. Multi-Audio (Plan
+  // 5.9d), user-uploaded audio clips, and Sound Library drops (Plan 8.7)
+  // all invalidate that assumption: replacing audioEl with a short
+  // Library MP3 (~3 s) makes timeupdate stop firing after the file
+  // ends — playhead + canvas freeze while per-clip BufferSources still
+  // play the actual song audibly (exactly the bug Matthias hit after
+  // dragging VG_BOOM-CUNNING onto an audio track).
+  //
+  // Convention: sync-audio MediaRefs use the id prefix `sync-` (set by
+  // SyncAudioDropZone and the SceneFlow Transfer flow). Library
+  // (`library-…`) and multi-audio (raw UUID) refs do NOT match, so this
+  // filter cleanly routes only the sync source into `engine.load`.
   useEffect(() => {
     if (!engine) return;
     const muteAutoloaded = (): void => {
       const audioEl = engine.getAudioElement();
       if (audioEl) audioEl.muted = true;
     };
+    const isSyncAudioRef = (m: MediaRef): boolean =>
+      m.kind === 'audio' && m.id.startsWith('sync-');
     // Prime once on mount from current state (handles rehydrated mediaRefs).
-    const initial = useAppStore.getState().media.mediaRefs.filter((m) => m.kind === 'audio');
-    const lastInitial = initial[initial.length - 1];
-    if (lastInitial) {
-      engine.load(lastInitial.url).then(muteAutoloaded).catch((err) => {
+    const initialSync = useAppStore
+      .getState()
+      .media.mediaRefs.find(isSyncAudioRef);
+    if (initialSync) {
+      engine.load(initialSync.url).then(muteAutoloaded).catch((err) => {
         // eslint-disable-next-line no-console
-        console.warn('[useAudioEngine] initial audio load failed:', err);
+        console.warn('[useAudioEngine] initial sync-audio load failed:', err);
       });
     }
-    // Subscribe to future audio additions.
+    // Subscribe to future sync-audio additions only.
     const unsub = useAppStore.subscribe((state, prev) => {
       const added = state.media.mediaRefs.filter(
-        (m) => m.kind === 'audio' && !prev.media.mediaRefs.find((p) => p.id === m.id)
+        (m) =>
+          isSyncAudioRef(m) &&
+          !prev.media.mediaRefs.find((p) => p.id === m.id)
       );
-      const latest = added[added.length - 1];
-      if (latest) {
-        engine.load(latest.url).then(muteAutoloaded).catch((err) => {
+      const latestSync = added[added.length - 1];
+      if (latestSync) {
+        engine.load(latestSync.url).then(muteAutoloaded).catch((err) => {
           // eslint-disable-next-line no-console
-          console.warn('[useAudioEngine] audio load failed:', err);
+          console.warn('[useAudioEngine] sync-audio load failed:', err);
         });
       }
     });
