@@ -1,36 +1,28 @@
 'use client';
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useUserSession } from '@/lib/hooks/useUserSession';
 
 /**
- * Conditionally renders an "Admin" link in the TopBar when the
- * current session is an admin. Fetches /api/me/role once on mount.
- * Hidden until the role is known to avoid a flicker for normal users.
+ * Renders an "Admin" link in the TopBar when the current session is
+ * an admin. Reads from the user-session store (hydrated once on app
+ * start by `UserSessionLoader`) instead of doing its own fetch —
+ * stable across re-mounts, no race with the StrictMode double-effect
+ * that previously caused the button to flicker / disappear.
  */
 export function AdminLink() {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const role = useUserSession((s) => s.role);
+  const status = useUserSession((s) => s.status);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/me/role')
-      .then((r) => r.json() as Promise<{ role: string | null }>)
-      .then((body) => {
-        if (!cancelled) setIsAdmin(body.role === 'admin');
-      })
-      .catch(() => {
-        if (!cancelled) setIsAdmin(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (isAdmin !== true) return null;
+  // Wait for the loader to settle. We deliberately render NOTHING in
+  // the loading state to avoid showing the Admin link to a normal
+  // user during the brief hydration window.
+  if (status !== 'ready') return null;
+  if (role !== 'admin') return null;
 
   return (
     <Link
       href="/admin"
-      className="hidden md:inline-flex h-7 px-2 items-center rounded text-[10px] uppercase tracking-wider bg-[var(--a1)]/15 text-[var(--a1)] hover:bg-[var(--a1)]/25 transition-colors border border-[var(--a1)]/30"
+      className="inline-flex h-7 px-2 items-center rounded text-[10px] uppercase tracking-wider bg-[var(--a1)]/15 text-[var(--a1)] hover:bg-[var(--a1)]/25 transition-colors border border-[var(--a1)]/30"
       title="Admin-Bereich"
     >
       Admin

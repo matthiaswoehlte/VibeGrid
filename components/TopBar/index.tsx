@@ -5,8 +5,8 @@ import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
 import { NewProjectButton } from './NewProjectButton';
 import { FlowModeToggle } from './FlowModeToggle';
-import { LogoutButton } from './LogoutButton';
 import { AdminLink } from './AdminLink';
+import { UserMenu } from './UserMenu';
 import { SaveProjectButton } from './SaveProjectButton';
 import { ProjectNameField } from './ProjectNameField';
 import { ProjectsButton } from './ProjectsButton';
@@ -91,7 +91,7 @@ export function TopBar({
           </>
         )}
         <AdminLink />
-        <LogoutButton />
+        <UserMenu />
       </div>
     </header>
   );
