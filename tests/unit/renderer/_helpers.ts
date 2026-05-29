@@ -80,10 +80,13 @@ export function makeRenderContext(overrides: Partial<RenderContext> = {}): Rende
     beatIndex: 0,
     isOnBeat: false,
     trigger: 'beat',
-    // Default subdivision='1×' → subdividedBeatPhase mirrors beatPhase.
-    // Tests that exercise subdivision behavior override both.
+    // Default subdivision='1×' → subdividedBeatPhase mirrors beatPhase,
+    // subdivisionIndex mirrors beatIndex, isOnSubdivision mirrors isOnBeat.
+    // Tests that exercise subdivision behaviour override these.
     subdividedBeatPhase: beatPhase,
     subdivision: '1×',
+    subdivisionIndex: overrides.beatIndex ?? 0,
+    isOnSubdivision: overrides.isOnBeat ?? false,
     clipId: 'test-clip',
     clipStartSec: 0,
     clipDurationSec: 4,

@@ -1,5 +1,5 @@
 import { isClient } from '@/lib/utils/is-client';
-import { beatPhase } from '@/lib/audio/grid';
+import { beatPhase, BEAT_WINDOW_MS } from '@/lib/audio/grid';
 import { lastFiredBeatGuard } from '@/lib/audio/clip-utils';
 import { activeClipOnTrack, getActiveFxClips } from '@/lib/timeline/selectors';
 import { SUBDIVISION_MULTIPLIERS } from '@/lib/timeline/types';
@@ -266,6 +266,10 @@ export function createRenderer(deps: RendererDeps): Renderer {
   if (!ctx) throw new Error('Canvas 2D context unavailable');
 
   const lastFiredByClip = new Map<string, number | null>();
+  // Plan 9c.1 — per-clip Subdivision-Guard. Separater Index-Space als
+  // `lastFiredByClip` weil `subdivisionIndex` bei sub=N× N× pro Beat
+  // advanced; gleicher Guard-Mechanismus.
+  const lastFiredSubdivisionByClip = new Map<string, number | null>();
   let lastSeenSeek = deps.getSeekCounter?.() ?? 0;
   let rafId: number | null = null;
 
@@ -323,6 +327,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
     const seekCounter = deps.getSeekCounter?.() ?? 0;
     if (seekCounter !== lastSeenSeek) {
       lastFiredByClip.clear();
+      lastFiredSubdivisionByClip.clear();
       lastSeenSeek = seekCounter;
     }
 
@@ -500,13 +505,50 @@ export function createRenderer(deps: RendererDeps): Renderer {
         (clip.startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
       const clipDurationSec = (clip.lengthBeats * 60) / grid.bpm;
 
-      // Plan 9c — subdivision phase. `% 1` keeps the result in [0,1)
-      // for any positive multiplier; the wrap point of beatPhase=1
-      // already coincides with the next subdivision boundary, so no
-      // edge-case math needed.
+      // Plan 9c.1 — subdivision phase in BEATS-since-last-boundary.
+      //
+      // Pre-fix (initial Plan 9c spec): `(phase.phase * multiplier) % 1`
+      // gave a dimensionless value in [0,1). When FX did
+      // `env = 1 - subdividedBeatPhase / decay`, the absolute decay
+      // duration shrank linearly with the multiplier — at sub=8× +
+      // decay=0.08 the pulse was visible for ~0.6 frames at 60fps,
+      // making the multiplier feel like a no-op visually.
+      //
+      // Post-fix: subdividedBeatPhase is "beats since last subdivision
+      // boundary", same units as `decay`. Each subdivision triggers a
+      // fresh envelope of the SAME absolute shape as sub=1×, just N×
+      // more often per beat. At sub=1× the formula reduces to
+      // `phase.phase % 1 === phase.phase` — identical to pre-9c.
       const subdivision = clip.triggerSubdivision ?? '1×';
       const multiplier = SUBDIVISION_MULTIPLIERS[subdivision];
-      const subdividedBeatPhase = (phase.phase * multiplier) % 1;
+      const subdivisionIntervalBeats = 1 / multiplier;
+      const subdividedBeatPhase = phase.phase % subdivisionIntervalBeats;
+      // Plan 9c.1 — monoton steigender Subdivision-Zähler. Bei sub=1×
+      // identisch zu `phase.beatIndex`. FX die per-Beat-Random-Seeds
+      // nutzen (GlitchSlice, RetroVHS) hängen sich hier ran, damit jede
+      // Subdivision ein neues Pattern produziert statt das Beat-Pattern
+      // zu wiederholen.
+      const subdivisionIndex = Math.floor(beats * multiplier);
+
+      // Plan 9c.1 — `isOnSubdivision`: Subdivision-Pendant zu
+      // `phase.isOnBeat`. Bei sub=1× identisch (subdivisionIntervalMs
+      // === msPerBeat). Window-Logik analog `beatPhase()`:
+      // distMs ≤ BEAT_WINDOW_MS am Boundary in beide Richtungen.
+      const msPerBeat = 60_000 / grid.bpm;
+      const distToSubStartMs = subdividedBeatPhase * msPerBeat;
+      const distToSubEndMs =
+        (subdivisionIntervalBeats - subdividedBeatPhase) * msPerBeat;
+      const isNearSubBoundary =
+        Math.min(distToSubStartMs, distToSubEndMs) <= BEAT_WINDOW_MS;
+      const nearestSubdivisionIndex = Math.round(beats * multiplier);
+      const subGuard = lastFiredBeatGuard(
+        nearestSubdivisionIndex,
+        lastFiredSubdivisionByClip.get(clip.id) ?? null
+      );
+      const isOnSubdivision = isNearSubBoundary && subGuard.shouldFire;
+      if (isNearSubBoundary) {
+        lastFiredSubdivisionByClip.set(clip.id, subGuard.nextLastFired);
+      }
 
       const rc: RenderContext = {
         ctx: ctx!,
@@ -519,6 +561,8 @@ export function createRenderer(deps: RendererDeps): Renderer {
         trigger: clip.trigger ?? plugin.defaultTrigger,
         subdividedBeatPhase,
         subdivision,
+        subdivisionIndex,
+        isOnSubdivision,
         clipId: clip.id,
         clipStartSec,
         clipDurationSec,

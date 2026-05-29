@@ -88,6 +88,12 @@ describe('renderer — subdividedBeatPhase (Plan 9c)', () => {
     return captured;
   }
 
+  // Plan 9c.1 — subdividedBeatPhase is "beats since last subdivision
+  // boundary" with subdivisionInterval = 1/multiplier. At sub=1× it
+  // reduces to phase.phase (identity); at sub=N× it wraps to [0, 1/N)
+  // and the FX `env = 1 - subdividedBeatPhase / decay` uses `decay`
+  // in absolute beats, identical to pre-9c semantics.
+
   it('beatPhase=0 with subdivision=4× → subdividedBeatPhase=0', () => {
     const rc = runAt(0, '4×');
     expect(rc.beatPhase).toBeCloseTo(0);
@@ -95,23 +101,31 @@ describe('renderer — subdividedBeatPhase (Plan 9c)', () => {
     expect(rc.subdivision).toBe('4×');
   });
 
-  it('beatPhase=0.125 with subdivision=4× → subdividedBeatPhase=0.5', () => {
-    // At 60 bpm, t=0.125s ≡ beatPhase=0.125 within beat 0.
+  it('beatPhase=0.125 with subdivision=4× → subdividedBeatPhase=0.125 (≤ interval)', () => {
+    // sub_interval = 0.25 beat. 0.125 < 0.25 → no wrap → identity.
     const rc = runAt(0.125, '4×');
     expect(rc.beatPhase).toBeCloseTo(0.125);
-    expect(rc.subdividedBeatPhase).toBeCloseTo(0.5);
+    expect(rc.subdividedBeatPhase).toBeCloseTo(0.125);
   });
 
   it('beatPhase=0.25 with subdivision=4× wraps → subdividedBeatPhase=0', () => {
+    // 0.25 % 0.25 = 0 (next subdivision begins).
     const rc = runAt(0.25, '4×');
     expect(rc.beatPhase).toBeCloseTo(0.25);
     expect(rc.subdividedBeatPhase).toBeCloseTo(0);
   });
 
-  it('beatPhase≈0.9999 with subdivision=16× → subdividedBeatPhase≈0.998', () => {
+  it('beatPhase=0.3 with subdivision=4× → subdividedBeatPhase=0.05 (after 1× wrap)', () => {
+    // 0.3 % 0.25 = 0.05 — 0.05 beats into the second subdivision.
+    const rc = runAt(0.3, '4×');
+    expect(rc.subdividedBeatPhase).toBeCloseTo(0.05);
+  });
+
+  it('beatPhase≈0.9999 with subdivision=16× → subdividedBeatPhase≈0.0624', () => {
+    // 0.9999 % 0.0625 — last subdivision (15th, starting at 0.9375).
+    // 0.9999 - 15*0.0625 = 0.9999 - 0.9375 = 0.0624.
     const rc = runAt(0.9999, '16×');
-    // 16 * 0.9999 = 15.9984 → mod 1 = 0.9984
-    expect(rc.subdividedBeatPhase).toBeCloseTo(0.9984, 3);
+    expect(rc.subdividedBeatPhase).toBeCloseTo(0.0624, 3);
   });
 
   it('triggerSubdivision=undefined → multiplier 1, subdividedBeatPhase === beatPhase', () => {
@@ -121,12 +135,20 @@ describe('renderer — subdividedBeatPhase (Plan 9c)', () => {
     expect(rc.subdividedBeatPhase).toBeCloseTo(0.42);
   });
 
+  it('subdivided phase fits inside [0, 1/multiplier) for any time', () => {
+    // Property: at sub=8× the subdivided phase is always < 0.125.
+    for (const t of [0, 0.001, 0.124, 0.125, 0.2, 0.5, 0.9999]) {
+      const rc = runAt(t, '8×');
+      expect(rc.subdividedBeatPhase).toBeGreaterThanOrEqual(0);
+      expect(rc.subdividedBeatPhase).toBeLessThan(0.125);
+    }
+  });
+
   it('flowMode does not bypass subdivision computation', () => {
-    // Even with flow-mode on (set on the plugin contract independently of
-    // subdivision), the loop still computes subdividedBeatPhase. Plugins
-    // that early-return on rc.flowMode simply never read it; the value is
-    // still present in rc for test-consistency.
+    // The loop still computes subdividedBeatPhase even when an FX would
+    // skip via rc.flowMode — value is present in rc for test consistency.
     const rc = runAt(0.0625, '8×');
-    expect(rc.subdividedBeatPhase).toBeCloseTo(0.5);
+    // 0.0625 < 0.125 → identity within first subdivision.
+    expect(rc.subdividedBeatPhase).toBeCloseTo(0.0625);
   });
 });

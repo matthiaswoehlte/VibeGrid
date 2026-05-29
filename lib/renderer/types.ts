@@ -76,6 +76,20 @@ export interface RenderContext {
    *  Primär für Tests + Debug-Tools; Plugins greifen typischerweise nur
    *  auf `subdividedBeatPhase` zu. */
   subdivision: TriggerSubdivision;
+  /** Plan 9c.1 — monoton steigende Zähler-Variante von `beatIndex`,
+   *  inkrementiert pro Subdivision statt pro Beat. Bei sub=1× identisch
+   *  zu `beatIndex`; bei sub=N× inkrementiert N× pro Beat.
+   *
+   *  Use case: per-subdivision Random-Seeds (GlitchSlice u_seed,
+   *  RetroVHS u_beat_index) damit jede Subdivision ein neues Pattern
+   *  bekommt statt das Beat-Pattern zu wiederholen. */
+  subdivisionIndex: number;
+  /** Plan 9c.1 — Subdivision-Pendant zu `isOnBeat`: feuert einmal pro
+   *  Subdivision-Boundary mit Guard gegen Mehrfach-Fires im selben
+   *  Subdivision-Fenster. Bei sub=1× identisch zu `isOnBeat`. FX wie
+   *  Pulse, die auf eine einmalige Edge-Trigger-Logik bauen, nutzen
+   *  diesen Gate statt `isOnBeat`. */
+  isOnSubdivision: boolean;
   /** Identity of the clip currently being rendered. Plugins that hold
    *  per-clip mutable state (e.g. Particles' spawn pool) key off this. */
   clipId: string;

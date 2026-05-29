@@ -88,14 +88,16 @@ describe('Plan 9c — supportsSubdivision flag set on every qualified FX', () =>
 });
 
 /**
- * Helper — Canvas2D-plugin envelope-shape regression.
+ * Helper — Canvas2D-plugin envelope-shape regression (Plan 9c.1 semantic).
  *
- * Calls `render` twice with the same beatPhase (=0.05) but different
- * subdivisions. With sub='1×', beatPhase < decay → envelope > 0 →
- * plugin SHOULD perform a draw call. With sub='4×', subdividedBeatPhase
- * becomes 0.2 which is past `decay=0.05` → envelope = 0 → plugin SHOULD
- * early-return. The asserted delta is in `drawImage` / `fillRect`
- * call counts.
+ * Both render calls use beatPhase=0.3 (past the first sub=4× boundary at
+ * 0.25). With decay=0.1:
+ *  - sub='1×': subdividedBeatPhase = 0.3 → env = 1 - 0.3/0.1 = -2 → 0 → SKIP
+ *  - sub='4×': subdividedBeatPhase = 0.3 % 0.25 = 0.05 → env = 0.5 → DRAW
+ *
+ * Asserted: atOne=0 (no draw) vs atFour>0 (draw). Demonstrates that
+ * sub=4× produces ADDITIONAL pulses past the first beat-boundary that
+ * sub=1× has already missed.
  */
 
 function renderTwice<T>(
@@ -104,8 +106,8 @@ function renderTwice<T>(
   drawProbe: (rc: ReturnType<typeof makeRenderContext>) => number
 ): { atOne: number; atFour: number } {
   const rcOne = makeRenderContext({
-    beatPhase: 0.05,
-    subdividedBeatPhase: 0.05,
+    beatPhase: 0.3,
+    subdividedBeatPhase: 0.3,
     subdivision: '1×',
     isOnBeat: true
   });
@@ -113,8 +115,8 @@ function renderTwice<T>(
   const atOne = drawProbe(rcOne);
 
   const rcFour = makeRenderContext({
-    beatPhase: 0.05,
-    subdividedBeatPhase: 0.2,
+    beatPhase: 0.3,
+    subdividedBeatPhase: 0.05,
     subdivision: '4×',
     isOnBeat: true
   });
@@ -133,8 +135,13 @@ const calls = (rc: ReturnType<typeof makeRenderContext>): CallRecorder =>
 const countOf = (method: string) => (rc: ReturnType<typeof makeRenderContext>) =>
   calls(rc).__calls.filter((c) => c.method === method).length;
 
-describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
-  it('BeatFlash: 4× pushes phase past `duration` → no fillRect', () => {
+describe('Plan 9c.1 — Canvas2D subdivision envelope shape regression', () => {
+  // At beatPhase=0.3 the 1× envelope has long decayed (decay=0.1, env<0).
+  // Under the new beats-since-boundary semantic, sub=4× wraps at 0.25 so
+  // subdividedBeatPhase = 0.05 — env is back at 0.5 and the FX fires. This
+  // is exactly the "extra pulse" behaviour the user expected to see.
+
+  it('BeatFlash: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = renderTwice(
       beatFlashPlugin,
       {
@@ -145,11 +152,11 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
       },
       countOf('fillRect')
     );
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('ScreenShake: 4× pushes phase past `decay` → no drawImage', () => {
+  it('ScreenShake: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = renderTwice(
       screenShakePlugin,
       {
@@ -160,11 +167,11 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
       },
       countOf('drawImage')
     );
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('ZoomPunch: 4× past `attack`+`decay` → no drawImage', () => {
+  it('ZoomPunch: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = renderTwice(
       zoomPunchPlugin,
       {
@@ -176,11 +183,11 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
       },
       countOf('drawImage')
     );
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('LensFlareBurst: 4× past `decay` → no stroke', () => {
+  it('LensFlareBurst: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = renderTwice(
       lensFlareBurstPlugin,
       {
@@ -190,17 +197,16 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
       },
       countOf('stroke')
     );
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('Pulse: 4× past hardcoded `*4` envelope makes decay ≤ 0 → fillRect still happens but globalAlpha is 0', () => {
-    // Pulse: `decay = max(0, 1 - subdividedBeatPhase * 4)`. At sub=1×,
-    // beatPhase=0.05 → decay=0.8. At sub=4×, subdividedBeatPhase=0.2 →
-    // decay=0.2. The pulse paints in both cases, but the envelope is
-    // dampened — the simplest assertion is that the draw fires in both
-    // cases (Pulse doesn't early-return on decay=0+ exactly). We just
-    // verify it doesn't crash and emits a fillRect.
+  it('Pulse: hardcoded *4 envelope renders identical shape per subdivision', () => {
+    // Pulse: `decay = max(0, 1 - subdividedBeatPhase * 4)`. Under the
+    // new semantic this stays beat-relative: at beatPhase=0.05,
+    // subdividedBeatPhase=0.05 for both sub=1× and sub=4× (no wrap
+    // yet). decay=0.8 in both cases. fillRect fires in both cases.
+    // The visible difference only emerges past the first sub-boundary.
     const rcOne = makeRenderContext({
       beatPhase: 0.05,
       subdividedBeatPhase: 0.05,
@@ -211,7 +217,7 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
     expect(countOf('fillRect')(rcOne)).toBeGreaterThan(0);
     const rcFour = makeRenderContext({
       beatPhase: 0.05,
-      subdividedBeatPhase: 0.2,
+      subdividedBeatPhase: 0.05,
       subdivision: '4×',
       isOnBeat: true
     });
@@ -219,9 +225,10 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
     expect(countOf('fillRect')(rcFour)).toBeGreaterThan(0);
   });
 
-  it('FilmGrainBurst: 4× past `decay` → no offscreen drawImage', () => {
-    // FilmGrain has env-skip threshold 0.02 and decay default 0.15.
-    // At sub=4× with beatPhase=0.05 → subdividedBeatPhase=0.2 → env=0 → skip.
+  it('FilmGrainBurst: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
+    // FilmGrain has env-skip threshold 0.02 and decay=0.1 here.
+    // At beatPhase=0.3, sub=1× has env=0 (decayed); sub=4× wraps to
+    // subdividedBeatPhase=0.05, env=0.5 → fires.
     const { atOne, atFour } = renderTwice(
       filmGrainBurstPlugin,
       {
@@ -231,14 +238,18 @@ describe('Plan 9c — Canvas2D subdivision envelope shape regression', () => {
       },
       countOf('drawImage')
     );
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
   // GlitchSlice moved to the WebGL group below (Plan 11b).
 });
 
-describe('Plan 9c — WebGL subdivision envelope shape regression', () => {
+describe('Plan 9c.1 — WebGL subdivision envelope shape regression', () => {
+  // Same logic as the Canvas2D group: at beatPhase=0.3 with decay=0.1,
+  // sub=1× has fully decayed → skip; sub=4× wraps to subdividedBeatPhase
+  // 0.05 → env=0.5 → renderGlFx fires. The fix gives "more pulses" instead
+  // of "shorter pulses".
   function callRenderGlFxTwice<T>(
     plugin: { render(rc: ReturnType<typeof makeRenderContext>, p: T): void },
     params: T
@@ -246,8 +257,8 @@ describe('Plan 9c — WebGL subdivision envelope shape regression', () => {
     mockedRenderGlFx.mockReset();
     plugin.render(
       makeRenderContext({
-        beatPhase: 0.05,
-        subdividedBeatPhase: 0.05,
+        beatPhase: 0.3,
+        subdividedBeatPhase: 0.3,
         subdivision: '1×',
         isOnBeat: true
       }),
@@ -257,8 +268,8 @@ describe('Plan 9c — WebGL subdivision envelope shape regression', () => {
     mockedRenderGlFx.mockReset();
     plugin.render(
       makeRenderContext({
-        beatPhase: 0.05,
-        subdividedBeatPhase: 0.2,
+        beatPhase: 0.3,
+        subdividedBeatPhase: 0.05,
         subdivision: '4×',
         isOnBeat: true
       }),
@@ -268,63 +279,63 @@ describe('Plan 9c — WebGL subdivision envelope shape regression', () => {
     return { atOne, atFour };
   }
 
-  it('RGBSplit: 4× past `decay` skips renderGlFx', () => {
+  it('RGBSplit: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = callRenderGlFxTwice(rgbSplitPlugin, {
       ...rgbSplitPlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('GlitchSlice: 4× past `decay` skips renderGlFx (Plan 11b)', () => {
+  it('GlitchSlice: 4× wraps past 0.25 → extra pulse (Plan 11b WebGL)', () => {
     const { atOne, atFour } = callRenderGlFxTwice(glitchSlicePlugin, {
       ...glitchSlicePlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('ColorGradeShift: 4× past `decay` skips renderGlFx', () => {
+  it('ColorGradeShift: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = callRenderGlFxTwice(colorGradeShiftPlugin, {
       ...colorGradeShiftPlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('RetroVHS: 4× past `decay` skips renderGlFx', () => {
+  it('RetroVHS: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = callRenderGlFxTwice(retroVhsPlugin, {
       ...retroVhsPlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('EdgeGlow: 4× past `decay` skips renderGlFx', () => {
+  it('EdgeGlow: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = callRenderGlFxTwice(edgeGlowPlugin, {
       ...edgeGlowPlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 
-  it('ContourGL: 4× past `decay` skips renderGlFx', () => {
+  it('ContourGL: 4× wraps past 0.25 → extra pulse vs 1× (which is decayed)', () => {
     const { atOne, atFour } = callRenderGlFxTwice(contourGlPlugin, {
       ...contourGlPlugin.getDefaultParams(),
       decay: 0.1,
       beatSync: true
     });
-    expect(atOne).toBeGreaterThan(0);
-    expect(atFour).toBe(0);
+    expect(atOne).toBe(0);
+    expect(atFour).toBeGreaterThan(0);
   });
 });
