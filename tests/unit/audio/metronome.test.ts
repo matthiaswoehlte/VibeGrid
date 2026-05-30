@@ -16,7 +16,7 @@
  *  - Controllable getContextTime / getCurrentTime / getGrid.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createMetronome } from '@/lib/audio/metronome';
 import type { MetronomeDeps } from '@/lib/audio/metronome';
 
@@ -30,6 +30,8 @@ function makeOscNode() {
     connect: vi.fn(),
     start: vi.fn(),
     stop: vi.fn(),
+    /** Set by the metronome via osc.onended = ...; tests can call it to simulate end. */
+    onended: null as (() => void) | null,
   };
   return node;
 }
@@ -45,6 +47,7 @@ function makeGainNode() {
       setTargetAtTime: vi.fn(),
     },
     connect: vi.fn(),
+    disconnect: vi.fn(),
   };
   return node;
 }
@@ -99,7 +102,7 @@ function buildDeps(overrides: Partial<{
   let schedulerCb: (() => void) | null = null;
   const setIntervalFn = vi.fn((cb: () => void, _ms: number) => {
     schedulerCb = cb;
-    return 1 as unknown as number; // fake timer ID
+    return 1 as unknown as ReturnType<typeof setInterval>; // fake timer ID
   });
   const clearIntervalFn = vi.fn();
 
@@ -636,6 +639,151 @@ describe('Metronome scheduler (Plan 9c.2 T4)', () => {
         const when = (osc.start as ReturnType<typeof vi.fn>).mock.calls[0][0] as number;
         expect(when).toBeGreaterThanOrEqual(3600);
       }
+    });
+  });
+
+  // ── Seek re-seed guard ────────────────────────────────────────────────────
+  describe('Seek re-seed guard: metronome self-heals after a seek without stop/start', () => {
+    it('forward seek: tick stays bounded (O(lookahead)) and schedules at the new position', () => {
+      // BPM=120, lookahead=0.1s → ~0.2 beats per lookahead window.
+      // Run a few ticks at position 0, then jump getCurrentTime far forward (30s = 60 beats).
+      // The re-seed guard must kick in and bound the loop to ≤ ~3 new oscillators per tick
+      // (not 60+ stale beats). New clicks must have `when` >= the new AudioContext time.
+      const { deps, state, oscNodes, tick } = buildDeps({
+        bpm: 120,
+        offsetMs: 0,
+        contextTime: 0,
+        currentTime: 0,
+        lookaheadSec: 0.1,
+      });
+
+      const metro = createMetronome(deps);
+      metro.start();
+
+      // Tick at position 0 — seeds lastScheduledBeat near beat 0.
+      tick();
+      const countAfterSeed = oscNodes.length;
+
+      // Simulate a forward seek of 30 seconds (60 beats at 120 BPM).
+      state.currentTime = 30;
+      state.contextTime = 30; // ctxOffset stays 0
+
+      const before = Date.now();
+      tick(); // must NOT iterate 60 beats — re-seed guard kicks in
+      const elapsed = Date.now() - before;
+
+      // Must complete quickly (re-seed limits loop to O(lookahead) beats).
+      expect(elapsed).toBeLessThan(50);
+
+      // Total new oscillators from this tick must be small (bounded by lookahead window).
+      // At 120 BPM with 0.1s lookahead we expect at most ~2-3 beats per tick.
+      const newOscs = oscNodes.length - countAfterSeed;
+      expect(newOscs).toBeLessThanOrEqual(5);
+
+      // All new clicks must be at or after the new AudioContext time (30s).
+      for (let i = countAfterSeed; i < oscNodes.length; i++) {
+        const when = (oscNodes[i].start as ReturnType<typeof vi.fn>).mock.calls[0][0] as number;
+        expect(when).toBeGreaterThanOrEqual(30);
+      }
+
+      metro.stop();
+    });
+
+    it('backward seek: metronome resumes scheduling at the earlier position (not silent)', () => {
+      // BPM=60, lookahead=0.6s. Advance a few beats, then jump back to near 0.
+      // Without the re-seed guard, lastScheduledBeat=N > currentBeat → loop never enters
+      // → metronome goes silent.
+      const { deps, state, oscNodes, tick } = buildDeps({
+        bpm: 60,
+        offsetMs: 0,
+        contextTime: 5,
+        currentTime: 5, // ctxOffset=0; beats at 5.0, 6.0, ...
+        lookaheadSec: 0.6,
+      });
+
+      const metro = createMetronome(deps);
+      metro.start();
+      tick(); // schedules beat 5 (when=5.0 < 5.6)
+      const countAfterForward = oscNodes.length;
+      expect(countAfterForward).toBeGreaterThanOrEqual(1);
+
+      // Simulate a backward seek back to 0 (lastScheduledBeat is now far ahead).
+      state.currentTime = 0;
+      state.contextTime = 0;
+
+      tick(); // re-seed guard must reset lastScheduledBeat; beat 0 must schedule
+      const countAfterBackward = oscNodes.length;
+
+      // Must have scheduled at least one new click at/after the new position.
+      expect(countAfterBackward).toBeGreaterThan(countAfterForward);
+
+      // New clicks must be at or after the rewound AudioContext time (0s).
+      for (let i = countAfterForward; i < oscNodes.length; i++) {
+        const when = (oscNodes[i].start as ReturnType<typeof vi.fn>).mock.calls[0][0] as number;
+        expect(when).toBeGreaterThanOrEqual(0);
+      }
+
+      metro.stop();
+    });
+  });
+
+  // ── GainNode disconnect via onended ──────────────────────────────────────
+  describe('GainNode disconnect: gain.disconnect() is called when osc.onended fires', () => {
+    it('each scheduled click: gain.disconnect() is called after osc.onended fires', () => {
+      // Schedule one click, then simulate the oscillator finishing (fire onended).
+      // The GainNode's disconnect spy must be called exactly once per click.
+      const { deps, oscNodes, gainNodes, tick } = buildDeps({
+        bpm: 120,
+        offsetMs: 0,
+        contextTime: 0,
+        currentTime: 0,
+        lookaheadSec: 0.1,
+      });
+
+      const metro = createMetronome(deps);
+      metro.start();
+      tick();
+
+      expect(oscNodes.length).toBeGreaterThanOrEqual(1);
+      expect(gainNodes.length).toBe(oscNodes.length);
+
+      // Before onended fires, gain.disconnect must NOT have been called.
+      expect(gainNodes[0].disconnect).not.toHaveBeenCalled();
+
+      // Simulate the oscillator finishing by firing osc.onended.
+      expect(oscNodes[0].onended).not.toBeNull();
+      oscNodes[0].onended!();
+
+      // Now gain.disconnect must have been called exactly once.
+      expect(gainNodes[0].disconnect).toHaveBeenCalledTimes(1);
+
+      metro.stop();
+    });
+
+    it('each click gets its own independent onended → disconnect pair', () => {
+      // Schedule multiple clicks; firing onended for click N must only disconnect gain N.
+      const { deps, oscNodes, gainNodes, tick } = buildDeps({
+        bpm: 120,
+        offsetMs: 0,
+        contextTime: 0,
+        currentTime: 0,
+        lookaheadSec: 0.5, // multiple beats
+      });
+
+      const metro = createMetronome(deps);
+      metro.start();
+      tick();
+
+      expect(oscNodes.length).toBeGreaterThanOrEqual(2);
+
+      // Fire onended only for the second oscillator.
+      oscNodes[1].onended!();
+
+      // Only gain[1] should be disconnected; gain[0] must still be connected.
+      expect(gainNodes[0].disconnect).not.toHaveBeenCalled();
+      expect(gainNodes[1].disconnect).toHaveBeenCalledTimes(1);
+
+      metro.stop();
     });
   });
 });

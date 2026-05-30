@@ -15,8 +15,11 @@
  * Fixed dezent levels — not user-adjustable (out of scope for this task).
  *
  * start() is idempotent; stop() is idempotent.
- * Pending already-scheduled oscillators ring out after stop() — they are
- * one-shot Web Audio nodes and will be GC'd once they finish.
+ * Pending already-scheduled oscillators ring out after stop().
+ * Note: OscillatorNode (SourceNode) is auto-GC'd by the browser after stop(),
+ * but the connected GainNode must be explicitly disconnected from the graph.
+ * This is done via osc.onended so each GainNode is released once its
+ * oscillator finishes — preventing accumulation of orphaned GainNodes.
  */
 
 // ─── public types ─────────────────────────────────────────────────────────────
@@ -35,9 +38,9 @@ export interface MetronomeDeps {
   /** Override look-ahead window in seconds.  Default: 0.1 s. */
   lookaheadSec?: number;
   /** Injectable setInterval for testing.  Default: globalThis.setInterval. */
-  setIntervalFn?: (cb: () => void, ms: number) => number;
+  setIntervalFn?: (cb: () => void, ms: number) => ReturnType<typeof setInterval>;
   /** Injectable clearInterval for testing.  Default: globalThis.clearInterval. */
-  clearIntervalFn?: (id: number) => void;
+  clearIntervalFn?: (id: ReturnType<typeof setInterval>) => void;
 }
 
 export interface Metronome {
@@ -62,6 +65,21 @@ const ACCENT_FREQ_HZ = 1500;
 /** Duration of the oscillator burst in seconds (attack + decay envelope). */
 const CLICK_DURATION_SEC = 0.05;
 
+/**
+ * Maximum allowed drift (in beats) between the last-scheduled beat and the
+ * current playback position before the re-seed guard kicks in.
+ *
+ * Normal between-tick advance at 120 BPM with a 25 ms interval is
+ * ~0.05 beats. The lookahead window adds another ~0.2 beats (0.1s × 2 beats/s).
+ * So legitimate forward advance between ticks is well under 1 beat.
+ *
+ * A seek of even 1 second at 120 BPM moves 2 beats, which exceeds this margin
+ * and triggers the re-seed. We use lookahead-in-beats (≈0.2) plus 2 beats of
+ * headroom = ~2.2; rounding up to 4 ensures we never trip on normal advance
+ * while still catching any real seek.
+ */
+const MAX_SCHEDULE_DRIFT_BEATS = 4;
+
 // ─── factory ──────────────────────────────────────────────────────────────────
 
 export function createMetronome(deps: MetronomeDeps): Metronome {
@@ -72,19 +90,19 @@ export function createMetronome(deps: MetronomeDeps): Metronome {
     getGrid,
     schedulerIntervalMs = 25,
     lookaheadSec = 0.1,
-    setIntervalFn = (cb, ms) => window.setInterval(cb, ms) as unknown as number,
-    clearIntervalFn = (id) => window.clearInterval(id),
+    setIntervalFn = (cb, ms) => globalThis.setInterval(cb, ms),
+    clearIntervalFn = (id) => globalThis.clearInterval(id),
   } = deps;
 
   /** The last beat index that has been scheduled (exclusive). -1 = nothing scheduled. */
   let lastScheduledBeat = -1;
   /** The native timer handle returned by setIntervalFn. null = not running. */
-  let timerId: number | null = null;
+  let timerId: ReturnType<typeof setInterval> | null = null;
 
   // ── click synthesis ────────────────────────────────────────────────────────
 
-  function scheduleClick(beatIndex: number, when: number): void {
-    const isAccent = beatIndex % getGrid().beatsPerBar === 0;
+  function scheduleClick(beatIndex: number, when: number, beatsPerBar: number): void {
+    const isAccent = beatIndex % beatsPerBar === 0;
     const freq = isAccent ? ACCENT_FREQ_HZ : NORMAL_FREQ_HZ;
     const peakGain = isAccent ? ACCENT_GAIN : NORMAL_GAIN;
 
@@ -110,6 +128,12 @@ export function createMetronome(deps: MetronomeDeps): Metronome {
     // Schedule the burst.
     osc.start(when);
     osc.stop(when + CLICK_DURATION_SEC);
+
+    // Disconnect the GainNode once the oscillator has finished.
+    // OscillatorNode is auto-released by the browser after stop(), but GainNode
+    // remains connected to the graph until explicitly disconnected. Without this,
+    // 3600+ orphaned GainNodes accumulate over a 30-minute session at 120 BPM.
+    osc.onended = () => { gain.disconnect(); };
   }
 
   // ── scheduler tick ─────────────────────────────────────────────────────────
@@ -117,7 +141,8 @@ export function createMetronome(deps: MetronomeDeps): Metronome {
   function tick(): void {
     const ctxNow = getContextTime();
     const playNow = getCurrentTime();
-    const { bpm, offsetMs } = getGrid();
+    // Single getGrid() call per tick — consistent snapshot for bpm, beatsPerBar, offsetMs.
+    const { bpm, beatsPerBar, offsetMs } = getGrid();
 
     // Sample the offset fresh each tick to handle clock drift and mode switches.
     const ctxOffset = ctxNow - playNow;
@@ -143,6 +168,20 @@ export function createMetronome(deps: MetronomeDeps): Metronome {
       //  so this is just a starting point — keep n >= 0.)
       if (n < 0) n = 0;
     } else {
+      // Seek / drift re-seed guard:
+      // On a forward seek, lastScheduledBeat could be far behind the new playhead,
+      // causing O(seek-distance) iterations (hundreds of thousands of beats, blocking
+      // the main thread). On a backward seek, lastScheduledBeat is far ahead of the
+      // playhead so nothing schedules → metronome goes silent.
+      // Solution: compute currentBeat from live playNow; if lastScheduledBeat has
+      // drifted more than MAX_SCHEDULE_DRIFT_BEATS, re-seed from currentBeat.
+      const currentBeat = Math.max(0, Math.floor((playNow - offsetMs / 1000) * bpm / 60));
+      const drift = Math.abs(lastScheduledBeat - currentBeat);
+      if (drift > MAX_SCHEDULE_DRIFT_BEATS) {
+        // Re-seed: start from just before currentBeat so the next upcoming beat
+        // schedules cleanly. Works for both forward and backward seeks.
+        lastScheduledBeat = currentBeat - 1;
+      }
       n = lastScheduledBeat + 1;
     }
 
@@ -155,7 +194,7 @@ export function createMetronome(deps: MetronomeDeps): Metronome {
 
       // Only schedule beats that are in the future (not already in the past).
       if (when >= ctxNow) {
-        scheduleClick(n, when);
+        scheduleClick(n, when, beatsPerBar);
       }
 
       lastScheduledBeat = n;
