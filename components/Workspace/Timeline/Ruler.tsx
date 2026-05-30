@@ -86,12 +86,27 @@ export function Ruler({
 
         target.removeEventListener('pointermove', move);
         target.removeEventListener('pointerup', up);
-        target.removeEventListener('pointercancel', up);
+        target.removeEventListener('pointercancel', cancel);
+      };
+
+      // pointercancel: OS cancelled the gesture (e.g. scroll, palm rejection).
+      // clientX on cancel is 0/garbage — do NOT commit a spurious range.
+      // The last pointermove value already in the store stands (same semantics
+      // as the seek-scrub branch leaving the playhead at its last position).
+      const cancel = (ev: PointerEvent) => {
+        try {
+          target.releasePointerCapture(ev.pointerId);
+        } catch {
+          /* */
+        }
+        target.removeEventListener('pointermove', move);
+        target.removeEventListener('pointerup', up);
+        target.removeEventListener('pointercancel', cancel);
       };
 
       target.addEventListener('pointermove', move);
       target.addEventListener('pointerup', up);
-      target.addEventListener('pointercancel', up);
+      target.addEventListener('pointercancel', cancel);
     } else {
       // -----------------------------------------------------------------------
       // Plain drag/click — existing seek behavior + clear export range.

@@ -75,6 +75,12 @@ function firePointerUp(el: Element, clientX?: number, opts: Partial<MouseEventIn
   el.dispatchEvent(ev);
 }
 
+function firePointerCancel(el: Element, opts: Partial<MouseEventInit> = {}) {
+  // pointercancel typically has clientX=0 (garbage/OS-cancelled)
+  const ev = new MouseEvent('pointercancel', { clientX: 0, bubbles: true, ...opts });
+  el.dispatchEvent(ev);
+}
+
 // ---------------------------------------------------------------------------
 // Helper: compute expected seconds from beat (mirrors Ruler.tsx:29)
 // ---------------------------------------------------------------------------
@@ -310,6 +316,99 @@ describe('Ruler — Plan 9d Task 6', () => {
 
     // setExportRange(2s, 2s) → store normalises to null
     expect(useAppStore.getState().ui.exportRange).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 28: pointercancel does NOT overwrite the live range (bug fix)
+  // -------------------------------------------------------------------------
+  it('28: pointercancel keeps last pointermove range — does not write 0/garbage', () => {
+    const { container } = render(<Ruler totalBeats={totalBeats} engine={engine} />);
+    const slider = container.querySelector('[role="slider"]')!;
+
+    Object.defineProperty(slider, 'getBoundingClientRect', {
+      value: () => ({ left: 0, right: totalBeats * PX_PER_BEAT, top: 0, bottom: 24, width: totalBeats * PX_PER_BEAT, height: 24 }),
+      configurable: true
+    });
+
+    const xA = 80;  // beat 2
+    const xB = 200; // beat 5
+    const beatA = snapBeat(xA / PX_PER_BEAT, '1'); // 2
+    const beatB = snapBeat(xB / PX_PER_BEAT, '1'); // 5
+
+    // Ctrl-drag: pointerdown at xA, pointermove to xB (live range set to [A,B])
+    firePointerDown(slider, xA, { ctrlKey: true });
+    firePointerMove(slider, xB, { ctrlKey: true });
+
+    // Spy AFTER the live move so we can assert no further calls on cancel
+    const spy = vi.spyOn(useAppStore.getState(), 'setExportRange');
+
+    // Fire pointercancel (clientX=0, garbage)
+    firePointerCancel(slider);
+
+    // setExportRange must NOT have been called again (no commit with clientX=0)
+    expect(spy).not.toHaveBeenCalled();
+
+    // The range should still reflect the last pointermove (beat 2 → beat 5)
+    const range = useAppStore.getState().ui.exportRange;
+    expect(range).not.toBeNull();
+    const expectedStart = beatToSec(Math.min(beatA, beatB));
+    const expectedEnd   = beatToSec(Math.max(beatA, beatB));
+    expect(range!.start).toBeCloseTo(expectedStart, 5);
+    expect(range!.end).toBeCloseTo(expectedEnd, 5);
+    // Explicitly: start must NOT be 0 (which would indicate the cancel bug fired)
+    expect(range!.start).not.toBeCloseTo(0, 5);
+
+    spy.mockRestore();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 29: offsetMs != 0 — committed seconds include absolute offset (R2)
+  // -------------------------------------------------------------------------
+  it('29: With offsetMs=350ms, committed range seconds include the offset', () => {
+    // Seed store with offsetMs = 350, bpm = 120
+    useAppStore.setState({
+      audio: {
+        grid: { bpm: 120, offsetMs: 350, source: 'manual', beatsPerBar: 4 }
+      }
+    });
+
+    const { container } = render(<Ruler totalBeats={totalBeats} engine={engine} />);
+    const slider = container.querySelector('[role="slider"]')!;
+
+    Object.defineProperty(slider, 'getBoundingClientRect', {
+      value: () => ({ left: 0, right: totalBeats * PX_PER_BEAT, top: 0, bottom: 24, width: totalBeats * PX_PER_BEAT, height: 24 }),
+      configurable: true
+    });
+
+    const xA = 80;  // beat 2 → 2*60/120 + 0.35 = 1.0 + 0.35 = 1.35 s
+    const xB = 200; // beat 5 → 5*60/120 + 0.35 = 2.5 + 0.35 = 2.85 s
+
+    const spy = vi.spyOn(useAppStore.getState(), 'setExportRange');
+
+    firePointerDown(slider, xA, { ctrlKey: true });
+    firePointerMove(slider, xB, { ctrlKey: true });
+    firePointerUp(slider, xB, { ctrlKey: true });
+
+    // setExportRange should have been called at least on move and on up
+    expect(spy).toHaveBeenCalled();
+
+    const range = useAppStore.getState().ui.exportRange;
+    expect(range).not.toBeNull();
+
+    const bpm = 120;
+    const offsetSec = 350 / 1000;
+    const beatA = snapBeat(xA / PX_PER_BEAT, '1'); // 2
+    const beatB = snapBeat(xB / PX_PER_BEAT, '1'); // 5
+    const expectedStart = (Math.min(beatA, beatB) * 60) / bpm + offsetSec; // 1.35
+    const expectedEnd   = (Math.max(beatA, beatB) * 60) / bpm + offsetSec; // 2.85
+
+    expect(range!.start).toBeCloseTo(expectedStart, 5); // 1.35
+    expect(range!.end).toBeCloseTo(expectedEnd, 5);     // 2.85
+    // Confirm offset is actually included (would be 1.0 and 2.5 without it)
+    expect(range!.start).toBeGreaterThan(1.0);
+    expect(range!.end).toBeGreaterThan(2.5);
+
+    spy.mockRestore();
   });
 
   // -------------------------------------------------------------------------
