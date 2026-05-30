@@ -93,12 +93,80 @@ describe('particlesPlugin', () => {
 
     // clipB must be unaffected — render it again (off-beat so no new spawns)
     // and confirm it still draws its in-flight particles.
+    // Note: default life is 1.6 s. clipB particles were born at time=1 and we
+    // are now rendering at time=1.02 (0.02 s later). 0.02 s << 1.6 s, so
+    // every particle spawned in the first clipB render is still alive here,
+    // making the "greater than 0 arcs" assertion reliably true.
     const rcB2 = makeRenderContext({ clipId: 'clipB', isOnBeat: false, beatIndex: 2, time: 1.02 });
+    // makeRenderContext calls makeMockCtx() internally, so rcB2.ctx.__calls is
+    // a FRESH empty array that belongs only to this render call. Arc counts
+    // below reflect only what this single render drew (no bleed from rcB).
     particlesPlugin.render(rcB2, params);
     const arcsBAfterSeek = (rcB2.ctx as unknown as { __calls: Array<{ method: string }> }).__calls.filter(
       (c) => c.method === 'arc'
     );
     expect(arcsBAfterSeek.length).toBeGreaterThan(0); // clipB pool untouched
+  });
+
+  // Test 7 — onSeek brings the pool to the FRESH-SEEK state (reset == fresh).
+  //
+  // This test targets PARTICLES specifically. A stateless FX (e.g. Pulse) would
+  // trivially pass this because it has no accumulated state to reset; the
+  // assertion would be vacuously true and prove nothing. Against Particles —
+  // a stateful FX — a passing result proves the onSeek hook genuinely
+  // reconstructs the same first-trigger behaviour as a fresh plugin instance.
+  //
+  // Spawn count is a FIXED param (spawnPerBeat, default 12) resolved at call
+  // time, not randomised. Arc count on a triggered frame is therefore
+  // deterministic and safe to assert exactly. Exact particle POSITIONS are
+  // intentionally NOT asserted: x/y/vx/vy are drawn from Math.random in
+  // spawnGeometry — non-deterministic across runs per KNOWN_LIMITATIONS
+  // ("Particles spawn non-deterministic across runs").
+  it('onSeek(clipId) produces the same first-trigger arc count as a fresh plugin (reset == fresh)', () => {
+    const params = particlesPlugin.getDefaultParams(); // spawnPerBeat = 12
+
+    // --- Reference: fresh plugin, first triggered frame ---
+    // afterEach calls dispose(), so the pool is empty here (fresh state).
+    const rcFresh = makeRenderContext({ clipId: 'seek-clip', isOnBeat: true, beatIndex: 1, time: 2 });
+    particlesPlugin.render(rcFresh, params);
+    const freshArcCount = (rcFresh.ctx as unknown as { __calls: Array<{ method: string }> }).__calls.filter(
+      (c) => c.method === 'arc'
+    ).length;
+    // A fresh pool with a beat trigger must draw exactly spawnPerBeat arcs
+    // (no pre-existing particles, all pool slots were dead).
+    expect(freshArcCount).toBe(params.spawnPerBeat); // deterministic: fixed spawn count
+
+    // --- Accumulate state on the same clipId ---
+    // Dispose to clear inter-test state, then build up accumulated history.
+    particlesPlugin.dispose?.();
+    // First beat: populate the pool.
+    const rcAccum1 = makeRenderContext({ clipId: 'seek-clip', isOnBeat: true, beatIndex: 1, time: 2 });
+    particlesPlugin.render(rcAccum1, params);
+    // Second beat: spawn another batch into the still-alive pool, so the clip
+    // has accumulated MORE than spawnPerBeat particles (two batches alive).
+    // Use time=3 so the first batch is still alive (0 < 3-2=1s < 1.6s life).
+    const rcAccum2 = makeRenderContext({ clipId: 'seek-clip', isOnBeat: true, beatIndex: 2, time: 3 });
+    particlesPlugin.render(rcAccum2, params);
+    const accumArcCount = (rcAccum2.ctx as unknown as { __calls: Array<{ method: string }> }).__calls.filter(
+      (c) => c.method === 'arc'
+    ).length;
+    // Confirm the pool is now carrying more than one batch (both are alive).
+    expect(accumArcCount).toBeGreaterThan(params.spawnPerBeat);
+
+    // --- Seek: reset the accumulated pool ---
+    particlesPlugin.onSeek?.('seek-clip');
+
+    // --- Post-seek: first triggered frame must match the fresh arc count ---
+    // After onSeek the clip's state entry is deleted, so the next render
+    // re-creates an empty pool. A triggered frame thus spawns exactly
+    // spawnPerBeat particles from a fully dead pool — identical to the fresh
+    // reference above. Exact positions are NOT compared (PRNG non-determinism).
+    const rcAfterSeek = makeRenderContext({ clipId: 'seek-clip', isOnBeat: true, beatIndex: 1, time: 2 });
+    particlesPlugin.render(rcAfterSeek, params);
+    const afterSeekArcCount = (rcAfterSeek.ctx as unknown as { __calls: Array<{ method: string }> }).__calls.filter(
+      (c) => c.method === 'arc'
+    ).length;
+    expect(afterSeekArcCount).toBe(freshArcCount); // reset == fresh: same arc count, positions not asserted
   });
 
   // onSeek is OPTIONAL — stateless plugins must NOT have it.
