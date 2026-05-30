@@ -59,6 +59,10 @@ interface EngineDeps {
   createBeatWorker?: () => Worker;
 }
 
+/** Fallback-clock tick cadence (ms). ~60 fps, comparable to `audioEl`'s
+ *  `timeupdate`. Exported so tests drive the clock at the exact interval. */
+export const FALLBACK_CLOCK_INTERVAL_MS = 16;
+
 export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
   if (!isClient()) {
     throw new Error('AudioEngine cannot be created outside the browser');
@@ -121,7 +125,7 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
       const clamped =
         state.duration > 0 ? Math.min(computed, state.duration) : computed;
       setState({ currentTime: clamped });
-    }, 16); // ~60 fps cadence, comparable to timeupdate
+    }, FALLBACK_CLOCK_INTERVAL_MS);
   }
 
   /** Stop the fallback setInterval clock. Idempotent — no-op if not running. */
@@ -225,17 +229,19 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     async play(): Promise<void> {
       if (audioEl) {
         // ── Case (a): sync-soundtrack loaded ─────────────────────────────────
-        // AudioContext was created during load() → wireGraph().
+        // Stop the fallback clock UP FRONT: when audioEl drives currentTime the
+        // fallback must not run, and stopping it before resume()/play() leaves
+        // no window where a stale tick races the element's timeupdate.
+        stopFallbackClock();
+        // AudioContext was created during load() → wireGraph(); ensureContext
+        // sets the closure `audioContext` either way.
         const ctx = audioContext ?? ensureContext();
-        audioContext = ctx;
         await ctx.resume();
         if (ctx.state !== 'running') {
           setStatus('error');
           throw new Error('AudioContext could not resume (autoplay blocked?)');
         }
         await audioEl.play();
-        // Fallback clock must NOT run when audioEl drives currentTime.
-        stopFallbackClock();
         setStatus('playing');
       } else {
         // ── Case (b): no sync-soundtrack — AudioContext-based fallback clock ─
@@ -244,7 +250,6 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
         // Without resume(), audioContext.currentTime stays at 0 indefinitely
         // and every tick would compute elapsed = 0, so no advance. (B2)
         const ctx = ensureContext();
-        audioContext = ctx;
         await ctx.resume();
         if (ctx.state !== 'running') {
           setStatus('error');

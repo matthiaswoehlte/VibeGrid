@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createAudioEngine } from '@/lib/audio/engine';
+import { createAudioEngine, FALLBACK_CLOCK_INTERVAL_MS } from '@/lib/audio/engine';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +36,9 @@ function captureAudioContextInstance(): {
   class SpyAudioContext extends (OrigClass as unknown as new () => object) {
     constructor() {
       super();
-      // `this` at this point is the constructed instance.
+      // `this` at this point is the constructed instance. Last-write-wins:
+      // the fallback path constructs exactly one context per test, so the
+      // most-recent reference is the one under test.
       captured = this as unknown as AudioContext;
     }
   }
@@ -53,7 +55,7 @@ function captureAudioContextInstance(): {
 }
 
 /** Advance the captured AudioContext's currentTime and fire all pending fake timers. */
-function tick(instance: AudioContext, advanceSec: number, intervalMs = 16): void {
+function tick(instance: AudioContext, advanceSec: number, intervalMs = FALLBACK_CLOCK_INTERVAL_MS): void {
   (instance as unknown as { currentTime: number }).currentTime += advanceSec;
   vi.advanceTimersByTime(intervalMs);
 }
@@ -296,17 +298,16 @@ describe('AudioEngine — fallback clock (Plan 9c.2 T2)', () => {
 
     engine.destroy();
 
-    // After destroy, ticks must not fire any setState.
-    const stateAfterDestroy = engine.getState().currentTime;
+    // destroy() resets currentTime to 0 AND clears the interval. If the
+    // interval were still alive, this tick would write baseTime+elapsed;
+    // instead currentTime stays at the post-destroy reset value (0).
     tick(ctx, 5);
-    // currentTime resets to 0 on destroy() (existing behavior).
     expect(engine.getState().currentTime).toBe(0);
-    // Confirm it didn't advance from the fallback.
-    expect(engine.getState().currentTime).not.toBeCloseTo(stateAfterDestroy + 5, 5);
   });
 
-  // Tests 7/8 (mid-play switch: audioEl added/removed while playing) are deferred
-  // to T6 integration (useAudioEngine reconciler), as they require the reconciler
-  // to call engine.pause() + engine.play() when the soundtrack is swapped mid-flight.
-  // The engine-level source selection (audioEl vs fallback) is determined at play-start.
+  // Mid-play soundtrack switch is owned by the useAudioEngine reconciler
+  // (it pause()s + play()s to swap clock source); engine-level source
+  // selection happens at play-start. Covered in T6 integration.
+  it.todo('Test 7: soundtrack removed mid-play → fallback takes over from current time');
+  it.todo('Test 8: soundtrack loaded → next play-start uses audioEl');
 });
