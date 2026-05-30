@@ -375,7 +375,11 @@ export function useVideoExporter({
                   ? (mediaId: string) => videoEngine.getElement(mediaId)
                   : undefined,
                 videoDecoderPool,
-                flowMode: useAppStore.getState().ui.flowMode
+                flowMode: useAppStore.getState().ui.flowMode,
+                // Plan 9d Task 3 — thread export range from store.
+                // Read at export-start (not captured in closure) so a
+                // late range-clear doesn't shorten an in-flight render.
+                exportRange: useAppStore.getState().ui.exportRange
               },
               {
                 fps,

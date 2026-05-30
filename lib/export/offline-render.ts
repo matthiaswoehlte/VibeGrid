@@ -6,6 +6,7 @@ import { mixAudioOffline, type VideoAudioClip } from './mix-audio-offline';
 import type { Clip, TimelineState } from '@/lib/timeline/types';
 import type { MediaRef } from '@/lib/storage/types';
 import type { BeatGrid } from '@/lib/audio/types';
+import type { ExportRange } from '@/lib/store/types';
 import { qualityManager } from '@/lib/renderer/webgl/quality';
 
 // WebCodecs types (VideoEncoder, AudioEncoder, VideoFrame, AudioData)
@@ -53,6 +54,14 @@ export interface OfflineRenderDeps {
   numberOfChannels: number;
   getImageBitmap: (mediaId: string) => ImageBitmap | undefined;
   flowMode: boolean;
+  /**
+   * Plan 9d Task 3 — export range override. When set, only the time window
+   * [start, end] (seconds, absolute) is rendered. Frames are sampled at their
+   * ABSOLUTE timeline time so beat phase, automation, and FX are identical to
+   * a full-project export at that moment. Output VideoFrame timestamps are
+   * range-relative (first frame → 0). `null` = full timeline (no-op baseline).
+   */
+  exportRange?: ExportRange | null;
   /** Plan-5.9b legacy: HTMLVideoElement-based seek pipeline. Kept for
    *  back-compat / fallback when WebCodecs VideoDecoder is unavailable
    *  (older browsers, jsdom tests). When `videoDecoderPool` is also
@@ -288,13 +297,28 @@ async function renderOfflineInternal(
 
   try {
   // 5. Frame loop.
+  // Plan 9d Task 3 — export range bounds. When exportRange is active, only
+  // frames in [startFrame, endFrame) are emitted. Sampling time stays ABSOLUTE
+  // so beat phase, automation, and FX are identical to a full-project export.
+  // Output VideoFrame timestamps are range-relative (first frame → 0 µs).
+  // No range (null / undefined) → full-project baseline, true no-op.
+  const rangeStartFrame = deps.exportRange
+    ? Math.round(deps.exportRange.start * fps)
+    : 0;
+  const rangeEndFrame = deps.exportRange
+    ? Math.round(deps.exportRange.end * fps)
+    : totalFrames;
+
   const startTime =
     typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const loopTotalFrames = rangeEndFrame - rangeStartFrame;
 
-  for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
+  for (let f = rangeStartFrame; f < rangeEndFrame; f++) {
+    const frameIdx = f; // absolute frame index (for stall-stage diagnostics + keyframe logic)
+    const outputFrameIdx = f - rangeStartFrame; // range-relative output index (0-based)
     throwIfAborted();
     throwIfVideo();
-    const timeSec = frameIdx / fps;
+    const timeSec = f / fps; // ABSOLUTE time — never range-relative
 
     // Plan 5.10+ — video frame sourcing.
     //
@@ -421,17 +445,20 @@ async function renderOfflineInternal(
       if (frameTimeoutId !== undefined) clearTimeout(frameTimeoutId);
     }
 
+    // Plan 9d Task 3: timestamp is range-relative (output starts at t=0).
+    // outputFrameIdx=0 → timestamp 0; outputFrameIdx=N → N * (1_000_000/fps) µs.
     const videoFrame = new VideoFrameCtor(canvas, {
-      timestamp: Math.round(timeSec * 1_000_000)
+      timestamp: Math.round(outputFrameIdx * (1_000_000 / fps))
     });
-    videoEncoder.encode(videoFrame, { keyFrame: frameIdx % fps === 0 });
+    // Keyframe cadence is relative to the output stream (not absolute timeline).
+    videoEncoder.encode(videoFrame, { keyFrame: outputFrameIdx % fps === 0 });
     videoFrame.close();
 
     if (options.onProgress) {
       const now =
         typeof performance !== 'undefined' ? performance.now() : Date.now();
       const elapsedMs = now - startTime;
-      const fractionDone = (frameIdx + 1) / totalFrames;
+      const fractionDone = (outputFrameIdx + 1) / loopTotalFrames;
       const etaSeconds =
         fractionDone > 0
           ? Math.max(
@@ -440,8 +467,8 @@ async function renderOfflineInternal(
             )
           : 0;
       options.onProgress({
-        currentFrame: frameIdx + 1,
-        totalFrames,
+        currentFrame: outputFrameIdx + 1,
+        totalFrames: loopTotalFrames,
         etaSeconds
       });
     }
