@@ -138,5 +138,15 @@ export interface FxPlugin<Params = Record<string, unknown>> {
   getDefaultParams(): Params;
   preload(imageBitmap: ImageBitmap, signal: AbortSignal): Promise<void>;
   render(rc: RenderContext, params: Params): void;
+  /**
+   * `onSeek?(clipId)` — optional, only for FX that accumulate state across
+   * frames. Called on seek / loop-wrap so the FX can reset that clip's
+   * accumulated state to match a fresh render at the seek target. The clean
+   * fix for such FX is statelessness (derive state from absolute time); this
+   * hook is a WORKAROUND scaffold. **Delete condition:** when an accumulating
+   * FX (currently only Particles) is rewritten stateless, remove both its
+   * accumulation and this hook.
+   */
+  onSeek?(clipId: string): void;
   dispose?(): void;
 }

@@ -255,6 +255,9 @@ export const particlesPlugin: FxPlugin<ParticlesParams> = {
     }
     rc.ctx.restore();
   },
+  onSeek(clipId: string) {
+    clipStates.delete(clipId);
+  },
   dispose() {
     clipStates.clear();
   }
