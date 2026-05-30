@@ -1191,3 +1191,29 @@ Plan 8.7b kennt keine Optimistic-Concurrency auf der Manifest-PUT-Route. Wenn zw
 Der atomare `POST /api/admin/sounds/upload` macht MP3-PUT und Manifest-PUT sequentiell. Bei Manifest-PUT-Fail nach erfolgreichem MP3-PUT bleibt die MP3 in R2 als Orphan (nicht im Manifest referenziert, kein UX-Schaden) — Storage-Müll, kein Sicherheits- oder Datenintegritätsproblem. Manueller R2-Cleanup oder ein Sweeper-Job (eigener Folge-Plan) räumt das auf. Die Response enthält im Fehlerfall den `orphanKey` im Body, damit der Admin ihn händisch nachräumen kann.
 
 Reverse-Fall — `DELETE /api/admin/sounds/[id]`: Manifest-First-Order (Plan 8.7b W6) sorgt dafür, dass der Manifest-Update gelingt, der R2-Delete aber fehlschlagen kann → Orphan-MP3 in R2, identisch zum Upload-Fall. Kein Ghost-Entry im Manifest, der User ein 404 produzieren würde — das ist die explizite Trade-off-Wahl.
+
+## Plan 9d — Export Range Selection
+
+Plan 9d landete in zwei Phasen. **Phase 1 (geshippt): Export Range** — Ctrl/Cmd+Drag auf dem Timeline-Header zieht eine Range auf (snappt auf Beat/Bar), der Offline-Export rendert nur das Fenster `[rangeStart, rangeEnd]`. Sampling-Zeit bleibt absolut (Beat-Phase, Automation, FX identisch zum Voll-Export), der Output-Frame-Index ist range-relativ (Video startet bei Frame 0). **Phase 2 (Loop-Preview) ist ein Follow-on**, gekoppelt an einen separaten RAF+BPM-Clock-Fallback-Plan — siehe Hinweis am Ende.
+
+### Architektur-Entscheidung: kein Pre-Roll, Seek-Modell
+
+Der Render-Loop rekonstruiert jeden Frame rein aus der absoluten Zeit und akkumuliert keinen Frame-übergreifenden Zustand (`loop.ts`: `beats`, `subdivisionIndex`, Automation alle aus absoluter `t`; die einzigen Frame-übergreifenden Maps werden beim Seek über den `seekCounter` geleert). Darum braucht der Range-Export **kein Pre-Roll von t=0** — er sampelt direkt bei absoluter `t`. Einzige Ausnahme: **Particles** (siehe unten).
+
+### Particles-Ramp-up am Range-Start (B1 = akzeptierte Limitierung)
+
+Particles ist der **einzige** FX, der Frame-Zustand akkumuliert (`lib/fx/particles.ts` integriert Positionen `p.x += p.vx*dt` in einem modul-globalen Pool, nur bei `dispose()`/`onSeek()` geleert). Ein **mittendrin** startender Range-Export (`rangeStart > 0`) beginnt daher mit **leerem Partikel-Pool** → die ersten ~1–2 s zeigen Partikel, die aus dem Nichts hochrampen, statt des eingeschwungenen Zustands eines Voll-Exports.
+
+Bewusste Entscheidung: **akzeptiert und dokumentiert** (Option a). Die Alternative — Render-ab-t=0 nur um den Pool aufzuwärmen — würde genau die Video-Decoder-Kosten (5–15× realtime pro Seek) zurückholen, deretwegen das Seek-Modell überhaupt gewählt wurde. **Nordstern (eigener Scope):** Particles zustandslos umschreiben (Position aus absoluter Zeit ableiten statt integrieren); dann ist auch dieser Sonderfall ohne Workaround korrekt, und der `onSeek`-Scaffold-Hook (`FxPlugin.onSeek`, aktuell nur von Particles implementiert) wird mitsamt der Akkumulation gelöscht.
+
+### Particles `dt = 1/60` ist hartcodiert (W3, vorbestehend)
+
+`particles.ts` integriert mit fixem `dt = 1/60`, ignoriert die echte Frame-Dauer. Folge: im 30-fps-Export bewegen sich Partikel mit **halber Geschwindigkeit** gegenüber der 60-fps-Live-Preview. **Nicht von 9d verursacht** — hier nur vermerkt, weil es mit dem B1-Ramp-up interagiert (beide betreffen Particles im Range-Export). Fix gehört zum stateless-Particles-Rewrite (Nordstern).
+
+### Audio-Windowing (W1)
+
+Der Offline-Audio-Mix (`mix-audio-offline.ts`) fenstert Clips auf `[rangeStart, rangeEnd]`. Web-Audio erlaubt kein negatives `source.start(when, …)`, daher die Fallunterscheidung `rel = clipStart − rangeStart`: `rel ≥ 0 → start(rel, 0)`, sonst `start(0, −rel)` (Clip ragt ins Fenster hinein → Buffer-Offset statt negativem `when`). Volume-Automation-Zeitachse wird fenster-relativ rebased. Window-Overlap-Guards laufen **vor** Fetch/Decode, sodass Clips außerhalb des Fensters nicht unnötig geladen werden.
+
+### Loop-Preview (Phase 2) ist noch offen
+
+Die Live-Loop-Preview (Playhead wrappt `rangeEnd → rangeStart`) ist als Follow-on geplant. Sie hängt an einem separaten **RAF+BPM-Clock-Fallback-Plan**: aktuell treibt nur der globale Soundtrack-`audioEl.timeupdate` die `currentTime` — ohne Soundtrack steht der Playhead (vorbestehend). Der Clock-Fallback macht den soundtrack-losen Fall zum Normalfall (BPM-Feld der Top-Bar als Tempo-Quelle, RAF treibt die Zeit). Danach ist der Loop-Wrap trivial und clock-agnostisch. Der dann relevante **Audio-Wrap-Glitch** (Web-Audio ersetzt one-shot BufferSources beim Wrap → kurzer Übergang, identisch zum heutigen Scrub-Verhalten) wird mit Phase 2 dokumentiert.
