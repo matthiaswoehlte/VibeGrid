@@ -412,6 +412,14 @@ describe('renderOffline — output', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('renderOffline — export range', () => {
+  // The renderAt-capture array (vi.mock at top of file) is module-level and
+  // accumulates across tests. Reset before each so any test reading it sees
+  // only its own render pass — prevents stale-data false failures as the
+  // suite grows.
+  beforeEach(() => {
+    _renderAtTimeSecs.length = 0;
+  });
+
   /**
    * Test 17: Range active → only frames in [rangeStart, rangeEnd] are emitted.
    * Frame count == endFrame - startFrame; first VideoFrame output timestamp == 0 (range-relative),
@@ -531,9 +539,6 @@ describe('renderOffline — export range', () => {
     const endFrame   = Math.round(rangeEnd   * fps); // 60
     const expectedCount = endFrame - startFrame;      // 30
 
-    // Reset the capture array before this run.
-    _renderAtTimeSecs.length = 0;
-
     installWebCodecsMocks();
 
     await renderOffline(
@@ -585,9 +590,6 @@ describe('renderOffline — export range', () => {
     const rangeStart = 10.0;
     const rangeEnd   = 10.5;      // 5 frames: f=100..104
     const startFrame = Math.round(rangeStart * fps); // 100
-
-    // Reset capture array.
-    _renderAtTimeSecs.length = 0;
 
     installWebCodecsMocks();
 

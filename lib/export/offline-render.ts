@@ -314,7 +314,7 @@ async function renderOfflineInternal(
   const loopTotalFrames = rangeEndFrame - rangeStartFrame;
 
   for (let f = rangeStartFrame; f < rangeEndFrame; f++) {
-    const frameIdx = f; // absolute frame index (for stall-stage diagnostics + keyframe logic)
+    const frameIdx = f; // absolute frame index — used in stall-stage diagnostics only
     const outputFrameIdx = f - rangeStartFrame; // range-relative output index (0-based)
     throwIfAborted();
     throwIfVideo();
