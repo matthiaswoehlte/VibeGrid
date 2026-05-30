@@ -5,6 +5,29 @@ import type { BeatGrid } from '@/lib/audio/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// ─── renderAt capture seam ────────────────────────────────────────────────────
+// Tests 19 + 20 need to verify that renderOffline passes ABSOLUTE timeSec to
+// renderAt, not range-relative time.  We wrap makeOfflineRenderer so every
+// renderAt call pushes its timeSec argument into this array.
+// The array is reset by individual tests; tests 17/18/24 ignore it.
+const _renderAtTimeSecs: number[] = [];
+
+vi.mock('@/lib/renderer/offline-tick', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/renderer/offline-tick')>();
+  return {
+    ...real,
+    makeOfflineRenderer: (deps: Parameters<typeof real.makeOfflineRenderer>[0]) => {
+      const renderer = real.makeOfflineRenderer(deps);
+      return {
+        renderAt(timeSec: number, videoFrames?: Map<string, VideoFrame>) {
+          _renderAtTimeSecs.push(timeSec);
+          renderer.renderAt(timeSec, videoFrames);
+        }
+      };
+    }
+  };
+});
+
 type Globalish = Record<string, any>;
 
 interface MockVideoEncoderInstance {
@@ -490,85 +513,35 @@ describe('renderOffline — export range', () => {
   });
 
   /**
-   * Test 19: beatIndex/beatPhase at ABSOLUTE t.
-   * renderAt is called with absolute timeSec (not range-relative).
-   * We spy on makeOfflineRenderer's renderAt via the VideoFrame timestamp,
-   * which mirrors the timeSec passed to renderAt in the range-relative scenario.
-   * We verify: the absolute times passed increase from rangeStart/fps upward.
+   * Test 19: renderAt receives ABSOLUTE timeSec, not range-relative.
+   *
+   * We capture every timeSec passed to renderAt via the module-level
+   * _renderAtTimeSecs array (see vi.mock at top of file).  With
+   * rangeStart=1.0s and fps=30, startFrame=30, endFrame=60 → 30 frames.
+   * The captured sequence MUST be [30/30, 31/30, …, 59/30] (absolute).
+   * If the implementation mistakenly passed range-relative time (starting
+   * at 0/fps = 0.0), the first assertion `capturedTimes[0] ≈ 1.0` would
+   * FAIL, proving the test is not a tautology.
    */
   it('19: renderer receives ABSOLUTE timeSec, not range-relative', async () => {
-    const fps = 10;
-    const rangeStart = 5.0;
-    const rangeEnd = 5.5;
-    // startFrame = 50, endFrame = 55 → 5 frames at absolute t=5.0, 5.1, 5.2, 5.3, 5.4
+    const fps = 30;
+    const rangeStart = 1.0;
+    const rangeEnd   = 2.0;
+    const startFrame = Math.round(rangeStart * fps); // 30
+    const endFrame   = Math.round(rangeEnd   * fps); // 60
+    const expectedCount = endFrame - startFrame;      // 30
 
-    // We capture absolute times from the VideoFrame constructor timestamps-before-range-offset.
-    // The VideoFrame timestamp IS the range-relative output index * (1e6/fps).
-    // To verify the renderer sees absolute times we spy on the OffscreenCanvas.getContext()2d drawImage
-    // proxy — but a simpler approach: capture times via a custom renderAt spy injected
-    // through makeOfflineRenderer. Since offline-render.ts calls renderAt(timeSec), and timeSec
-    // is computed as `f / fps` (absolute) before being passed, we can verify by reading
-    // the ABSOLUTE times: the first rendered time must be >= rangeStart.
-    //
-    // Strategy: capture VideoFrame constructor PLUS track that the output index is range-relative.
-    // If output index is range-relative but timeSec is absolute, timestamps start at 0 while
-    // the content represents frames at rangeStart..rangeEnd. We verify this split by
-    // ensuring: (a) output timestamps start at 0, AND (b) the rendered absolute time of
-    // the first frame equals rangeStart (the latter we get from the spy below).
-
-    const absoluteTimesRendered: number[] = [];
+    // Reset the capture array before this run.
+    _renderAtTimeSecs.length = 0;
 
     installWebCodecsMocks();
-
-    // Patch the OffscreenCanvas to capture what time the renderer is given.
-    // makeOfflineRenderer's renderAt calls renderer.tick() which calls getCurrentTime().
-    // getCurrentTime returns `currentTime`, set by renderAt(timeSec). We intercept by
-    // wrapping OffscreenCanvas.getContext to return a ctx whose fillRect records the
-    // current time via a side channel. Instead, we use a cleaner approach:
-    // patch globalThis.OffscreenCanvas so its getContext returns a spy ctx.
-    const OrigOffscreen = (globalThis as Globalish).OffscreenCanvas;
-    class SpyOffscreenCanvas extends OrigOffscreen {
-      getContext(id: string) {
-        const ctx = super.getContext(id);
-        // Wrap clearRect to capture the current time in a closure
-        // (clearRect is called at the start of every tick in loop.ts)
-        const origClearRect = ctx.clearRect.bind(ctx);
-        ctx.clearRect = (x: number, y: number, w: number, h: number) => {
-          // We can't read currentTime from here — different module.
-          // This spy approach won't work cleanly. Use VideoFrame spy instead.
-          origClearRect(x, y, w, h);
-        };
-        return ctx;
-      }
-    }
-    (globalThis as Globalish).OffscreenCanvas = SpyOffscreenCanvas;
-
-    // Better approach: spy on VideoFrame to get output timestamps (range-relative),
-    // and separately verify that the sampled absolute times reach rangeEnd-1frame.
-    const outputTimestampsUs: number[] = [];
-    const OrigVideoFrame = (globalThis as Globalish).VideoFrame;
-    class SpyVideoFrame extends OrigVideoFrame {
-      constructor(src: any, init: { timestamp: number }) {
-        super(src, init);
-        outputTimestampsUs.push(init.timestamp);
-      }
-    }
-    (globalThis as Globalish).VideoFrame = SpyVideoFrame;
-
-    // Also capture which times the encoder actually saw by tracking
-    // absolute times from the VideoFrame BEFORE range-offset is applied —
-    // we do this by recording the range-relative output timestamps and
-    // verifying they are range-relative (starting at 0). The absolute
-    // time is separately validated through the encode call count and
-    // the first/last frame timing.
-    const stepUs = Math.round(1_000_000 / fps);
 
     await renderOffline(
       {
         timeline: emptyTimeline(),
         beatGrid: grid120,
         audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120,
-        audioDurationSec: 10,
+        audioDurationSec: 3,
         sampleRate: 48000, numberOfChannels: 2,
         getImageBitmap: () => undefined,
         flowMode: false,
@@ -577,80 +550,84 @@ describe('renderOffline — export range', () => {
       { fps }
     );
 
-    const startFrame = Math.round(rangeStart * fps); // 50
-    const endFrame = Math.round(rangeEnd * fps);     // 55
-    const expectedCount = endFrame - startFrame;      // 5
+    // Exactly expectedCount renderAt calls.
+    expect(_renderAtTimeSecs).toHaveLength(expectedCount);
 
-    expect(outputTimestampsUs).toHaveLength(expectedCount);
-    // Output starts at 0 (range-relative)
-    expect(outputTimestampsUs[0]).toBe(0);
-    // Output increments by stepUs
-    expect(outputTimestampsUs[expectedCount - 1]).toBe((expectedCount - 1) * stepUs);
+    // PRIMARY: first call must be at ABSOLUTE t = startFrame/fps = 1.0s.
+    // A range-relative-time bug would produce 0.0 here → test would FAIL.
+    expect(_renderAtTimeSecs[0]).toBeCloseTo(startFrame / fps, 9);   // 1.0
 
-    // Absolute-time verification: we trust that if output timestamps are
-    // range-relative AND frame count is correct, then the sampled times
-    // were absolute (startFrame..endFrame). Captured via absoluteTimesRendered
-    // which we populate by patching the VideoFrame's timestamp BEFORE offset.
-    // We can compute what the absolute times should have been:
+    // Each subsequent call increments by exactly 1/fps.
     for (let i = 0; i < expectedCount; i++) {
-      const expectedAbsoluteTimeSec = (startFrame + i) / fps;
-      absoluteTimesRendered.push(expectedAbsoluteTimeSec);
+      expect(_renderAtTimeSecs[i]).toBeCloseTo((startFrame + i) / fps, 9);
     }
-    expect(absoluteTimesRendered[0]).toBeCloseTo(rangeStart, 5);
-    expect(absoluteTimesRendered[expectedCount - 1]).toBeCloseTo(
+
+    // Last call: absolute t = (endFrame - 1) / fps = 59/30 ≈ 1.9667s
+    expect(_renderAtTimeSecs[expectedCount - 1]).toBeCloseTo(
       (endFrame - 1) / fps,
-      5
+      9
     );
   });
 
   /**
-   * Test 20: Automation correctness — a keyframe at t=5s with rangeStart=10s.
-   * The first exported frame (sampled at absolute t=10s) uses absolute beat time,
-   * so the automation at beat corresponding to t=10s gives the correct interpolated value.
-   * This test uses resolveParam directly to verify the invariant, proving that
-   * sampling at absolute t is a pure function independent of rangeStart.
+   * Test 20: export loop samples at ABSOLUTE t even with a large rangeStart.
+   *
+   * rangeStart = 10s, fps = 10 → startFrame = 100.  The first renderAt call
+   * MUST receive timeSec = 10.0 (absolute).  If the implementation passed
+   * range-relative time it would pass 0.0 → the primary assertion fails.
+   *
+   * Secondary: resolveParam at that absolute beat gives the correct
+   * interpolated automation value — proving beat-phase correctness flows
+   * from absolute sampling (independent of rangeStart).
    */
-  it('20: automation resolves at absolute beat time, independent of rangeStart', async () => {
-    // Import resolveParam directly — it's a pure function, no renderer needed.
-    const { resolveParam } = await import('@/lib/automation/resolve');
-    const { isAutomationCurve } = await import('@/lib/automation/resolve');
+  it('20: export sampling is absolute — rangeStart=10s first frame captured at t=10.0s', async () => {
+    const fps = 10;
+    const rangeStart = 10.0;
+    const rangeEnd   = 10.5;      // 5 frames: f=100..104
+    const startFrame = Math.round(rangeStart * fps); // 100
 
-    // A curve with value=0 at beat 0, value=1 at beat 40 (linear).
-    // At 120 BPM: 1 beat = 0.5s. t=10s → beat=20. Interpolated value = 20/40 = 0.5.
-    // rangeStart = 10s has no effect on the lookup — absolute beat is used.
+    // Reset capture array.
+    _renderAtTimeSecs.length = 0;
+
+    installWebCodecsMocks();
+
+    await renderOffline(
+      {
+        timeline: emptyTimeline(),
+        beatGrid: grid120,
+        audioClips: [], videoAudioClips: [], mediaRefs: [], bpm: 120,
+        audioDurationSec: 15,
+        sampleRate: 48000, numberOfChannels: 2,
+        getImageBitmap: () => undefined,
+        flowMode: false,
+        exportRange: { start: rangeStart, end: rangeEnd }
+      },
+      { fps }
+    );
+
+    // PRIMARY: first renderAt call must be at ABSOLUTE t = 10.0s.
+    // A range-relative-time bug would produce t = 0.0 → assertion fails.
+    expect(_renderAtTimeSecs.length).toBeGreaterThanOrEqual(1);
+    expect(_renderAtTimeSecs[0]).toBeCloseTo(startFrame / fps, 9); // 10.0
+
+    // SECONDARY: resolveParam at the absolute beat matching t=10s yields
+    // the expected automation value, confirming that absolute sampling
+    // feeds correct beat context into the renderer.
+    const { resolveParam } = await import('@/lib/automation/resolve');
+    const bpm = 120; // 1 beat = 0.5s → t=10s ≡ beat 20
+    const absoluteBeat = (_renderAtTimeSecs[0] * bpm) / 60; // 20
     const curve = {
       mode: 'automation' as const,
       interpolation: 'linear' as const,
       points: [
-        { beat: 0, value: 0 },
+        { beat: 0,  value: 0 },
         { beat: 40, value: 1 }
       ]
     };
-
-    expect(isAutomationCurve(curve)).toBe(true);
-
-    const bpm = 120; // 1 beat = 0.5s
-    const absoluteTimeSec = 10.0; // rangeStart
-    const absoluteBeat = (absoluteTimeSec * bpm) / 60; // = 20
-
-    const value = resolveParam(curve, absoluteBeat);
-    // beat 20 is halfway through [0, 40] → linear → 0.5
-    expect(value).toBeCloseTo(0.5, 5);
-
-    // Verify that a different rangeStart (e.g. 0) yields a different value for t=0
-    const value0 = resolveParam(curve, 0);
-    expect(value0).toBe(0);
-
-    // And t=20s → beat=40 → value=1
-    const beat40 = (20 * bpm) / 60;
-    const value40 = resolveParam(curve, beat40);
-    expect(value40).toBeCloseTo(1, 5);
-
-    // Key assertion: the renderer samples at absolute beat 20 for t=10s regardless
-    // of rangeStart. Since resolveParam is called with absoluteBeat by loop.ts
-    // (loop.ts:604 uses absolute beats derived from timeSec), the result is correct.
-    // This test verifies the pure-function invariant.
-    expect(value).not.toBe(value0); // different from t=0s value
+    // beat 20 / 40 → 0.5 (linear)
+    expect(resolveParam(curve, absoluteBeat)).toBeCloseTo(0.5, 5);
+    // If sampling were range-relative (beat 0) we'd get 0, not 0.5.
+    expect(resolveParam(curve, 0)).toBe(0);
   });
 
   /**
