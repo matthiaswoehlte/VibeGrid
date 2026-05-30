@@ -18,7 +18,8 @@ describe('Clip', () => {
         exportState: EXPORT_INITIAL_STATE,
         flowMode: false,
         exportRange: null,
-        metronomeEnabled: false
+        metronomeEnabled: false,
+        seekNonce: 0
       },
       timeline: {
         tracks: [{ id: 't1', kind: 'fx', name: 'P', muted: false, order: 0 }],

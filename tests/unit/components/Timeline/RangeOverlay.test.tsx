@@ -42,7 +42,8 @@ function seedStore(overrides: {
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false,
       exportRange,
-      metronomeEnabled: false
+      metronomeEnabled: false,
+      seekNonce: 0
     },
     audio: {
       grid: { bpm, offsetMs, source: 'manual', beatsPerBar: 4 },

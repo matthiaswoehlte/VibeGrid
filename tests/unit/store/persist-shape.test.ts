@@ -13,7 +13,8 @@ function makeState(partial: Partial<AppState> = {}): AppState {
       automationSnap: 'off',
       exportState: {} as never,
       flowMode: false,
-      metronomeEnabled: false
+      metronomeEnabled: false,
+      seekNonce: 0
     },
     timeline: {
       tracks: [],
@@ -56,7 +57,8 @@ describe('toPersistedShape', () => {
         exportState: {} as never,
         flowMode: true,
         exportRange: null,
-        metronomeEnabled: true
+        metronomeEnabled: true,
+        seekNonce: 0
       }
     });
     expect(toPersistedShape(state).ui).toEqual({ zoom: 1.5, metronomeEnabled: true });

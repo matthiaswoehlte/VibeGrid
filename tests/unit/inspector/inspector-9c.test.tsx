@@ -18,7 +18,8 @@ function bootStore(clip: Clip) {
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false,
       exportRange: null,
-      metronomeEnabled: false
+      metronomeEnabled: false,
+      seekNonce: 0
     },
     timeline: {
       tracks: [{ id: clip.trackId, kind: 'fx', name: 'FX', muted: false, order: 0 }],

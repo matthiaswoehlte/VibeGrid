@@ -1,6 +1,7 @@
 'use client';
 import { useEffect } from 'react';
 import { useRenderer } from '@/lib/hooks/useRenderer';
+import { useAppStore } from '@/lib/store';
 import type { AudioEngine } from '@/lib/audio/engine';
 
 export function CanvasView({
@@ -22,6 +23,9 @@ export function CanvasView({
   const { getBitmap } = useRenderer({
     canvasRef,
     getCurrentTime: () => engine?.getState().currentTime ?? 0,
+    // Plan 9d — feed the renderer the seekNonce from the store so it clears
+    // its per-clip lastFired maps on every seek / loop-wrap.
+    getSeekCounter: () => useAppStore.getState().ui.seekNonce,
     getVideoElement,
     // Plan 5.9d — forward the engine's per-clip volume API so the
     // renderer can push per-frame ramps to active audio clips.

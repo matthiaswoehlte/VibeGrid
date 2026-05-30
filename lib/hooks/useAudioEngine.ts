@@ -4,6 +4,10 @@ import { useAppStore } from '@/lib/store';
 import { createAudioEngine, type AudioEngine } from '@/lib/audio/engine';
 import type { TimelineState, Clip } from '@/lib/timeline/types';
 import type { MediaRef } from '@/lib/storage/types';
+import { getActiveFxClips } from '@/lib/timeline/selectors';
+import { getPlugin, listPluginsByKind } from '@/lib/renderer/registry';
+import { TRACK_KIND_TO_PLUGIN_KIND } from '@/lib/timeline/plugin-mapping';
+import type { TrackFxKind } from '@/lib/timeline/plugin-mapping';
 
 /** Web Audio scheduler slack — clips that should "play now" are
  *  scheduled this many seconds in the future so the scheduler can
@@ -65,6 +69,17 @@ export interface UseAudioEngine {
 export function useAudioEngine(): UseAudioEngine {
   const [engine, setEngine] = useState<AudioEngine | null>(null);
   const lastSeenBpmRef = useRef<number | null>(null);
+  /** Plan 9d — Loop-Preview session state, shared between the store
+   *  subscriber (reconciler) and the engine.onStateChange mirror.
+   *
+   *  startedPastEndRef: set true in the reconciler at the play→true
+   *  transition when the engine's currentTime is already ≥ rangeEnd.
+   *  When true the onStateChange loop-wrap is suppressed for that session.
+   *
+   *  loopWrappingRef: guard to prevent re-entrant wrap within one tick
+   *  (engine.seek fires onStateChange synchronously in some paths). */
+  const startedPastEndRef = useRef<boolean>(false);
+  const loopWrappingRef = useRef<boolean>(false);
 
   useEffect(() => {
     const e = createAudioEngine();
@@ -94,17 +109,81 @@ export function useAudioEngine(): UseAudioEngine {
   // <Playhead/> moves during playback. engine.onStateChange fires from audio's
   // timeupdate event (~4-25 Hz). Throttle: skip if delta < 0.02 beats to avoid
   // re-render spam.
+  //
+  // Plan 9d — also implements Loop-Preview: when exportRange is active and
+  // startedPastEndRef is false (set by the reconciler at play-start), wraps
+  // currentTime back to rangeStart each time it reaches rangeEnd.
   useEffect(() => {
     if (!engine) return;
+
     const unsub = engine.onStateChange((s) => {
       const t = s.currentTime;
       if (!Number.isFinite(t)) return;
+
+      // ── Mirror: currentTime → playhead.beats ─────────────────────────────
       const grid = s.beatGrid;
       const beats = Math.max(0, ((t - grid.offsetMs / 1000) * grid.bpm) / 60);
       const current = useAppStore.getState().timeline.playhead.beats;
-      if (Math.abs(current - beats) < 0.02) return;
-      useAppStore.getState().timelineActions.setPlayhead(beats);
+      // Throttle: skip the store write if the delta is too small to matter,
+      // but do NOT return early — the loop-wrap check runs regardless.
+      if (Math.abs(current - beats) >= 0.02) {
+        useAppStore.getState().timelineActions.setPlayhead(beats);
+      }
+
+      // ── Plan 9d: Loop-Preview wrap ────────────────────────────────────────
+      const storeState = useAppStore.getState();
+      const { exportRange } = storeState.ui;
+      const { playing } = storeState.timeline.playhead;
+
+      // No range, not playing, started-past-end, or already wrapping → skip.
+      if (
+        !exportRange ||
+        !playing ||
+        startedPastEndRef.current ||
+        loopWrappingRef.current
+      ) return;
+
+      const { start: rangeStartSec, end: rangeEndSec } = exportRange;
+
+      // Nothing to do until we cross rangeEnd.
+      if (t < rangeEndSec) return;
+
+      // ── Wrap ──────────────────────────────────────────────────────────────
+      loopWrappingRef.current = true;
+      try {
+        // (1) Seek back to rangeStart — wraps currentTime in both clock modes.
+        //     The mirror + reconciler handle playhead.beats update + per-clip
+        //     audio restart automatically (beatsDelta < 0 path in reconciler).
+        engine.seek(rangeStartSec);
+
+        // (2) Bump seekNonce so the renderer clears its per-clip lastFired maps.
+        storeState.bumpSeekNonce();
+
+        // (3) Call plugin.onSeek for every active FX clip at rangeStart.
+        //     Particles uses this to clear its pool so the loop-preview
+        //     accurately matches what the range-export will produce.
+        const rangeStartBeats = Math.max(
+          0,
+          ((rangeStartSec - grid.offsetMs / 1000) * grid.bpm) / 60
+        );
+        const { timeline } = storeState;
+        const activeFxClips = getActiveFxClips(
+          timeline.tracks,
+          timeline.clips,
+          rangeStartBeats
+        );
+        for (const { clip } of activeFxClips) {
+          const pluginKind = TRACK_KIND_TO_PLUGIN_KIND[clip.kind as TrackFxKind];
+          const plugin =
+            (clip.fxId ? getPlugin(clip.fxId) : undefined) ??
+            (pluginKind ? listPluginsByKind(pluginKind)[0] : undefined);
+          plugin?.onSeek?.(clip.id);
+        }
+      } finally {
+        loopWrappingRef.current = false;
+      }
     });
+
     return unsub;
   }, [engine]);
 
@@ -216,11 +295,25 @@ export function useAudioEngine(): UseAudioEngine {
       // Play (was paused → playing) — start every active clip in sync.
       if (isPlaying && !wasPlaying) {
         startAllActiveClips(state.timeline, engine, bpm, LOOKAHEAD);
+
+        // Plan 9d — capture "started-past-end" at the play→true transition.
+        // If the engine's currentTime is already ≥ rangeEnd when Play begins,
+        // this session must NOT loop (plays to project end).
+        const { exportRange } = state.ui;
+        if (exportRange) {
+          startedPastEndRef.current =
+            engine.getState().currentTime >= exportRange.end;
+        } else {
+          startedPastEndRef.current = false;
+        }
       }
 
       // Pause (was playing → paused) — stop every clip.
       if (!isPlaying && wasPlaying) {
         engine.stopAllClips();
+        // Plan 9d — reset the loop-session state so the next Play re-evaluates.
+        startedPastEndRef.current = false;
+        loopWrappingRef.current = false;
       }
 
       // Seek-while-paused — stop only; next Play restarts at the new pos.

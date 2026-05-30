@@ -120,7 +120,9 @@ export const useAppStore = create<AppState>()(
           flowMode: false,
           exportRange: null,
           // Plan 9c.2 T5 — metronome persisted toggle, default off.
-          metronomeEnabled: false
+          metronomeEnabled: false,
+          // Plan 9d — seek-counter for renderer lastFired-map clearing.
+          seekNonce: 0
         },
         setZoom: (zoom) =>
           // Undo: transient — skip (UI-preference)
@@ -216,6 +218,9 @@ export const useAppStore = create<AppState>()(
         clearExportRange: () =>
           // Undo: transient — skip (ephemeral UI state, Plan 9d)
           recordingSet('ClearExportRange', (s) => { s.ui.exportRange = null; }, { skip: true }),
+        bumpSeekNonce: () =>
+          // Undo: transient — skip (renderer hint, not undo-able)
+          recordingSet('BumpSeekNonce', (s) => { s.ui.seekNonce += 1; }, { skip: true }),
 
         // Plan 9b — group operations. Plan 10: routed through
         // recordingSet so each one is exactly one undo step.

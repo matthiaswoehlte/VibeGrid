@@ -85,6 +85,12 @@ export interface UIState {
    * `audio` slice IS snapshotted per HistoryEntry, `ui` is NOT.
    */
   metronomeEnabled: boolean;
+  /**
+   * Plan 9d — monotonically increasing nonce bumped on every seek / loop-wrap.
+   * The renderer's `getSeekCounter` reads this to detect a seek and clear its
+   * per-clip `lastFired` maps. Ephemeral: never persisted, never in undo snapshot.
+   */
+  seekNonce: number;
 }
 
 export interface TimelineActions {
@@ -254,6 +260,13 @@ export interface AppState {
   /** Plan 9d — clear the export range (back to full-timeline export).
    *  Uses skip:true — ephemeral, creates no undo entry. */
   clearExportRange(): void;
+  /**
+   * Plan 9d — increment seekNonce by 1. Called by useAudioEngine on
+   * every loop-wrap (and optionally on manual Ruler seeks) so the renderer
+   * knows to clear its per-clip lastFired maps.
+   * Uses skip:true — ephemeral, creates no undo entry.
+   */
+  bumpSeekNonce(): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;
   audio: AudioState;

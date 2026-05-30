@@ -92,7 +92,8 @@ beforeEach(() => {
       exportState: {} as never,
       flowMode: false,
       exportRange: null,
-      metronomeEnabled: false
+      metronomeEnabled: false,
+      seekNonce: 0
     }
   });
 });

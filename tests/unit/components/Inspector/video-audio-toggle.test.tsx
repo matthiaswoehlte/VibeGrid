@@ -20,7 +20,8 @@ beforeEach(() => {
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false,
       exportRange: null,
-      metronomeEnabled: false
+      metronomeEnabled: false,
+      seekNonce: 0
     },
     timeline: {
       tracks: [
