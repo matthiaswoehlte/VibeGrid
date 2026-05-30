@@ -88,13 +88,58 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
   let activeDetectionAbort: AbortController | null = null;
 
   const listeners = new Set<(s: AudioEngineState) => void>();
+
+  // ── Fallback clock state (Plan 9c.2 T2) ────────────────────────────────────
+  // Used when there is NO sync-soundtrack `audioEl`. Drives `currentTime`
+  // via `setInterval` ticks computed from the AudioContext clock delta so
+  // there is zero accumulation drift (each tick recomputes from the anchor).
+  //
+  // Exactly one of the two paths is active at any time:
+  //   (a) audioEl present  → `timeupdate` events drive setState({currentTime})
+  //                          (no fallback clock interval is created)
+  //   (b) no audioEl       → fallback clock interval drives setState({currentTime})
+  //                          (audioEl never used / already null)
+  let fallbackTimerId: ReturnType<typeof setInterval> | null = null;
+  /** AudioContext.currentTime captured at the moment play() started (or seek() re-anchored). */
+  let ctxAnchor = 0;
+  /** engine state.currentTime at the moment play() started (or seek() re-anchored). */
+  let baseTime = 0;
+
+  /** Start the fallback setInterval clock. Idempotent — no-op if already running. */
+  function startFallbackClock(): void {
+    if (fallbackTimerId !== null) return;
+    // Anchor is set by the caller (play or seek) before calling this.
+    fallbackTimerId = setInterval(() => {
+      if (!audioContext) return;
+      const elapsed = audioContext.currentTime - ctxAnchor;
+      const computed = baseTime + elapsed;
+      // Upper-bound clamp: when a meaningful duration exists (i.e. > 0,
+      // set by load()), clamp to prevent the playhead running past the end.
+      // When duration is 0 (no audio loaded, per-clip-only or no-audio),
+      // no DOM element defines the end → leave unbounded; the reconciler /
+      // Transport owns end-of-playback for that case.
+      const clamped =
+        state.duration > 0 ? Math.min(computed, state.duration) : computed;
+      setState({ currentTime: clamped });
+    }, 16); // ~60 fps cadence, comparable to timeupdate
+  }
+
+  /** Stop the fallback setInterval clock. Idempotent — no-op if not running. */
+  function stopFallbackClock(): void {
+    if (fallbackTimerId === null) return;
+    clearInterval(fallbackTimerId);
+    fallbackTimerId = null;
+  }
+
   /**
    * `currentTime` is the engine's CANONICAL playback position (seconds).
    * It is written by:
    *   (a) the `audioEl` `timeupdate` event (sync-soundtrack path, case a) — unchanged;
    *   (b) `seek()` in both modes: when `audioEl` exists it also moves the audio
-   *       element, when it does not it still updates the canonical value directly;
-   *   (c) the AudioContext fallback clock (T2/Plan-9c.2) — NOT yet implemented here.
+   *       element, when it does not it still updates the canonical value directly
+   *       AND re-anchors the fallback clock when it is running;
+   *   (c) the AudioContext fallback clock (Plan-9c.2 T2) — setInterval ticks
+   *       computed as `baseTime + (audioContext.currentTime - ctxAnchor)`.
    *
    * All consumers (useAudioEngine → playhead.beats) receive updates via
    * `onStateChange`, which fires after every `setState` call.
@@ -178,19 +223,45 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     },
 
     async play(): Promise<void> {
-      if (!audioEl || !audioContext) {
-        throw new Error('Audio not loaded');
+      if (audioEl) {
+        // ── Case (a): sync-soundtrack loaded ─────────────────────────────────
+        // AudioContext was created during load() → wireGraph().
+        const ctx = audioContext ?? ensureContext();
+        audioContext = ctx;
+        await ctx.resume();
+        if (ctx.state !== 'running') {
+          setStatus('error');
+          throw new Error('AudioContext could not resume (autoplay blocked?)');
+        }
+        await audioEl.play();
+        // Fallback clock must NOT run when audioEl drives currentTime.
+        stopFallbackClock();
+        setStatus('playing');
+      } else {
+        // ── Case (b): no sync-soundtrack — AudioContext-based fallback clock ─
+        // ensureContext() creates the AudioContext (SUSPENDED state per spec).
+        // We must explicitly resume() it so its clock starts advancing.
+        // Without resume(), audioContext.currentTime stays at 0 indefinitely
+        // and every tick would compute elapsed = 0, so no advance. (B2)
+        const ctx = ensureContext();
+        audioContext = ctx;
+        await ctx.resume();
+        if (ctx.state !== 'running') {
+          setStatus('error');
+          throw new Error('AudioContext could not resume (autoplay blocked?)');
+        }
+        // Anchor the fallback clock at the current play position.
+        ctxAnchor = ctx.currentTime;
+        baseTime = state.currentTime;
+        startFallbackClock();
+        setStatus('playing');
       }
-      await audioContext.resume();
-      if (audioContext.state !== 'running') {
-        setStatus('error');
-        throw new Error('AudioContext could not resume (autoplay blocked?)');
-      }
-      await audioEl.play();
-      setStatus('playing');
     },
 
     pause(): void {
+      // Stop the fallback clock BEFORE pausing the audio element so we
+      // capture the last ticked currentTime as the hold value.
+      stopFallbackClock();
       audioEl?.pause();
       setStatus('ready');
     },
@@ -205,10 +276,14 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
         audioEl.currentTime = clamped;
         setState({ currentTime: audioEl.currentTime });
       } else {
-        // No audioEl (no sync-soundtrack, or before load() is called):
-        // still update the canonical currentTime so the playhead and any
-        // T2/T3 fallback clock can pick it up.
+        // Case b: no sync-soundtrack — update the canonical currentTime.
+        // If the fallback clock is running, re-anchor it from the new position
+        // so the next tick computes time from here rather than the old anchor.
         setState({ currentTime: clamped });
+        if (fallbackTimerId !== null && audioContext) {
+          ctxAnchor = audioContext.currentTime;
+          baseTime = clamped;
+        }
       }
     },
 
@@ -421,6 +496,9 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     destroy(): void {
       activeDetectionAbort?.abort();
       activeDetectionAbort = null;
+      stopFallbackClock();
+      ctxAnchor = 0;
+      baseTime = 0;
       audioEl?.pause();
       audioEl?.removeAttribute('src');
       sourceNode?.disconnect();
