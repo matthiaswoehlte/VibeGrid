@@ -8,6 +8,7 @@ import { Toolbar } from './Toolbar';
 import { Ruler } from './Ruler';
 import { Tracks } from './Tracks';
 import { Playhead } from './Playhead';
+import { RangeOverlay } from './RangeOverlay';
 import type { AudioEngine } from '@/lib/audio/engine';
 
 const BEAT_PX_BASE = 40;
@@ -82,6 +83,10 @@ export function Timeline({ engine }: { engine: AudioEngine | null }) {
         >
           <Ruler totalBeats={totalBeats} engine={engine} />
           <Tracks totalBeats={totalBeats} />
+          {/* RangeOverlay sits below the Playhead (z-20 < z-40) and above
+              the ruler/track background. pointer-events:none so ctrl-drag
+              on the ruler is not intercepted. */}
+          <RangeOverlay />
           <Playhead engine={engine} totalBeats={totalBeats} />
         </div>
       </div>

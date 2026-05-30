@@ -17,6 +17,10 @@
   --text-dim: #aab0c4;
   --text-muted: #6b7088;
   --text-faint: #474b5d;
+
+  /* Plan 9d — export range overlay (orange; distinct from Plan-9b purple multi-select) */
+  --range-select-fill: rgba(255, 140, 0, 0.18);
+  --range-select-edge: rgba(255, 140, 0, 0.85);
 }
 
 /* Default accent (electric) — overridden by data-accent attribute on <html> */
