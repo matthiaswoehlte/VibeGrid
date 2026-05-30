@@ -9,7 +9,7 @@ import type { AppState } from './types';
  * snapshot shape automatically applies to both call sites.
  */
 export interface PersistedShape {
-  ui: { zoom: number };
+  ui: { zoom: number; metronomeEnabled: boolean };
   timeline: AppState['timeline'];
   audio: AppState['audio'];
   media: { mediaRefs: AppState['media']['mediaRefs'] };
@@ -27,7 +27,7 @@ export const STORE_VERSION = 7 as const;
  */
 export function toPersistedShape(state: AppState): PersistedShape {
   return {
-    ui: { zoom: state.ui.zoom },
+    ui: { zoom: state.ui.zoom, metronomeEnabled: state.ui.metronomeEnabled },
     timeline: {
       ...state.timeline,
       playhead: { ...state.timeline.playhead, playing: false }

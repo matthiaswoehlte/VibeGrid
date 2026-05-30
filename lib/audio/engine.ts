@@ -52,6 +52,13 @@ export interface AudioEngine {
    *  `useAudioEngine` reconciler diffs this against the set of clips
    *  it WANTS loaded to drive `loadClip` / `unloadClip`. */
   getLoadedClipIds(): string[];
+  /**
+   * Plan 9c.2 T5 — expose the underlying AudioContext so the metronome
+   * scheduler can create OscillatorNodes on the same clock as playback.
+   * Returns `null` if the context has not been initialised yet (which
+   * is safe — the hook skips metronome creation when null).
+   */
+  getAudioContext(): AudioContext | null;
 }
 
 interface EngineDeps {
@@ -496,6 +503,10 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
 
     getLoadedClipIds(): string[] {
       return [...clipBuffers.keys()];
+    },
+
+    getAudioContext(): AudioContext | null {
+      return audioContext;
     },
 
     destroy(): void {

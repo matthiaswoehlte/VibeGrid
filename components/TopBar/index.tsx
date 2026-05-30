@@ -5,6 +5,7 @@ import { ExportButton } from './ExportButton';
 import { RecIndicator } from './RecIndicator';
 import { NewProjectButton } from './NewProjectButton';
 import { FlowModeToggle } from './FlowModeToggle';
+import { MetronomeToggle } from './MetronomeToggle';
 import { AdminLink } from './AdminLink';
 import { UserMenu } from './UserMenu';
 import { SaveProjectButton } from './SaveProjectButton';
@@ -66,6 +67,7 @@ export function TopBar({
                 timecode + progress bar may overflow the right cluster — left
                 unchanged because export happens once per session, edge-case. */}
             <RecIndicator onCancel={() => exporter.cancel()} />
+            <MetronomeToggle />
             <FlowModeToggle />
             {/* NewProjectButton + Dev: Clear are dangerous actions. Keep
                 them visible on Mobile too — the native window.confirm()

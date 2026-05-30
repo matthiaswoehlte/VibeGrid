@@ -16,7 +16,8 @@ beforeEach(() => {
       clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false,
-      exportRange: null
+      exportRange: null,
+      metronomeEnabled: false
     },
     timeline: {
       tracks: [],
@@ -35,7 +36,7 @@ describe('applySerializedProject', () => {
     applySerializedProject({
       store_version: 6,
       state: {
-        ui: { zoom: 1.25 },
+        ui: { zoom: 1.25, metronomeEnabled: false },
         timeline: {
           tracks: [],
           clips: [
@@ -66,7 +67,7 @@ describe('applySerializedProject', () => {
     applySerializedProject({
       store_version: 4,
       state: {
-        ui: { zoom: 1 },
+        ui: { zoom: 1, metronomeEnabled: false },
         timeline: {
           tracks: [
             { id: 't1', kind: 'contour' as never, name: 'C', muted: false }
@@ -89,7 +90,7 @@ describe('applySerializedProject', () => {
     applySerializedProject({
       store_version: 6,
       state: {
-        ui: { zoom: 2 },
+        ui: { zoom: 2, metronomeEnabled: false },
         timeline: {
           tracks: [],
           clips: [],

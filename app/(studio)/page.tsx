@@ -9,6 +9,7 @@ import {
   useSensors
 } from '@dnd-kit/core';
 import { useAudioEngine } from '@/lib/hooks/useAudioEngine';
+import { useMetronome } from '@/lib/hooks/useMetronome';
 import { useVideoEngine } from '@/lib/hooks/useVideoEngine';
 import { useVideoDecoderPool } from '@/lib/hooks/useVideoDecoderPool';
 import { useAppStore } from '@/lib/store';
@@ -22,6 +23,10 @@ import { InspectorSheet } from '@/components/Mobile/InspectorSheet';
 
 export default function StudioPage() {
   const { engine } = useAudioEngine();
+  // Plan 9c.2 T5 — wire the metronome scheduler. Mounted here (same
+  // component as useAudioEngine) so both hooks share the same engine
+  // instance and therefore the same AudioContext clock.
+  useMetronome(engine);
   // Plan 5.9b — VideoEngine lifecycle owns its element pool. The hook
   // lazy-loads referenced videos, syncs play/pause/seek with the
   // playhead, destroys on unmount. We thread the `getElement`

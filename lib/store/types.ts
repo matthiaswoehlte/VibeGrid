@@ -79,6 +79,12 @@ export interface UIState {
    * never included in undo snapshots.
    */
   exportRange: ExportRange | null;
+  /**
+   * Plan 9c.2 T5 — metronome on/off toggle. Persisted (survives reload).
+   * Lives in `ui` (not `audio`) so undo/redo does not reset it — the
+   * `audio` slice IS snapshotted per HistoryEntry, `ui` is NOT.
+   */
+  metronomeEnabled: boolean;
 }
 
 export interface TimelineActions {
@@ -233,6 +239,11 @@ export interface AppState {
   setClipSnap(snap: AutomationSnap): void;
   setExportState(patch: Partial<ExportState>): void;
   setFlowMode(value: boolean): void;
+  /**
+   * Plan 9c.2 T5 — flip `ui.metronomeEnabled`. Uses skip:true — UI
+   * preference, no undo entry.
+   */
+  toggleMetronome(): void;
   /**
    * Plan 9d — set the export range. Normalises the input: swaps if
    * start > end, collapses to null if start === end after clamping,

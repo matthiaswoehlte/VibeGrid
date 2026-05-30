@@ -12,7 +12,8 @@ function makeState(partial: Partial<AppState> = {}): AppState {
       automationEditorClipId: null,
       automationSnap: 'off',
       exportState: {} as never,
-      flowMode: false
+      flowMode: false,
+      metronomeEnabled: false
     },
     timeline: {
       tracks: [],
@@ -43,7 +44,7 @@ describe('toPersistedShape', () => {
     expect(out.timeline.playhead.beats).toBe(12);
   });
 
-  it('drops transient ui fields (only zoom kept)', () => {
+  it('drops transient ui fields (only zoom + metronomeEnabled kept)', () => {
     const state = makeState({
       ui: {
         zoom: 1.5,
@@ -54,10 +55,11 @@ describe('toPersistedShape', () => {
         clipSnap: '1/4',
         exportState: {} as never,
         flowMode: true,
-        exportRange: null
+        exportRange: null,
+        metronomeEnabled: true
       }
     });
-    expect(toPersistedShape(state).ui).toEqual({ zoom: 1.5 });
+    expect(toPersistedShape(state).ui).toEqual({ zoom: 1.5, metronomeEnabled: true });
   });
 
   it('drops media.videoLoadProgress (transient)', () => {

@@ -19,7 +19,8 @@ beforeEach(() => {
       clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false,
-      exportRange: null
+      exportRange: null,
+      metronomeEnabled: false
     },
     timeline: {
       tracks: [

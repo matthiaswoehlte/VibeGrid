@@ -40,7 +40,8 @@ function seedStore(clipSnap: string = '1') {
       clipSnap: clipSnap as never,
       exportState: EXPORT_INITIAL_STATE,
       flowMode: false,
-      exportRange: null
+      exportRange: null,
+      metronomeEnabled: false
     },
     audio: {
       grid: { bpm: 120, offsetMs: 0, source: 'manual', beatsPerBar: 4 }

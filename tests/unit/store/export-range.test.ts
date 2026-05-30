@@ -269,8 +269,8 @@ describe('Plan 9d — exportRange: excluded from persisted shape', () => {
     // Construct the persisted shape using the real function.
     const persisted = toPersistedShape(state as never);
     expect(Object.keys(persisted.ui)).not.toContain('exportRange');
-    // Only zoom should be present.
-    expect(Object.keys(persisted.ui)).toEqual(['zoom']);
+    // Only zoom + metronomeEnabled should be present (Plan 9c.2 T5 added metronomeEnabled).
+    expect(Object.keys(persisted.ui)).toEqual(['zoom', 'metronomeEnabled']);
   });
 
   it('undo snapshot does not contain exportRange (ui is excluded from snapshots)', () => {

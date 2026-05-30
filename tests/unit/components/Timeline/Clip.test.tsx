@@ -17,7 +17,8 @@ describe('Clip', () => {
       clipSnap: '1',
         exportState: EXPORT_INITIAL_STATE,
         flowMode: false,
-        exportRange: null
+        exportRange: null,
+        metronomeEnabled: false
       },
       timeline: {
         tracks: [{ id: 't1', kind: 'fx', name: 'P', muted: false, order: 0 }],

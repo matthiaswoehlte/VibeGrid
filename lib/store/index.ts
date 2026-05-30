@@ -118,7 +118,9 @@ export const useAppStore = create<AppState>()(
           clipSnap: '1',
           exportState: EXPORT_INITIAL_STATE,
           flowMode: false,
-          exportRange: null
+          exportRange: null,
+          // Plan 9c.2 T5 — metronome persisted toggle, default off.
+          metronomeEnabled: false
         },
         setZoom: (zoom) =>
           // Undo: transient — skip (UI-preference)
@@ -190,6 +192,11 @@ export const useAppStore = create<AppState>()(
         setFlowMode: (value) =>
           // Undo: transient — skip (UI-toggle)
           recordingSet('FlowMode', (s) => { s.ui.flowMode = value; }, { skip: true }),
+        toggleMetronome: () =>
+          // Undo: skip — UI preference, persisted but not part of audio snapshot.
+          // Lives in ui (not audio) so undo/redo never resets it (HistoryEntry
+          // snapshots audio, not ui — see history-types.ts).
+          recordingSet('ToggleMetronome', (s) => { s.ui.metronomeEnabled = !s.ui.metronomeEnabled; }, { skip: true }),
         setExportRange: (start, end) =>
           // Undo: transient — skip (ephemeral UI state, Plan 9d)
           recordingSet('SetExportRange', (s) => {
