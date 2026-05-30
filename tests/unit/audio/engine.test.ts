@@ -192,11 +192,13 @@ describe('AudioEngine lifecycle', () => {
 
     try {
       engine.seek(15);
-      // The engine's canonical state must be updated.
-      expect(engine.getState().currentTime).toBeGreaterThanOrEqual(0);
-      // The audio element's setter must have been called with ≥0.
-      expect(audioElCurrentTimeSetter).toBeDefined();
-      expect(audioElCurrentTimeSetter).toBeGreaterThanOrEqual(0);
+      // The real regression guard: case-a still drives the audio element's
+      // currentTime setter with the clamped value. (jsdom's currentTime
+      // getter reads back 0, so we assert the SETTER arg, not the read-back —
+      // a `>= 0` state assertion would pass even if case-a were fully broken.)
+      expect(audioElCurrentTimeSetter).toBe(15);
+      // And canonical state is set (to the jsdom read-back, which is fine).
+      expect(typeof engine.getState().currentTime).toBe('number');
     } finally {
       // Always restore the property descriptor.
       if (origDescriptor) {
