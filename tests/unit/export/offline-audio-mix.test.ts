@@ -473,6 +473,67 @@ describe('mixAudioOffline — export range (W1)', () => {
     expect(ctx.createdSources).toHaveLength(0);
   });
 
+  // Test 24 — automation-overhang: gain.setValueAtTime at windowTimeSec=0 reflects
+  // the curve value at the window-entry moment (absoluteTime == rangeStart).
+  // A clip that starts before rangeStart overhangs into the window. The
+  // automation raster emits events at each 0.1-beat step; those that land before
+  // rangeStart are clamped to windowTimeSec=0 via Math.max(0, abs - rangeStart).
+  // The LAST such clamped event should carry the gain value for the beat that
+  // corresponds to absoluteTime == rangeStart (the window-entry moment).
+  // No event should be scheduled at a negative windowTimeSec.
+  it('24: automation-overhang — last setValueAtTime at t=0 carries curve value at window entry; no negative time', async () => {
+    // 120 BPM → 2 beats/sec.
+    // Clip: startBeat=16 → startSec=8s; lengthBeats=8 → endSec=16s.
+    // Range: start=10s → rangeStart beat-equivalent = 10s → 20 beats at 120 BPM.
+    // Clip overhangs window start by 2 s (2 beats). Window-entry moment is at
+    // beat 4 (clip-relative) = absoluteTime 10s.
+    // Linear volume automation 0→1 over 8 beats:
+    //   at beat 4 (clip-relative) value = 0.5 (halfway through the 0→1 fade).
+    const clip = makeAudioClip({
+      startBeat: 16,       // startSec = 8s
+      lengthBeats: 8,      // endSec   = 16s  — overlaps [10,20]
+      params: {
+        volume: {
+          mode: 'automation' as const,
+          interpolation: 'linear' as const,
+          points: [
+            { beat: 0, value: 0 },
+            { beat: 8, value: 1 }
+          ]
+        }
+      }
+    });
+    const { ctx } = await runWithRange(
+      [clip],
+      [makeRef()],
+      120,
+      20,
+      { start: 10, end: 20 }
+    );
+    const gain = ctx.createdGains[0];
+    expect(gain).toBeDefined();
+    const calls = gain!.gain.setValueAtTime.mock.calls as [number, number][];
+
+    // 1. No event should be scheduled at a negative windowTimeSec.
+    for (const [, t] of calls) {
+      expect(t).toBeGreaterThanOrEqual(0);
+    }
+
+    // 2. All events that fall before the window (absoluteTime < rangeStart) must be
+    //    clamped to windowTimeSec = 0.
+    //    The last such clamped event is the one whose absoluteTime is closest to
+    //    rangeStart from below — it carries the curve value closest to the entry moment.
+    const atZero = calls.filter(([, t]) => t === 0);
+    expect(atZero.length).toBeGreaterThan(0);
+
+    // 3. The LAST setValueAtTime at windowTimeSec=0 should carry the curve value
+    //    at the window-entry moment (absoluteTime == rangeStart = 10s).
+    //    rangeStart=10s; clip.startBeat=16 (startSec=8s); entry beat (clip-rel) = 4.
+    //    Linear 0→1 over 8 beats: value at beat 4 = 0.5.
+    const lastAtZero = atZero[atZero.length - 1];
+    expect(lastAtZero[0]).toBeCloseTo(0.5, 5);
+  });
+
   // Regression guard — no-range path: source.start(startSec, 0) unchanged
   it('regression: no-range path schedules source.start(startSec, 0) as before', async () => {
     // 120 BPM, startBeat=8 → startSec = 4s

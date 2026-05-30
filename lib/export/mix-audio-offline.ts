@@ -23,6 +23,18 @@ import type { StaticOrAuto } from '@/lib/automation/types';
  * unchanged).
  */
 
+/**
+ * W1 split — Web Audio source.start(when, offset):
+ *   rel >= 0: clip starts inside the window → schedule at rel, play from buffer 0.
+ *   rel <  0: clip overhangs window start → schedule at 0, seek into buffer by -rel.
+ *
+ * Web Audio rejects a negative `when`; this helper avoids that on both paths.
+ */
+function startWindowed(source: AudioBufferSourceNode, rel: number): void {
+  if (rel >= 0) source.start(rel, 0);
+  else source.start(0, -rel);
+}
+
 /** Sample rate for the offline mix. 48 kHz is the WAV/MP4 standard
  *  and matches what the WebCodecs AudioEncoder expects downstream.
  *  Some older Android browsers only support 44.1 kHz in
@@ -64,10 +76,9 @@ export async function mixAudioOffline(
   // Plan 9d Task 4 — audio windowing (W1).
   // When an export range is active, the OfflineAudioContext covers only the
   // window [rangeStart, rangeEnd]. Clips scheduled relative to this window
-  // use the W1 split to avoid negative `when` in source.start().
-  const rangeActive = exportRange != null;
-  const rangeStartSec = rangeActive ? exportRange!.start : 0;
-  const rangeEndSec = rangeActive ? exportRange!.end : totalDurationSec;
+  // use startWindowed() to avoid negative `when` in source.start().
+  const rangeStartSec = exportRange != null ? exportRange.start : 0;
+  const rangeEndSec = exportRange != null ? exportRange.end : totalDurationSec;
   const windowDurationSec = rangeEndSec - rangeStartSec;
 
   const totalSamples = Math.max(1, Math.ceil(windowDurationSec * EXPORT_SAMPLE_RATE));
@@ -77,6 +88,15 @@ export async function mixAudioOffline(
   for (const clip of audioClips) {
     const ref = mediaRefs.find((m) => m.id === clip.mediaId);
     if (!ref) continue;
+
+    // Skip clips that do not overlap the export window — computed from beat
+    // positions only, before any I/O. No-range: equivalent to window
+    // [0, totalDurationSec] — same as before.
+    const startSec = (clip.startBeat * 60) / bpm;
+    const clipEndSec = startSec + (clip.lengthBeats * 60) / bpm;
+    if (startSec >= rangeEndSec) continue;    // starts after window
+    if (clipEndSec <= rangeStartSec) continue; // ends before window
+
     const arrayBuffer = await fetch(ref.url).then((r) => r.arrayBuffer());
     let buffer: AudioBuffer;
     try {
@@ -85,14 +105,6 @@ export async function mixAudioOffline(
       // Codec the browser refuses — skip silently.
       continue;
     }
-    const startSec = (clip.startBeat * 60) / bpm;
-    const clipDurationSec = (clip.lengthBeats * 60) / bpm;
-    const clipEndSec = startSec + clipDurationSec;
-
-    // Skip clips that do not overlap the export window.
-    // No-range: equivalent to window [0, totalDurationSec] — same as before.
-    if (startSec >= rangeEndSec) continue;    // starts after window
-    if (clipEndSec <= rangeStartSec) continue; // ends before window
 
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;
@@ -101,21 +113,23 @@ export async function mixAudioOffline(
     source.connect(gain);
     gain.connect(offlineCtx.destination);
 
-    // W1 split — Web Audio source.start(when, offset):
-    //   rel >= 0: clip starts inside the window → schedule at rel, play from buffer 0
-    //   rel <  0: clip overhangs window start → schedule at 0, seek into buffer by -rel
-    const rel = startSec - rangeStartSec;
-    if (rel >= 0) {
-      source.start(rel, 0);
-    } else {
-      source.start(0, -rel);
-    }
+    startWindowed(source, startSec - rangeStartSec);
   }
 
   // Video-audio clips — `audioEnabled` opt-in. No GainNode (v0.1
   // doesn't support volume on video audio).
   for (const vc of videoAudioClips) {
+    // audioEnabled check is pure — evaluate before any I/O.
     if (!vc.audioEnabled) continue;
+
+    // Skip clips that do not overlap the export window — mirrors the
+    // symmetric guard on the audio-clip path above. Computed from beat
+    // positions only, before fetch/decode.
+    const startSec = (vc.startBeat * 60) / bpm;
+    const clipEndSec = startSec + (vc.lengthBeats * 60) / bpm;
+    if (startSec >= rangeEndSec) continue;    // starts after window
+    if (clipEndSec <= rangeStartSec) continue; // ends before window
+
     const arrayBuffer = await fetch(vc.url).then((r) => r.arrayBuffer());
     let buffer: AudioBuffer;
     try {
@@ -125,25 +139,12 @@ export async function mixAudioOffline(
       // skip silently (matches the silent-live-preview state).
       continue;
     }
-    const startSec = (vc.startBeat * 60) / bpm;
-    const clipEndSec = startSec + (vc.lengthBeats * 60) / bpm;
-
-    // Skip clips that do not overlap the export window — mirrors the
-    // symmetric guard on the audio-clip path above.
-    if (startSec >= rangeEndSec) continue;    // starts after window
-    if (clipEndSec <= rangeStartSec) continue; // ends before window
 
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;
     source.connect(offlineCtx.destination);
 
-    // W1 split — same logic as audio-clip path above.
-    const rel = startSec - rangeStartSec;
-    if (rel >= 0) {
-      source.start(rel, 0);
-    } else {
-      source.start(0, -rel);
-    }
+    startWindowed(source, startSec - rangeStartSec);
   }
 
   const mixed = await offlineCtx.startRendering();
