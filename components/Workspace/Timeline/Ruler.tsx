@@ -3,6 +3,8 @@ import { useAppStore } from '@/lib/store';
 import type { AudioEngine } from '@/lib/audio/engine';
 import { TRACK_LABEL_WIDTH } from './Tracks';
 import { GridBackground } from './GridBackground';
+import { snapBeat } from '@/lib/automation/snap';
+import { readClipSnap } from '@/components/Workspace/ClipSnapPicker';
 
 const BEAT_PX_BASE = 40;
 
@@ -31,32 +33,94 @@ export function Ruler({
     }
   };
 
+  /** Convert a pixel clientX to a snapped beat, clamped to [0, totalBeats]. */
+  const clientXToSnappedBeat = (clientX: number, target: HTMLElement): number => {
+    const rect = target.getBoundingClientRect();
+    const localX = Math.max(0, clientX - rect.left);
+    const rawBeat = Math.max(0, Math.min(totalBeats, localX / px));
+    const snap = readClipSnap();
+    return snapBeat(rawBeat, snap);
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const target = e.currentTarget;
-    seekFromClient(e.clientX, target);
-    // Drag-scrub: subsequent pointermoves keep updating the playhead until
-    // the user releases. Uses setPointerCapture so the scrub follows the
-    // cursor even if it leaves the ruler.
-    try {
-      target.setPointerCapture(e.pointerId);
-    } catch {
-      /* jsdom */
-    }
-    const move = (ev: PointerEvent) => seekFromClient(ev.clientX, target);
-    const up = (ev: PointerEvent) => {
+    const isRangeDrag = e.ctrlKey || e.metaKey;
+
+    if (isRangeDrag) {
+      // -----------------------------------------------------------------------
+      // Ctrl/Cmd+Drag — range selection mode.
+      // Suppress playhead seek. Record start beat. Live-update the store on
+      // each move (setExportRange is skip:true so it doesn't pollute undo).
+      // On pointerup, commit the final range to the store.
+      // -----------------------------------------------------------------------
+      const startBeat = clientXToSnappedBeat(e.clientX, target);
+
       try {
-        target.releasePointerCapture(ev.pointerId);
+        target.setPointerCapture(e.pointerId);
       } catch {
-        /* */
+        /* jsdom */
       }
-      target.removeEventListener('pointermove', move);
-      target.removeEventListener('pointerup', up);
-      target.removeEventListener('pointercancel', up);
-    };
-    target.addEventListener('pointermove', move);
-    target.addEventListener('pointerup', up);
-    target.addEventListener('pointercancel', up);
+
+      const move = (ev: PointerEvent) => {
+        const endBeat = clientXToSnappedBeat(ev.clientX, target);
+        const grid = useAppStore.getState().audio.grid;
+        const startSec = (startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
+        const endSec = (endBeat * 60) / grid.bpm + grid.offsetMs / 1000;
+        // Live-update store during drag (skip:true mutator, no undo spam).
+        useAppStore.getState().setExportRange(startSec, endSec);
+      };
+
+      const up = (ev: PointerEvent) => {
+        try {
+          target.releasePointerCapture(ev.pointerId);
+        } catch {
+          /* */
+        }
+        // Commit final position on release.
+        const endBeat = clientXToSnappedBeat(ev.clientX, target);
+        const grid = useAppStore.getState().audio.grid;
+        const startSec = (startBeat * 60) / grid.bpm + grid.offsetMs / 1000;
+        const endSec = (endBeat * 60) / grid.bpm + grid.offsetMs / 1000;
+        useAppStore.getState().setExportRange(startSec, endSec);
+
+        target.removeEventListener('pointermove', move);
+        target.removeEventListener('pointerup', up);
+        target.removeEventListener('pointercancel', up);
+      };
+
+      target.addEventListener('pointermove', move);
+      target.addEventListener('pointerup', up);
+      target.addEventListener('pointercancel', up);
+    } else {
+      // -----------------------------------------------------------------------
+      // Plain drag/click — existing seek behavior + clear export range.
+      // -----------------------------------------------------------------------
+      useAppStore.getState().clearExportRange();
+      seekFromClient(e.clientX, target);
+      // Drag-scrub: subsequent pointermoves keep updating the playhead until
+      // the user releases. Uses setPointerCapture so the scrub follows the
+      // cursor even if it leaves the ruler.
+      try {
+        target.setPointerCapture(e.pointerId);
+      } catch {
+        /* jsdom */
+      }
+      const move = (ev: PointerEvent) => seekFromClient(ev.clientX, target);
+      const up = (ev: PointerEvent) => {
+        try {
+          target.releasePointerCapture(ev.pointerId);
+        } catch {
+          /* */
+        }
+        target.removeEventListener('pointermove', move);
+        target.removeEventListener('pointerup', up);
+        target.removeEventListener('pointercancel', up);
+      };
+      target.addEventListener('pointermove', move);
+      target.addEventListener('pointerup', up);
+      target.addEventListener('pointercancel', up);
+    }
   };
 
   return (
