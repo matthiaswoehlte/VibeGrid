@@ -210,6 +210,7 @@ describe('mixAudioOffline (Plan 5.9d)', () => {
     const vc: VideoAudioClip = {
       url: 'https://example.com/v.mp4',
       startBeat: 0,
+      lengthBeats: 16,
       audioEnabled: true
     };
     let createdCtx: MockOfflineAudioContext | null = null;
@@ -227,6 +228,7 @@ describe('mixAudioOffline (Plan 5.9d)', () => {
     const vc: VideoAudioClip = {
       url: 'https://example.com/v.mp4',
       startBeat: 0,
+      lengthBeats: 16,
       audioEnabled: true
     };
     MockOfflineAudioContext.decodeImpl = async () => {
@@ -407,6 +409,7 @@ describe('mixAudioOffline — export range (W1)', () => {
     const vc: VideoAudioClip = {
       url: 'https://example.com/v.mp4',
       startBeat: 24, // 12s at 120 BPM
+      lengthBeats: 8, // ends at 16s — inside [10,20]
       audioEnabled: true
     };
     const { ctx } = await runWithRange(
@@ -429,6 +432,7 @@ describe('mixAudioOffline — export range (W1)', () => {
     const vc: VideoAudioClip = {
       url: 'https://example.com/v.mp4',
       startBeat: 16, // 8s at 120 BPM, overlaps [10,20]
+      lengthBeats: 8, // ends at 12s — overlaps [10,20]
       audioEnabled: true
     };
     const { ctx } = await runWithRange(
@@ -445,6 +449,28 @@ describe('mixAudioOffline — export range (W1)', () => {
     const [when, offset] = source.start.mock.calls[0] as [number, number];
     expect(when).toBeCloseTo(0, 5);
     expect(offset).toBeCloseTo(2, 5);
+  });
+
+  // Test 23b-v — symmetric video-audio guard: skip clip entirely before window
+  it('23b-v: video-audio clip ending before rangeStart is skipped (no source created)', async () => {
+    // 120 BPM → startBeat=4 → startSec=2s; lengthBeats=10 → endSec=7s; range=[10,20]
+    // Clip fully precedes window → must be skipped without fetching/decoding.
+    const vc: VideoAudioClip = {
+      url: 'https://example.com/v-before.mp4',
+      startBeat: 4,      // startSec = 2s
+      lengthBeats: 10,   // endSec   = 7s  (entirely before rangeStart=10s)
+      audioEnabled: true
+    };
+    const { ctx } = await runWithRange(
+      [],
+      [],
+      120,
+      30,
+      { start: 10, end: 20 },
+      [vc]
+    );
+    // Clip ends at 7s which is ≤ rangeStart=10s → must be skipped entirely
+    expect(ctx.createdSources).toHaveLength(0);
   });
 
   // Regression guard — no-range path: source.start(startSec, 0) unchanged

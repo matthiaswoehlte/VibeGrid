@@ -46,6 +46,10 @@ const PEAK_NORMALIZE_TARGET = 0.95;
 export interface VideoAudioClip {
   url: string;
   startBeat: number;
+  /** Timeline length of the video clip in beats. Required so the video-audio
+   *  path can apply the same symmetric window guard as the audio-clip path:
+   *  clips whose end falls before rangeStart are skipped without fetching. */
+  lengthBeats: number;
   audioEnabled: boolean;
 }
 
@@ -122,11 +126,12 @@ export async function mixAudioOffline(
       continue;
     }
     const startSec = (vc.startBeat * 60) / bpm;
-    // Video clips: duration unknown without decoding. For the skip guard,
-    // treat a video clip that starts after rangeEnd as skippable. A clip
-    // starting before rangeStart but potentially overlapping is still
-    // scheduled — the W1 split handles the seek-in correctly.
-    if (startSec >= rangeEndSec) continue;
+    const clipEndSec = startSec + (vc.lengthBeats * 60) / bpm;
+
+    // Skip clips that do not overlap the export window — mirrors the
+    // symmetric guard on the audio-clip path above.
+    if (startSec >= rangeEndSec) continue;    // starts after window
+    if (clipEndSec <= rangeStartSec) continue; // ends before window
 
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;

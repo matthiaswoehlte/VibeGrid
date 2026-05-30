@@ -253,6 +253,7 @@ export function useVideoExporter({
               return {
                 url: ref?.url ?? '',
                 startBeat: c.startBeat,
+                lengthBeats: c.lengthBeats,
                 audioEnabled
               };
             })
