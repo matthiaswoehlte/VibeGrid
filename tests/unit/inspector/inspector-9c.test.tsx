@@ -16,7 +16,8 @@ function bootStore(clip: Clip) {
       automationSnap: 'off',
       clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
-      flowMode: false
+      flowMode: false,
+      exportRange: null
     },
     timeline: {
       tracks: [{ id: clip.trackId, kind: 'fx', name: 'FX', muted: false, order: 0 }],

@@ -23,6 +23,7 @@ import { TRACK_FX_KINDS } from '@/lib/timeline/plugin-mapping';
 import { EXPORT_INITIAL_STATE, reduceExportState } from '@/lib/export/state-machine';
 import { makeRecordingSet } from './recording-set';
 import { makeHistoryActions } from './history-actions';
+import { computeTotalBeats } from '@/lib/timeline/total-beats';
 
 /** Plan 5.9c — exported so tests can exercise it without standing up
  *  the full persisted store. */
@@ -116,7 +117,8 @@ export const useAppStore = create<AppState>()(
           automationSnap: 'off',
           clipSnap: '1',
           exportState: EXPORT_INITIAL_STATE,
-          flowMode: false
+          flowMode: false,
+          exportRange: null
         },
         setZoom: (zoom) =>
           // Undo: transient — skip (UI-preference)
@@ -188,6 +190,25 @@ export const useAppStore = create<AppState>()(
         setFlowMode: (value) =>
           // Undo: transient — skip (UI-toggle)
           recordingSet('FlowMode', (s) => { s.ui.flowMode = value; }, { skip: true }),
+        setExportRange: (start, end) =>
+          // Undo: transient — skip (ephemeral UI state, Plan 9d)
+          recordingSet('SetExportRange', (s) => {
+            // Step 1: swap if backwards.
+            let lo = Math.min(start, end);
+            let hi = Math.max(start, end);
+
+            // Step 2: clamp to [0, projectDuration].
+            const bpm = s.audio.grid.bpm;
+            const projectDuration = (computeTotalBeats(s.timeline.clips) * 60) / bpm;
+            lo = Math.max(0, Math.min(lo, projectDuration));
+            hi = Math.max(0, Math.min(hi, projectDuration));
+
+            // Step 3: zero-length after clamping → null.
+            s.ui.exportRange = lo === hi ? null : { start: lo, end: hi };
+          }, { skip: true }),
+        clearExportRange: () =>
+          // Undo: transient — skip (ephemeral UI state, Plan 9d)
+          recordingSet('ClearExportRange', (s) => { s.ui.exportRange = null; }, { skip: true }),
 
         // Plan 9b — group operations. Plan 10: routed through
         // recordingSet so each one is exactly one undo step.

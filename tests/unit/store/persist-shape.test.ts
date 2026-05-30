@@ -53,7 +53,8 @@ describe('toPersistedShape', () => {
         automationSnap: '1/4',
         clipSnap: '1/4',
         exportState: {} as never,
-        flowMode: true
+        flowMode: true,
+        exportRange: null
       }
     });
     expect(toPersistedShape(state).ui).toEqual({ zoom: 1.5 });

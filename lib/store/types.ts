@@ -20,6 +20,15 @@ import type { SoundsState, SoundsActions } from './sounds-slice';
 // recording-set module path.
 export type { RecordingSet };
 
+/**
+ * Plan 9d — absolute timeline time range (seconds) selected for export.
+ * `null` means no range override (full timeline exports).
+ */
+export interface ExportRange {
+  start: number;
+  end: number;
+}
+
 export interface UIState {
   zoom: number;
   /**
@@ -63,6 +72,13 @@ export interface UIState {
    *  automation curves stretch over each clip's full length instead of
    *  being read in absolute beat coords. Transient — never persisted. */
   flowMode: boolean;
+  /**
+   * Plan 9d — export range override. When set, only the time window
+   * [start, end] (seconds, absolute) is rendered and muxed during export.
+   * `null` = full timeline (default behaviour). Ephemeral: never persisted,
+   * never included in undo snapshots.
+   */
+  exportRange: ExportRange | null;
 }
 
 export interface TimelineActions {
@@ -217,6 +233,16 @@ export interface AppState {
   setClipSnap(snap: AutomationSnap): void;
   setExportState(patch: Partial<ExportState>): void;
   setFlowMode(value: boolean): void;
+  /**
+   * Plan 9d — set the export range. Normalises the input: swaps if
+   * start > end, collapses to null if start === end after clamping,
+   * clamps both bounds to [0, projectDuration].
+   * Uses skip:true — ephemeral, creates no undo entry.
+   */
+  setExportRange(start: number, end: number): void;
+  /** Plan 9d — clear the export range (back to full-timeline export).
+   *  Uses skip:true — ephemeral, creates no undo entry. */
+  clearExportRange(): void;
   timeline: TimelineState;
   timelineActions: TimelineActions;
   audio: AudioState;

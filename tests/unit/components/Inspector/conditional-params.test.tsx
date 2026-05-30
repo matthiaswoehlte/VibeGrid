@@ -42,7 +42,8 @@ function setupStore(params: Record<string, unknown>): void {
       automationSnap: 'off',
       clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
-      flowMode: false
+      flowMode: false,
+      exportRange: null
     },
     timeline: {
       tracks: [makeFxTrack()],

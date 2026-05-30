@@ -20,7 +20,8 @@ beforeEach(() => {
       automationSnap: 'off',
       clipSnap: '1',
       exportState: EXPORT_INITIAL_STATE,
-      flowMode: false
+      flowMode: false,
+      exportRange: null
     }
   });
 });
