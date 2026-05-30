@@ -54,9 +54,19 @@ export async function mixAudioOffline(
   mediaRefs: MediaRef[],
   bpm: number,
   totalDurationSec: number,
-  videoAudioClips: VideoAudioClip[] = []
+  videoAudioClips: VideoAudioClip[] = [],
+  exportRange?: { start: number; end: number } | null
 ): Promise<AudioBuffer> {
-  const totalSamples = Math.max(1, Math.ceil(totalDurationSec * EXPORT_SAMPLE_RATE));
+  // Plan 9d Task 4 — audio windowing (W1).
+  // When an export range is active, the OfflineAudioContext covers only the
+  // window [rangeStart, rangeEnd]. Clips scheduled relative to this window
+  // use the W1 split to avoid negative `when` in source.start().
+  const rangeActive = exportRange != null;
+  const rangeStartSec = rangeActive ? exportRange!.start : 0;
+  const rangeEndSec = rangeActive ? exportRange!.end : totalDurationSec;
+  const windowDurationSec = rangeEndSec - rangeStartSec;
+
+  const totalSamples = Math.max(1, Math.ceil(windowDurationSec * EXPORT_SAMPLE_RATE));
   const offlineCtx = new OfflineAudioContext(2, totalSamples, EXPORT_SAMPLE_RATE);
 
   // Audio clips — each gets its own GainNode for volume automation.
@@ -72,17 +82,30 @@ export async function mixAudioOffline(
       continue;
     }
     const startSec = (clip.startBeat * 60) / bpm;
-    // Clip starts after the export window ends — OfflineAudioContext
-    // would ignore it silently anyway, but skip explicitly to avoid
-    // creating dead nodes.
-    if (startSec >= totalDurationSec) continue;
+    const clipDurationSec = (clip.lengthBeats * 60) / bpm;
+    const clipEndSec = startSec + clipDurationSec;
+
+    // Skip clips that do not overlap the export window.
+    // No-range: equivalent to window [0, totalDurationSec] — same as before.
+    if (startSec >= rangeEndSec) continue;    // starts after window
+    if (clipEndSec <= rangeStartSec) continue; // ends before window
+
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;
     const gain = offlineCtx.createGain();
-    applyVolumeAutomation(gain, clip, bpm);
+    applyVolumeAutomation(gain, clip, bpm, rangeStartSec);
     source.connect(gain);
     gain.connect(offlineCtx.destination);
-    source.start(startSec, 0);
+
+    // W1 split — Web Audio source.start(when, offset):
+    //   rel >= 0: clip starts inside the window → schedule at rel, play from buffer 0
+    //   rel <  0: clip overhangs window start → schedule at 0, seek into buffer by -rel
+    const rel = startSec - rangeStartSec;
+    if (rel >= 0) {
+      source.start(rel, 0);
+    } else {
+      source.start(0, -rel);
+    }
   }
 
   // Video-audio clips — `audioEnabled` opt-in. No GainNode (v0.1
@@ -99,11 +122,23 @@ export async function mixAudioOffline(
       continue;
     }
     const startSec = (vc.startBeat * 60) / bpm;
-    if (startSec >= totalDurationSec) continue;
+    // Video clips: duration unknown without decoding. For the skip guard,
+    // treat a video clip that starts after rangeEnd as skippable. A clip
+    // starting before rangeStart but potentially overlapping is still
+    // scheduled — the W1 split handles the seek-in correctly.
+    if (startSec >= rangeEndSec) continue;
+
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;
     source.connect(offlineCtx.destination);
-    source.start(startSec, 0);
+
+    // W1 split — same logic as audio-clip path above.
+    const rel = startSec - rangeStartSec;
+    if (rel >= 0) {
+      source.start(rel, 0);
+    } else {
+      source.start(0, -rel);
+    }
   }
 
   const mixed = await offlineCtx.startRendering();
@@ -116,7 +151,12 @@ export async function mixAudioOffline(
   return mixed;
 }
 
-function applyVolumeAutomation(gain: GainNode, clip: Clip, bpm: number): void {
+function applyVolumeAutomation(
+  gain: GainNode,
+  clip: Clip,
+  bpm: number,
+  rangeStartSec = 0
+): void {
   const vol = (clip.params as { volume?: StaticOrAuto<number> } | undefined)?.volume ?? 1.0;
   // IEEE-754 accumulation: `beat += 0.1` 40× lands at 4.00000…001
   // (skip last point) or 3.99999…9 (overshoot). Iterate by integer
@@ -125,8 +165,15 @@ function applyVolumeAutomation(gain: GainNode, clip: Clip, bpm: number): void {
   for (let i = 0; i <= steps; i++) {
     const beat = Math.min(i * VOLUME_AUTOMATION_STEP_BEATS, clip.lengthBeats);
     const v = resolveParam(vol, beat, clip.lengthBeats);
-    const timeSec = ((clip.startBeat + beat) * 60) / bpm;
-    gain.gain.setValueAtTime(v, timeSec);
+    // Plan 9d Task 4 — rebase the gain-schedule time to the window.
+    // `setValueAtTime` uses the OfflineAudioContext's own time axis
+    // which starts at 0 == rangeStart (absolute). Subtract rangeStartSec
+    // so fade/automation authored in absolute beat time lands at the
+    // correct position in the windowed mix. When rangeStartSec=0 (no
+    // range) the expression reduces to the original formula.
+    const absoluteTimeSec = ((clip.startBeat + beat) * 60) / bpm;
+    const windowTimeSec = Math.max(0, absoluteTimeSec - rangeStartSec);
+    gain.gain.setValueAtTime(v, windowTimeSec);
   }
 }
 

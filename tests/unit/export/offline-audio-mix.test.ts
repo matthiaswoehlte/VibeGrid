@@ -301,3 +301,168 @@ describe('mixAudioOffline (Plan 5.9d)', () => {
     expect((createdCtx as unknown as MockOfflineAudioContext).createdSources).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan 9d Task 4 — Audio windowing (W1) tests
+// ---------------------------------------------------------------------------
+describe('mixAudioOffline — export range (W1)', () => {
+  // Helper: capture the mock context plus run mixAudioOffline with a range.
+  async function runWithRange(
+    clips: Clip[],
+    refs: MediaRef[],
+    bpm: number,
+    totalDurationSec: number,
+    exportRange: { start: number; end: number },
+    videoAudioClips: VideoAudioClip[] = []
+  ): Promise<{ ctx: MockOfflineAudioContext; result: AudioBuffer }> {
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    const result = await mixAudioOffline(
+      clips,
+      refs,
+      bpm,
+      totalDurationSec,
+      videoAudioClips,
+      exportRange
+    );
+    return { ctx: createdCtx as unknown as MockOfflineAudioContext, result };
+  }
+
+  // Test 21 — clip inside window (rel >= 0): source.start(rel, 0)
+  it('21: clip inside window (abs t=12s, rangeStart=10s) → start(when=2, offset=0)', async () => {
+    // 120 BPM → beat 24 = 12s; beat 20 = 10s; range end = beat 40 = 20s
+    const clip = makeAudioClip({ startBeat: 24, lengthBeats: 4 }); // starts at 12s
+    const { ctx } = await runWithRange(
+      [clip],
+      [makeRef()],
+      120,
+      20,
+      { start: 10, end: 20 }
+    );
+    expect(ctx.createdSources).toHaveLength(1);
+    const source = ctx.createdSources[0];
+    expect(source.start).toHaveBeenCalledOnce();
+    const [when, offset] = source.start.mock.calls[0] as [number, number];
+    // rel = 12 - 10 = 2; no negative-when → start(2, 0)
+    expect(when).toBeCloseTo(2, 5);
+    expect(offset).toBeCloseTo(0, 5);
+  });
+
+  // Test 22 — clip overhangs window start (rel < 0): source.start(0, -rel)
+  it('22: clip overhangs window start (abs t=8s, rangeStart=10s) → start(when=0, offset=2)', async () => {
+    // 120 BPM → beat 16 = 8s; range start = beat 20 = 10s; range end = beat 40 = 20s
+    const clip = makeAudioClip({ startBeat: 16, lengthBeats: 8 }); // 8s–12s, overlaps [10,20]
+    const { ctx } = await runWithRange(
+      [clip],
+      [makeRef()],
+      120,
+      20,
+      { start: 10, end: 20 }
+    );
+    expect(ctx.createdSources).toHaveLength(1);
+    const source = ctx.createdSources[0];
+    expect(source.start).toHaveBeenCalledOnce();
+    const [when, offset] = source.start.mock.calls[0] as [number, number];
+    // rel = 8 - 10 = -2; negative-when avoided → start(0, 2)
+    expect(when).toBeCloseTo(0, 5);
+    expect(offset).toBeCloseTo(2, 5);
+  });
+
+  // Test 23 — guard rebased: skip clips outside the window
+  it('23a: clip starting after rangeEnd is skipped (no source created)', async () => {
+    // Clip at beat 50 = 25s; range = [10,20]
+    const clip = makeAudioClip({ startBeat: 50, lengthBeats: 4 }); // starts at 25s
+    const { ctx } = await runWithRange(
+      [clip],
+      [makeRef()],
+      120,
+      30,
+      { start: 10, end: 20 }
+    );
+    // Clip starts after rangeEnd → must be skipped
+    expect(ctx.createdSources).toHaveLength(0);
+  });
+
+  it('23b: clip ending before rangeStart is skipped (no source created)', async () => {
+    // Clip at beat 0 = 0s, lengthBeats=4 → ends at 2s; range = [10,20]
+    const clip = makeAudioClip({ startBeat: 0, lengthBeats: 4 }); // 0s–2s
+    const { ctx } = await runWithRange(
+      [clip],
+      [makeRef()],
+      120,
+      30,
+      { start: 10, end: 20 }
+    );
+    // Clip ends before rangeStart → must be skipped
+    expect(ctx.createdSources).toHaveLength(0);
+  });
+
+  // Test 21-v (video-audio path): same W1 split applies to video-audio clips
+  it('21-v: video-audio clip inside window → start(when=2, offset=0)', async () => {
+    const vc: VideoAudioClip = {
+      url: 'https://example.com/v.mp4',
+      startBeat: 24, // 12s at 120 BPM
+      audioEnabled: true
+    };
+    const { ctx } = await runWithRange(
+      [],
+      [],
+      120,
+      20,
+      { start: 10, end: 20 },
+      [vc]
+    );
+    expect(ctx.createdSources).toHaveLength(1);
+    const source = ctx.createdSources[0];
+    expect(source.start).toHaveBeenCalledOnce();
+    const [when, offset] = source.start.mock.calls[0] as [number, number];
+    expect(when).toBeCloseTo(2, 5);
+    expect(offset).toBeCloseTo(0, 5);
+  });
+
+  it('22-v: video-audio clip overhangs window start → start(when=0, offset=2)', async () => {
+    const vc: VideoAudioClip = {
+      url: 'https://example.com/v.mp4',
+      startBeat: 16, // 8s at 120 BPM, overlaps [10,20]
+      audioEnabled: true
+    };
+    const { ctx } = await runWithRange(
+      [],
+      [],
+      120,
+      20,
+      { start: 10, end: 20 },
+      [vc]
+    );
+    expect(ctx.createdSources).toHaveLength(1);
+    const source = ctx.createdSources[0];
+    expect(source.start).toHaveBeenCalledOnce();
+    const [when, offset] = source.start.mock.calls[0] as [number, number];
+    expect(when).toBeCloseTo(0, 5);
+    expect(offset).toBeCloseTo(2, 5);
+  });
+
+  // Regression guard — no-range path: source.start(startSec, 0) unchanged
+  it('regression: no-range path schedules source.start(startSec, 0) as before', async () => {
+    // 120 BPM, startBeat=8 → startSec = 4s
+    const clip = makeAudioClip({ startBeat: 8, lengthBeats: 4 });
+    let createdCtx: MockOfflineAudioContext | null = null;
+    (globalThis as any).OfflineAudioContext = class extends MockOfflineAudioContext {
+      constructor(c: number, s: number, sr: number) {
+        super(c, s, sr);
+        createdCtx = this;
+      }
+    };
+    await mixAudioOffline([clip], [makeRef()], 120, 10);
+    const ctx = createdCtx as unknown as MockOfflineAudioContext;
+    expect(ctx.createdSources).toHaveLength(1);
+    const [when, offset] = ctx.createdSources[0].start.mock.calls[0] as [number, number];
+    expect(when).toBeCloseTo(4, 5);
+    expect(offset).toBeCloseTo(0, 5);
+  });
+});

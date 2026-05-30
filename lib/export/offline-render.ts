@@ -145,12 +145,15 @@ async function renderOfflineInternal(
   // 0.1-beat raster; peak-normalises to 0.95 if the sum exceeded 1.0.
   // Result feeds the existing `chunkAudioBuffer` → AudioEncoder
   // pipeline unchanged.
+  // Plan 9d Task 4 — pass exportRange so the audio mixer produces only
+  // the windowed [rangeStart, rangeEnd] mix. null/undefined → no-op.
   const mixedBuffer = await mixAudioOffline(
     deps.audioClips,
     deps.mediaRefs,
     deps.bpm,
     durationSec,
-    deps.videoAudioClips
+    deps.videoAudioClips,
+    deps.exportRange
   );
 
   // 1. Pick a codec PAIR (video + audio + container) — never independent.
