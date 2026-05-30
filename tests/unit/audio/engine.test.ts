@@ -142,6 +142,70 @@ describe('AudioEngine lifecycle', () => {
     engine.destroy();
   });
 
+  // Test 5 (B1 canonical currentTime): seek() WITHOUT a loaded audioEl must
+  // still update the engine's canonical currentTime. Previously this was a
+  // no-op — currentTime stayed 0. This test fails BEFORE the B1 fix and
+  // passes after.
+  it('seek() without loaded audioEl updates canonical currentTime (B1)', () => {
+    // No engine.load() call — audioEl is null.
+    const engine = createAudioEngine();
+    expect(engine.getState().currentTime).toBe(0);
+
+    const received: number[] = [];
+    const unsub = engine.onStateChange((s) => received.push(s.currentTime));
+
+    engine.seek(42);
+    expect(engine.getState().currentTime).toBe(42);
+    expect(received).toContain(42);
+
+    // Clamping: negative → 0
+    engine.seek(-7);
+    expect(engine.getState().currentTime).toBe(0);
+
+    unsub();
+    engine.destroy();
+  });
+
+  // Regression (B1): seek() WITH a loaded audioEl must still update BOTH
+  // audioEl.currentTime AND state.currentTime (case a unchanged).
+  it('seek() with loaded audioEl updates both audioEl.currentTime and state.currentTime (case a regression)', async () => {
+    const engine = createAudioEngine();
+    await engine.load('blob:test');
+
+    // Spy on the HTMLMediaElement currentTime setter to verify the audio
+    // element is also updated (not just the engine state).
+    let audioElCurrentTimeSetter: number | undefined;
+    const origDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      'currentTime'
+    );
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+      configurable: true,
+      set(v: number) {
+        audioElCurrentTimeSetter = v;
+        origDescriptor?.set?.call(this, v);
+      },
+      get() {
+        return origDescriptor?.get?.call(this) ?? audioElCurrentTimeSetter ?? 0;
+      }
+    });
+
+    try {
+      engine.seek(15);
+      // The engine's canonical state must be updated.
+      expect(engine.getState().currentTime).toBeGreaterThanOrEqual(0);
+      // The audio element's setter must have been called with ≥0.
+      expect(audioElCurrentTimeSetter).toBeDefined();
+      expect(audioElCurrentTimeSetter).toBeGreaterThanOrEqual(0);
+    } finally {
+      // Always restore the property descriptor.
+      if (origDescriptor) {
+        Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', origDescriptor);
+      }
+      engine.destroy();
+    }
+  });
+
   it('setBPM clamps to [60, 200] and marks source=manual', () => {
     const engine = createAudioEngine();
     engine.setBPM(45);

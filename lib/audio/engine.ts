@@ -88,6 +88,17 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
   let activeDetectionAbort: AbortController | null = null;
 
   const listeners = new Set<(s: AudioEngineState) => void>();
+  /**
+   * `currentTime` is the engine's CANONICAL playback position (seconds).
+   * It is written by:
+   *   (a) the `audioEl` `timeupdate` event (sync-soundtrack path, case a) — unchanged;
+   *   (b) `seek()` in both modes: when `audioEl` exists it also moves the audio
+   *       element, when it does not it still updates the canonical value directly;
+   *   (c) the AudioContext fallback clock (T2/Plan-9c.2) — NOT yet implemented here.
+   *
+   * All consumers (useAudioEngine → playhead.beats) receive updates via
+   * `onStateChange`, which fires after every `setState` call.
+   */
   let state: AudioEngineState = {
     status: 'idle',
     duration: 0,
@@ -185,9 +196,19 @@ export function createAudioEngine(deps: EngineDeps = {}): AudioEngine {
     },
 
     seek(seconds): void {
+      const clamped = Math.max(0, seconds);
       if (audioEl) {
-        audioEl.currentTime = Math.max(0, seconds);
+        // Case a: sync-soundtrack loaded — move the audio element (which also
+        // drives the `timeupdate` → setState loop) AND update state directly
+        // so callers see the new position immediately without waiting for the
+        // next timeupdate event.
+        audioEl.currentTime = clamped;
         setState({ currentTime: audioEl.currentTime });
+      } else {
+        // No audioEl (no sync-soundtrack, or before load() is called):
+        // still update the canonical currentTime so the playhead and any
+        // T2/T3 fallback clock can pick it up.
+        setState({ currentTime: clamped });
       }
     },
 
