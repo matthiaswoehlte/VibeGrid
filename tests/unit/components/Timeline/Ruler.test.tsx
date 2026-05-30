@@ -12,11 +12,11 @@ import { render } from '@testing-library/react';
 import { useAppStore } from '@/lib/store';
 import { Ruler } from '@/components/Workspace/Timeline/Ruler';
 import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
+import { BEAT_PX_BASE } from '@/components/Workspace/Timeline/timeline-layout';
 
 // ---------------------------------------------------------------------------
-// Constants mirroring Ruler.tsx internals
+// Constants from the shared timeline-layout module
 // ---------------------------------------------------------------------------
-const BEAT_PX_BASE = 40; // from Ruler.tsx:7
 const ZOOM = 1;
 const PX_PER_BEAT = BEAT_PX_BASE * ZOOM; // 40 px per beat
 

@@ -38,12 +38,9 @@ import { TrackHeader } from './TrackHeader';
 import { SyncAudioDropZone } from './SyncAudioDropZone';
 import { GridBackground } from './GridBackground';
 import { MobileAutomationButton } from '@/components/Mobile/MobileAutomationButton';
+import { BEAT_PX_BASE, TRACK_LABEL_WIDTH } from './timeline-layout';
 
-const BEAT_PX_BASE = 40;
-// Shared with Ruler.tsx and Playhead.tsx — the sticky left column width
-// reserved for track-name labels. All horizontal positioning of clips/ticks
-// happens to the RIGHT of this column.
-export const TRACK_LABEL_WIDTH = 80;
+export { TRACK_LABEL_WIDTH } from './timeline-layout';
 
 // Plan 5.9c — local PLUGIN_TO_TRACK_KIND map gone; use the SSOT
 // `PLUGIN_KIND_TO_TRACK_KIND` from `@/lib/timeline/plugin-mapping`.

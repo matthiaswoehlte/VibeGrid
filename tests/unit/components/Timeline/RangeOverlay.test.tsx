@@ -13,12 +13,7 @@ import { render } from '@testing-library/react';
 import { useAppStore } from '@/lib/store';
 import { RangeOverlay } from '@/components/Workspace/Timeline/RangeOverlay';
 import { EXPORT_INITIAL_STATE } from '@/lib/export/state-machine';
-
-// ---------------------------------------------------------------------------
-// Constants mirroring Playhead.tsx / Ruler.tsx internals
-// ---------------------------------------------------------------------------
-const BEAT_PX_BASE = 40;
-const TRACK_LABEL_WIDTH = 80;
+import { BEAT_PX_BASE, TRACK_LABEL_WIDTH } from '@/components/Workspace/Timeline/timeline-layout';
 
 // ---------------------------------------------------------------------------
 // Store seed helper

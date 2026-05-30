@@ -1,8 +1,6 @@
 'use client';
 import { useAppStore } from '@/lib/store';
-import { TRACK_LABEL_WIDTH } from './Tracks';
-
-const BEAT_PX_BASE = 40;
+import { BEAT_PX_BASE, TRACK_LABEL_WIDTH } from './timeline-layout';
 
 /**
  * Plan 9d Task 7 — Export range overlay.

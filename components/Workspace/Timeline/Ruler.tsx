@@ -1,12 +1,10 @@
 'use client';
 import { useAppStore } from '@/lib/store';
 import type { AudioEngine } from '@/lib/audio/engine';
-import { TRACK_LABEL_WIDTH } from './Tracks';
+import { BEAT_PX_BASE, TRACK_LABEL_WIDTH } from './timeline-layout';
 import { GridBackground } from './GridBackground';
 import { snapBeat } from '@/lib/automation/snap';
 import { readClipSnap } from '@/components/Workspace/ClipSnapPicker';
-
-const BEAT_PX_BASE = 40;
 
 // ---------------------------------------------------------------------------
 // Shared pointer-drag scaffold

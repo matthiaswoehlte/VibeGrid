@@ -2,9 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
 import type { AudioEngine } from '@/lib/audio/engine';
-import { TRACK_LABEL_WIDTH } from './Tracks';
-
-const BEAT_PX_BASE = 40;
+import { BEAT_PX_BASE, TRACK_LABEL_WIDTH } from './timeline-layout';
 
 /**
  * Smooth 60fps playhead inside the shared horizontal-scroll container.

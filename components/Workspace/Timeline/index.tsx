@@ -11,8 +11,6 @@ import { Playhead } from './Playhead';
 import { RangeOverlay } from './RangeOverlay';
 import type { AudioEngine } from '@/lib/audio/engine';
 
-const BEAT_PX_BASE = 40;
-
 export function Timeline({ engine }: { engine: AudioEngine | null }) {
   const clips = useAppStore((s) => s.timeline.clips);
   // Plan 5.8b — audio clips now contribute their `clip.lengthBeats` like

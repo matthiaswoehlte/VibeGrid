@@ -7,8 +7,7 @@ import {
   type TrackFxKind
 } from '@/lib/timeline/plugin-mapping';
 import { dispatchGroupDragStart } from '@/lib/timeline/group-drag-bus';
-
-const BEAT_PX_BASE = 40;
+import { BEAT_PX_BASE } from './timeline-layout';
 
 // Media-kind colors stay local to the Timeline UI — they're a UI
 // concern, not a renderer/plugin concern. FX clip colors come from
