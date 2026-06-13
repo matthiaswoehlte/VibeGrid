@@ -64,14 +64,20 @@ Thumbs.db
 /TODO.txt
 /Contour*.png
 /a[0-9]*.png
+/b[0-9]*.png
+/c[0-9]*.png
 /POstenaustausch*
 /tts-preview-test.mp3
+
+# Local project backup archive — never commit (exceeds GitHub 100 MB limit)
+/VibeGrid.zip
 
 # Word / Excel / PowerPoint temp lock files (created next to the open file)
 ~$*
 
 # Large local demo recordings — keep on disk for reference, never commit
 docs/Tests/Demoszene/Recording*.mp4
+docs/vibegrid_export_*.mp4
 
 # Local Sound Library MP3 source files (~100 MB) — uploaded to R2 by
 # tools/upload-vibegrid-mp3s.mjs, never committed.
