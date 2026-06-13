@@ -69,8 +69,8 @@ Thumbs.db
 /POstenaustausch*
 /tts-preview-test.mp3
 
-# Local project backup archive — never commit (exceeds GitHub 100 MB limit)
-/VibeGrid.zip
+# Local archive drops — never commit (backups/exports, can exceed GitHub limits)
+*.zip
 
 # Word / Excel / PowerPoint temp lock files (created next to the open file)
 ~$*
