@@ -1,130 +1,81 @@
 # VibeGrid
+## Demo — what it produces
 
-> KI-gestütztes Tool zur Erstellung von Szenen- und Musikvideos — hier als offenes
-> Arbeitsbeispiel veröffentlicht, nicht als Produkt.
+A complete video produced with VibeGrid:
 
-VibeGrid war ein kommerzieller Anlauf, der eingestellt wurde (zu starke, gut
-finanzierte Wettbewerber). Statt den Code in der Schublade verstauben zu lassen,
-liegt er hier offen — als konkretes Beispiel für eine Arbeitsweise, über die ich
-schreibe: **KI-gestützte Entwicklung, bei der die Qualität nicht aus dem Lesen
-jeder Codezeile entsteht, sondern aus Spezifikation, Zerlegung und Verifikation.**
+[![VibeGrid Demo Video](https://img.youtube.com/vi/t6KrayvSNlA/maxresdefault.jpg)](https://www.youtube.com/watch?v=t6KrayvSNlA)
 
-Hintergrund zur Methode:
-[„Warum ich den Code nicht mehr lese, den meine KI schreibt"](https://www.linkedin.com/in/matthias-w%C3%B6hlte-4a7225143/)
+This is the real output of the pipeline. The project itself is shelved —
+this repo is a snapshot, not a running product. What it's actually about is
+the path to that result: the spec-and-review trail under
+[`docs/superpowers/plans`](docs/superpowers/plans).
 
----
 
-## Warum dieses Repo öffentlich ist
+> AI-assisted tool for creating scene and music videos — published here as an
+> open working example, not as a product.
 
-In Diskussionen zu diesem Ansatz kommt regelmäßig dieselbe, berechtigte Frage:
-*„Zeig mir das Repo — Code und Tests."*
+VibeGrid was a commercial attempt that was discontinued (too many well-funded
+competitors). Rather than letting the code gather dust in a drawer, it's open
+here — as a concrete example of a way of working I write about: **AI-assisted
+development where quality comes not from reading every line of code, but from
+specification, decomposition, and verification.**
 
-Hier ist es. Aber mit einer Bitte um den richtigen Maßstab.
-
-Dieses Repo ist **kein** Beleg für handwerklich perfekte, von Hand polierte
-Codezeilen. Das wäre auch widersprüchlich — der ganze Punkt der Methode ist, dass
-ich den generierten Code eben *nicht* zeilenweise lese. Der richtige Maßstab ist
-ein anderer: **Wie umfassend ist das Ergebnis verifiziert, und tut das System, was
-es soll?**
-
-Wer also „flaky lines" sucht, wird vielleicht welche finden. Wer wissen will, ob
-ein spezifikations- und testgetriebener Prozess ohne klassisches Code-Review
-belastbare Software erzeugt, schaut auf die Testabdeckung und das Verhalten — und
-genau dafür ist dieses Repo offen.
+Background on the method:
+["Why I no longer read the code my AI writes"](https://www.linkedin.com/in/matthias-w%C3%B6hlte-4a7225143/)
 
 ---
 
-## Was man sich ansehen sollte
+## Why this repo is public
 
-Die Evidenz liegt im Verzeichnis [`tests/`](./tests):
+Discussions of this approach keep raising the same, fair question:
+*"Show me the repo — code and tests."*
 
-- **236 Testdateien** über drei Ebenen:
-  - `tests/unit/` — Komponenten, Renderer, AI-Schema-Validierung, Admin
-  - `tests/integration/` — API-Routen (SceneFlow, TTS, Uploads, Sessions)
-  - `tests/e2e/` — End-to-End-Abläufe
-- Bei jedem Lauf laufen **alle** Tests mit, auch die früherer Features — so werden
-  Regressionen und Seiteneffekte sichtbar, nicht erst im Review.
+Here it is. But with a request about the right yardstick.
 
-Architektur zum Querlesen:
+This repo is **not** evidence of hand-crafted, manually polished lines of code.
+That would be contradictory — the whole point of the method is that I precisely
+*don't* read the generated code line by line. The right yardstick is a different
+one: **How thoroughly is the result verified, and does the system do what it
+should?**
 
-- [`app/`](./app) — Next.js App Router (Studio, Auth, API-Routen, Storyboard)
-- [`components/`](./components) — UI: Timeline, Inspector, SceneFlow, Studio
-- [`db/`](./db) — Schema und versionierte Migrationen
+So if you're looking for flaky lines, you may well find some. If you want to know
+whether a specification- and test-driven process without classic code review
+produces robust software, look at the test coverage and the behavior — and that's
+exactly what this repo is open for.
 
 ---
 
-## Architektur & Stack
+## What to look at
 
-| Bereich        | Technologie |
+The evidence lives in the [`tests/`](./tests) directory:
+
+- **236 test files** across three levels:
+  - `tests/unit/` — components, renderers, AI schema validation, admin
+  - `tests/integration/` — API routes (SceneFlow, TTS, uploads, sessions)
+  - `tests/e2e/` — end-to-end flows
+- Every run executes **all** tests, including those for earlier features — so
+  regressions and side effects surface immediately, not only in review.
+
+Architecture worth skimming:
+
+- [`app/`](./app) — Next.js App Router (studio, auth, API routes, storyboard)
+- [`components/`](./components) — UI: timeline, inspector, SceneFlow, studio
+- [`db/`](./db) — schema and versioned migrations
+
+---
+
+## Architecture & stack
+
+| Area           | Technology |
 |----------------|-------------|
 | Framework      | Next.js (App Router), TypeScript |
-| Datenbank      | PostgreSQL (versionierte Migrationen in `db/migrations`) |
-| Objektspeicher | Cloudflare R2 |
-| Video-/Bild-KI | fal.ai |
-| Bildanalyse    | Anthropic API |
-| Sprachausgabe  | ElevenLabs TTS |
+| Database       | PostgreSQL (versioned migrations in `db/migrations`) |
+| Object storage | Cloudflare R2 |
+| Video/image AI | fal.ai |
+| Image analysis | Anthropic API |
+| Speech (TTS)   | ElevenLabs |
 | Tests          | Unit · Integration · E2E |
 
 ---
 
-## Lokales Setup
-
-> Voraussetzung: Node.js (LTS), eine erreichbare PostgreSQL-Instanz und API-Schlüssel
-> für die genutzten Dienste.
-
-```bash
-# Abhängigkeiten installieren
-npm install
-
-# Umgebungsvariablen anlegen
-cp .env.example .env.local
-# .env.local mit echten Werten füllen
-
-# Datenbank-Migrationen anwenden
-node scripts/apply-pending-migrations.mjs
-
-# Entwicklungsserver
-npm run dev
-
-# Tests
-npm test
-```
-
-### `.env.example`
-
-```dotenv
-# Datenbank
-DATABASE_URL=postgres://user:pass@host:5432/vibegrid
-
-# Cloudflare R2
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-
-# KI-Dienste
-FAL_KEY=
-ANTHROPIC_API_KEY=
-ELEVENLABS_API_KEY=
-```
-
-> Die genauen Variablennamen bitte gegen die lokale Konfiguration abgleichen und
-> ergänzen — dies ist die Mindestmenge, die im Code referenziert wird.
-
----
-
-## Hinweise & Einschränkungen
-
-- **Eingestelltes Produkt.** VibeGrid wird nicht aktiv weiterentwickelt. Dieses
-  Repo ist eine Momentaufnahme, kein gepflegtes Open-Source-Projekt.
-- **Audio-Assets entfernt.** Die ursprünglichen Sample-Packs (Drum-Loops etc.)
-  sind aus Lizenzgründen **nicht** enthalten. Funktionen, die auf diese Dateien
-  zugreifen, erwarten eigenes Material.
-- **Snapshot ohne Historie.** Veröffentlicht als frischer Stand, ohne die
-  ursprüngliche Commit-Historie.
-
----
-
-## Lizenz
-
-_Noch festzulegen_ — vor der Veröffentlichung eine Lizenz ergänzen
-(z. B. MIT für maximale Offenheit, oder eine Source-Available-Lizenz, falls die
-Nutzung eingeschränkt bleiben soll).
+## Local setu
