@@ -39,7 +39,7 @@ describe('UserMenu', () => {
       .setSession({ email: 'demo-admin@example.com', role: 'user', banned: false });
     render(<UserMenu />);
     const button = screen.getByRole('button', { name: /Konto/ });
-    expect(button.textContent?.trim()).toBe('M');
+    expect(button.textContent?.trim()).toBe('D');
     expect(button.getAttribute('title')).toBe('demo-admin@example.com');
   });
 
@@ -104,7 +104,7 @@ describe('UserMenu', () => {
     expect(container.querySelector('.animate-pulse')).toBeNull();
     expect(
       screen.getByRole('button', { name: /Konto/ }).textContent?.trim()
-    ).toBe('M');
+    ).toBe('D');
   });
 
   it('keeps the avatar visible if the re-fetch errors after a known email', () => {
