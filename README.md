@@ -51,8 +51,9 @@ npm install
 cp .env.example .env.local
 # Fill .env.local with real values
 
-# Apply database migrations
-node scripts/apply-pending-migrations.mjs
+# Create the full database schema on a fresh Postgres/Supabase instance.
+# Idempotent — applies db/schema.sql (auth tables + all app tables) in one go.
+npm run db:setup
 
 # Development server
 npm run dev
@@ -61,11 +62,21 @@ npm run dev
 npm test
 ```
 
+> The complete data model lives in [`db/schema.sql`](db/schema.sql) — a single,
+> idempotent file that creates the Better-Auth tables and all application
+> tables. `npm run db:setup` applies it (preferring `DIRECT_URL`, the Supabase
+> session-mode connection on port 5432, since the transaction pooler rejects
+> multi-statement DDL). The numbered files in `db/migrations/` are the
+> historical incremental record; `db/schema.sql` is the source of truth for a
+> fresh setup.
+
 ### `.env.example`
 
 ```dotenv
-# Database
-DATABASE_URL=postgres://user:pass@host:5432/vibegrid
+# Database — DATABASE_URL is the runtime (pooler) connection; DIRECT_URL is the
+# session-mode connection used for schema setup / DDL.
+DATABASE_URL=postgres://user:pass@host:6543/postgres?pgbouncer=true
+DIRECT_URL=postgres://user:pass@host:5432/postgres
 
 # Cloudflare R2
 R2_ACCESS_KEY_ID=
