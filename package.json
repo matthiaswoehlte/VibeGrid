@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "db:setup": "node scripts/setup-db.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {
